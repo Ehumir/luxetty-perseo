@@ -33,7 +33,7 @@ const supabase = createClient(
 const conversations = new Map();
 
 // Estado conversacional simple para perfilar búsquedas entre mensajes
-const searchStateByPhone = new Map();
+//const searchStateByPhone = new Map();
 
 // Prompt maestro Luxetty
 const systemPrompt = `Eres el Asesor Inmobiliario IA de Luxetty.
@@ -155,6 +155,19 @@ Descartar comercialmente si:
 Si el caso no califica, responde con cortesía, sin sonar despectivo.
 
 # REGLAS CRÍTICAS ABSOLUTAS
+
+# DETECCIÓN DE CAMBIO DE BÚSQUEDA
+
+Si el usuario cambia zona, tipo de propiedad, operación (compra/renta) o flujo (demanda/oferta), detecta el cambio de inmediato.
+
+Reglas:
+* Si el cambio es parcial, confirma en una frase breve y continúa con la nueva búsqueda.
+* Si el cambio es radical, da por cerrada la búsqueda anterior sin mencionarla demasiado y enfócate en la nueva.
+* No mezcles resultados del criterio anterior con el nuevo.
+* Si el usuario cambió de comprar/rentar a vender/poner en renta, cambia completamente el flujo y deja de actuar como buscador.
+* Si el usuario cambió de vender/poner en renta a comprar/rentar, cambia completamente el flujo y deja de actuar como captación.
+* Tus respuestas deben ser cortas, amables y directas.
+* Máximo una pregunta por mensaje.
 
 ## VERDAD Y TRAZABILIDAD
 
@@ -338,7 +351,206 @@ function extractBedrooms(message) {
   return null;
 }
 
-function getSearchState(phone) {
+function getDefaultAiState() {
+  return {
+    lead_flow: null,           // demand | offer
+    operation_type: null,      // sale | rent
+    property_type: null,       // house | apartment | land
+    location_text: null,
+    budget_min: null,
+    budget_max: null,
+    bedrooms: null,
+    bathrooms: null,
+    must_have_features: [],
+    timeline_text: null,
+    contact_preference: null,
+    contact_number_confirmed: null,
+
+    last_change_type: null,    // append_info | minor_update | radical_change | restart_flow
+    intent_version: 1,
+
+    needs_fresh_search: false,
+    last_search_filters: null,
+    last_search_result_count: 0,
+    last_shown_property_ids: []
+  };
+}
+
+function normalizeAiState(rawState) {
+  const base = getDefaultAiState();
+
+  if (!rawState || typeof rawState !== 'object' || Array.isArray(rawState)) {
+    return base;
+  }
+
+  return {
+    ...base,
+    ...rawState,
+    must_have_features: Array.isArray(rawState.must_have_features) ? rawState.must_have_features : [],
+    last_shown_property_ids: Array.isArray(rawState.last_shown_property_ids) ? rawState.last_shown_property_ids : []
+  };
+}
+
+function parseMessageSignals(message) {
+  const intent = detectIntent(message);
+  const location = extractLocation(message);
+  const maxPrice = extractMaxPrice(message);
+  const bedrooms = extractBedrooms(message);
+
+  return {
+    lead_flow: intent.leadType || null,
+    operation_type: intent.operationType || null,
+    property_type: intent.propertyType || null,
+    location_text: location || null,
+    budget_max: maxPrice || null,
+    bedrooms: bedrooms || null
+  };
+}
+
+function detectStateChange(prevState, signals) {
+  const prev = normalizeAiState(prevState);
+
+  const flowChanged =
+    signals.lead_flow &&
+    prev.lead_flow &&
+    signals.lead_flow !== prev.lead_flow;
+
+  if (flowChanged) {
+    return 'restart_flow';
+  }
+
+  const operationChanged =
+    signals.operation_type &&
+    prev.operation_type &&
+    signals.operation_type !== prev.operation_type;
+
+  const propertyTypeChanged =
+    signals.property_type &&
+    prev.property_type &&
+    signals.property_type !== prev.property_type;
+
+  const locationChanged =
+    signals.location_text &&
+    prev.location_text &&
+    signals.location_text !== prev.location_text;
+
+  if (operationChanged || propertyTypeChanged || locationChanged) {
+    return 'radical_change';
+  }
+
+  const budgetChanged =
+    signals.budget_max &&
+    prev.budget_max &&
+    signals.budget_max !== prev.budget_max;
+
+  const bedroomsChanged =
+    signals.bedrooms &&
+    prev.bedrooms &&
+    signals.bedrooms !== prev.bedrooms;
+
+  if (budgetChanged || bedroomsChanged) {
+    return 'minor_update';
+  }
+
+  const appended =
+    (signals.lead_flow && !prev.lead_flow) ||
+    (signals.operation_type && !prev.operation_type) ||
+    (signals.property_type && !prev.property_type) ||
+    (signals.location_text && !prev.location_text) ||
+    (signals.budget_max && !prev.budget_max) ||
+    (signals.bedrooms && !prev.bedrooms);
+
+  if (appended) {
+    return 'append_info';
+  }
+
+  return 'append_info';
+}
+
+function buildNextState(prevState, signals, changeType) {
+  const prev = normalizeAiState(prevState);
+
+  let next;
+
+  if (changeType === 'restart_flow') {
+    next = {
+      ...getDefaultAiState(),
+      lead_flow: signals.lead_flow || null,
+      operation_type: signals.operation_type || null,
+      property_type: signals.property_type || null,
+      location_text: signals.location_text || null,
+      budget_max: signals.budget_max || null,
+      bedrooms: signals.bedrooms || null,
+      intent_version: (prev.intent_version || 1) + 1
+    };
+  } else {
+    next = {
+      ...prev,
+      lead_flow: signals.lead_flow || prev.lead_flow,
+      operation_type: signals.operation_type || prev.operation_type,
+      property_type: signals.property_type || prev.property_type,
+      location_text: signals.location_text || prev.location_text,
+      budget_max: signals.budget_max || prev.budget_max,
+      bedrooms: signals.bedrooms || prev.bedrooms
+    };
+
+    if (changeType === 'radical_change') {
+      next.intent_version = (prev.intent_version || 1) + 1;
+      next.last_shown_property_ids = [];
+      next.last_search_filters = null;
+      next.last_search_result_count = 0;
+    }
+  }
+
+  next.last_change_type = changeType;
+
+  return next;
+}
+
+function shouldRunPropertySearch(prevState, nextState) {
+  const prev = normalizeAiState(prevState);
+  const next = normalizeAiState(nextState);
+
+  if (next.lead_flow !== 'demand') return false;
+  if (!next.operation_type || !next.location_text) return false;
+
+  return (
+    prev.lead_flow !== next.lead_flow ||
+    prev.operation_type !== next.operation_type ||
+    prev.property_type !== next.property_type ||
+    prev.location_text !== next.location_text ||
+    prev.budget_max !== next.budget_max ||
+    prev.bedrooms !== next.bedrooms
+  );
+}
+
+async function saveConversationState(conversationId, nextState) {
+  try {
+    if (!conversationId) return false;
+
+    const { error } = await supabase
+      .from('conversations')
+      .update({
+        ai_state: nextState,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', conversationId);
+
+    if (error) {
+      console.error('Error saving ai_state:', error);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error('FATAL saveConversationState:', err);
+    return false;
+  }
+}
+
+
+
+/*function getSearchState(phone) {
   return searchStateByPhone.get(phone) || {
     leadType: null,
     operationType: null,
@@ -355,6 +567,7 @@ function mergeSearchState(phone, message) {
   const location = extractLocation(message);
   const maxPrice = extractMaxPrice(message);
   const bedrooms = extractBedrooms(message);
+*/
 
   const merged = {
     leadType: intent.leadType || current.leadType,
@@ -433,13 +646,18 @@ function buildInventoryContext(properties) {
 
 async function getOrCreateConversation(phone) {
   try {
-    const { data: existing, error: findError } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('channel', 'whatsapp')
-      .eq('phone', phone)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const { data: created, error: createError } = await supabase
+  .from('conversations')
+  .insert({
+    channel: 'whatsapp',
+    phone,
+    status: 'open',
+    priority: 'medium',
+    last_message_at: new Date().toISOString(),
+    ai_state: getDefaultAiState()
+  })
+  .select()
+  .single();
 
     if (findError) {
       console.error('Error buscando conversación:', findError);
@@ -638,28 +856,48 @@ app.post('/webhook', async (req, res) => {
 
     const previousMessages = conversations.get(from) || [];
 
-    console.log('3. Mezclando estado conversacional...');
-    const mergedState = mergeSearchState(from, text);
-    console.log('Search state:', mergedState);
+    console.log('3. Calculando estado conversacional...');
+const previousAiState = normalizeAiState(conversationRow?.ai_state);
+const incomingSignals = parseMessageSignals(text);
+const changeType = detectStateChange(previousAiState, incomingSignals);
+const nextAiState = buildNextState(previousAiState, incomingSignals, changeType);
 
-    let matchedProperties = [];
+console.log('Previous ai_state:', previousAiState);
+console.log('Incoming signals:', incomingSignals);
+console.log('Change type:', changeType);
+console.log('Next ai_state:', nextAiState);
 
-    if (
-      mergedState.leadType === 'demand' &&
-      mergedState.location &&
-      mergedState.operationType
-    ) {
-      console.log('4. Buscando propiedades reales...');
-      matchedProperties = await searchProperties({
-        operationType: mergedState.operationType,
-        location: mergedState.location,
-        maxPrice: mergedState.maxPrice,
-        bedrooms: mergedState.bedrooms,
-        propertyType: mergedState.propertyType,
-        limit: 3
-      });
-      console.log('Propiedades encontradas:', matchedProperties.length);
-    }
+await saveConversationState(conversationId, nextAiState);
+
+let matchedProperties = [];
+
+if (shouldRunPropertySearch(previousAiState, nextAiState)) {
+  console.log('4. Buscando propiedades reales...');
+  matchedProperties = await searchProperties({
+    operationType: nextAiState.operation_type,
+    location: nextAiState.location_text,
+    maxPrice: nextAiState.budget_max,
+    bedrooms: nextAiState.bedrooms,
+    propertyType: nextAiState.property_type,
+    limit: 3
+  });
+
+  console.log('Propiedades encontradas:', matchedProperties.length);
+
+  nextAiState.needs_fresh_search = false;
+  nextAiState.last_search_filters = {
+    operation_type: nextAiState.operation_type,
+    location_text: nextAiState.location_text,
+    budget_min: nextAiState.budget_min,
+    budget_max: nextAiState.budget_max,
+    bedrooms: nextAiState.bedrooms,
+    property_type: nextAiState.property_type
+  };
+  nextAiState.last_search_result_count = matchedProperties.length;
+  nextAiState.last_shown_property_ids = matchedProperties.map((p) => p.id);
+
+  await saveConversationState(conversationId, nextAiState);
+}
 
     let reply = null;
 
@@ -675,10 +913,14 @@ app.post('/webhook', async (req, res) => {
           content: `Usa únicamente estas propiedades reales si decides compartir opciones.\n${inventoryContext}`
         },
         {
-          role: 'system',
-          content: `Contexto acumulado del cliente:
-${JSON.stringify(mergedState, null, 2)}`
-        },
+  role: 'system',
+  content: `Estado conversacional actual del cliente:
+${JSON.stringify(nextAiState, null, 2)}`
+},
+{
+  role: 'system',
+  content: `Tipo de cambio detectado en este mensaje: ${changeType}`
+},
         { role: 'user', content: text }
       ];
 
@@ -696,10 +938,14 @@ ${JSON.stringify(mergedState, null, 2)}`
         { role: 'system', content: systemPrompt },
         ...previousMessages,
         {
-          role: 'system',
-          content: `Contexto acumulado del cliente:
-${JSON.stringify(mergedState, null, 2)}`
-        },
+  role: 'system',
+  content: `Estado conversacional actual del cliente:
+${JSON.stringify(nextAiState, null, 2)}`
+},
+{
+  role: 'system',
+  content: `Tipo de cambio detectado en este mensaje: ${changeType}`
+},
         { role: 'user', content: text }
       ];
 
