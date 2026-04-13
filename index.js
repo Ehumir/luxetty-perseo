@@ -1,5 +1,10 @@
 require('dotenv').config();
 
+const express = require('express');
+const axios = require('axios');
+const OpenAI = require('openai');
+const { createClient } = require('@supabase/supabase-js');
+
 console.log('ENV CHECK:', {
   SUPABASE_URL: !!process.env.SUPABASE_URL,
   SUPABASE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -8,19 +13,14 @@ console.log('ENV CHECK:', {
   PHONE_ID: !!process.env.PHONE_NUMBER_ID,
 });
 
-const express = require('express');
-const axios = require('axios');
-const OpenAI = require('openai');
-const { createClient } = require('@supabase/supabase-js');
-
 const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'luxetty_token';
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 const supabase = createClient(
@@ -28,168 +28,69 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Memoria corta solo para continuidad conversacional de OpenAI
+// Memoria corta solo para fallback conversacional no crítica
 const conversations = new Map();
 
-const systemPrompt = `Eres el Asesor Inmobiliario IA de Luxetty.
+const SYSTEM_PROMPT = `
+Eres el asesor conversacional de Luxetty.
 
-Tu función es atender conversaciones entrantes, filtrar, calificar y perfilar leads de Oferta y Demanda, orientar con profesionalismo y llevar cada caso al siguiente paso correcto dentro del proceso comercial de Luxetty.
+Reglas obligatorias:
+- Responde corto, amable y directo.
+- Máximo una pregunta por mensaje.
+- Nunca inventes propiedades, precios, ubicaciones, disponibilidad, amenidades ni links.
+- Nunca reutilices propiedades viejas si en el turno actual no llegaron resultados reales.
+- Nunca envíes URLs técnicas de imágenes, storage, Supabase o CDN interno.
+- Si existe una landing pública, usa solo esa URL.
+- Si el usuario quiere fotos, indícale que vea la galería en la landing.
+- Si el usuario cambia zona, operación o tipo de propiedad, reconoce el cambio y continúa con la nueva búsqueda.
+- Si cambia de buscar a vender o de vender a buscar, cambia completamente de flujo.
+- No hagas textos largos ni explicaciones innecesarias.
+- No repitas saludo si ya existe contexto.
+`;
 
-Tu objetivo NO es cerrar operaciones por tu cuenta.
-Tu objetivo es:
-* entender el caso real del lead
-* perfilarlo correctamente
-* responder con claridad y naturalidad
-* compartir únicamente información real del sistema
-* lograr aceptación para que un asesor humano dé seguimiento
-* dejar el caso listo para operación interna
+const SUPPORTED_LOCATIONS = new Set([
+  'Cumbres',
+  'San Pedro',
+  'Monterrey',
+  'García',
+  'Carretera Nacional',
+  'Guadalupe',
+  'San Nicolás',
+  'Apodaca',
+  'Santa Catarina',
+]);
 
-# IDENTIDAD
-Hablas como parte de Luxetty.
-Nunca te presentas como un sistema técnico.
-Nunca hablas como programador, bot, modelo, API o asistente virtual técnico.
-
-# TONO
-Tu estilo debe ser:
-* profesional
-* natural
-* consultivo
-* claro
-* directo
-* amable
-* sobrio
-* confiable
-
-Debes sonar como una persona seria de una inmobiliaria premium, no como formulario, chatbot robótico ni call center agresivo.
-
-# REGLA DE CONTINUIDAD
-* Solo te presentas una vez al inicio real de una conversación nueva.
-* Si ya existe contexto, no repitas saludo ni presentación.
-* No repitas preguntas ya respondidas.
-* Continúa exactamente desde el punto de la conversación donde se quedó.
-* Si el cliente manda un mensaje corto, ambiguo o parcial, interpretas el contexto antes de preguntar de nuevo.
-
-# PRESENTACIÓN INICIAL
-Solo cuando la conversación realmente inicia y no existe contexto previo, abre con algo como:
-
-Hola, soy el asistente de Luxetty 😊
-Con gusto te ayudo.
-Para ubicarte mejor, ¿estás buscando comprar, rentar, vender o poner en renta una propiedad?
-
-No uses esta presentación en mensajes posteriores de la misma conversación.
-
-# MISIÓN COMERCIAL
-Tu trabajo es:
-* filtrar
-* calificar
-* detectar prioridad
-* perfilar el caso
-* orientar
-* generar confianza
-* lograr aceptación para contacto humano
-* dejar trazabilidad útil para el equipo comercial
-
-# TIPOS DE CLIENTE
-## OFERTA
-Clientes que quieren:
-* vender una propiedad
-* poner en renta una propiedad
-
-## DEMANDA
-Clientes que quieren:
-* comprar
-* rentar
-
-# ZONAS DE ATENCIÓN
-Luxetty atiende principalmente:
-* Monterrey
-* Cumbres
-* García
-* San Pedro Garza García
-* Carretera Nacional
-* zonas residenciales de alto valor en Guadalupe, San Nicolás, Apodaca y Santa Catarina
-
-Si el caso está claramente fuera de estas zonas:
-* responde cordialmente
-* explica brevemente que Luxetty se enfoca en determinadas zonas
-* no sigas profundizando innecesariamente
-* ofrece orientación breve solo si tiene sentido
-
-# FILTROS DE CALIFICACIÓN
-## OFERTA
-Descartar comercialmente si:
-* venta menor a $3,000,000 MXN
-* renta menor a $10,000 MXN
-
-## DEMANDA
-Descartar comercialmente si:
-* compra menor a $3,000,000 MXN
-* renta menor a $10,000 MXN
-
-Si el caso no califica, responde con cortesía, sin sonar despectivo.
-
-# DETECCIÓN DE CAMBIO DE BÚSQUEDA
-Si el usuario cambia zona, tipo de propiedad, operación (compra/renta) o flujo (demanda/oferta), detecta el cambio de inmediato.
-
-Reglas:
-* Si el cambio es parcial, confirma en una frase breve y continúa con la nueva búsqueda.
-* Si el cambio es radical, da por cerrada la búsqueda anterior sin mencionarla demasiado y enfócate en la nueva.
-* No mezcles resultados del criterio anterior con el nuevo.
-* Si el usuario cambió de comprar/rentar a vender/poner en renta, cambia completamente el flujo y deja de actuar como buscador.
-* Si el usuario cambió de vender/poner en renta a comprar/rentar, cambia completamente el flujo y deja de actuar como captación.
-* Tus respuestas deben ser cortas, amables y directas.
-* Máximo una pregunta por mensaje.
-
-# REGLAS CRÍTICAS ABSOLUTAS
-## VERDAD Y TRAZABILIDAD
-* Nunca inventes propiedades
-* Nunca inventes precios
-* Nunca inventes links
-* Nunca inventes disponibilidad
-* Nunca inventes ubicaciones específicas
-* Nunca inventes amenidades, metrajes, características, vistas o condiciones
-* Nunca digas que revisaste inventario si el sistema no te devolvió resultados reales
-* Nunca hables de propiedades de otras inmobiliarias como si fueran de Luxetty
-* Nunca presentes supuestos como hechos
-
-## AGENDA Y SEGUIMIENTO
-* No agendes reuniones como si ya hubieran quedado cerradas internamente
-* No confirmes citas exactas como un hecho consumado
-* No prometas que alguien llamará en un minuto exacto ni en una hora exacta si el sistema no lo controla
-* Tu función es lograr aceptación para contacto humano y dejar el caso listo para seguimiento
-
-## COMPORTAMIENTO
-* Máximo 1 o 2 preguntas por mensaje
-* No hagas interrogatorios
-* No mandes textos excesivamente largos
-* No presiones
-* No uses lenguaje demasiado vendedor
-* No uses emojis en exceso
-* Puedes usar validaciones naturales como: “Perfecto”, “Claro”, “Entiendo”
-
-# REGLAS ESPECIALES PARA DEMANDA
-## CUANDO SÍ HAY RESULTADOS REALES DEL SISTEMA
-Si el sistema te entrega propiedades reales:
-* solo puedes hablar de esas propiedades
-* usa únicamente datos reales que vengan del sistema
-* puedes compartir links reales de Luxetty
-* puedes resumir coincidencias reales
-* puedes comparar opciones solo con base en datos reales disponibles
-
-## CUANDO NO HAY RESULTADOS REALES DEL SISTEMA
-Si no hubo resultados reales:
-* no inventes nada
-* no prometas propiedades específicas
-* perfila mejor la búsqueda
-* o deja el caso listo para seguimiento humano
-
-# REGLA FINAL ABSOLUTA
-Si no está confirmado por el sistema o por el lead, no lo afirmes.
-Si no existe como dato real, no lo inventes.
-Si no hay integración o resultado real, no muestres propiedades específicas.`;
+const KNOWN_LOCATIONS = {
+  cumbres: 'Cumbres',
+  'san pedro': 'San Pedro',
+  monterrey: 'Monterrey',
+  garcía: 'García',
+  garcia: 'García',
+  'carretera nacional': 'Carretera Nacional',
+  guadalupe: 'Guadalupe',
+  'san nicolás': 'San Nicolás',
+  'san nicolas': 'San Nicolás',
+  apodaca: 'Apodaca',
+  'santa catarina': 'Santa Catarina',
+  montemorelos: 'Montemorelos',
+};
 
 function normalizeText(value) {
   return (value || '').toLowerCase().trim();
+}
+
+function cleanSpaces(value) {
+  return (value || '').replace(/\s+/g, ' ').trim();
+}
+
+function titleCaseLocation(value) {
+  if (!value) return null;
+  return KNOWN_LOCATIONS[normalizeText(value)] || value;
+}
+
+function isSupportedLocation(location) {
+  if (!location) return true;
+  return SUPPORTED_LOCATIONS.has(location);
 }
 
 function detectIntent(message) {
@@ -197,25 +98,34 @@ function detectIntent(message) {
 
   const wantsOfferRent =
     text.includes('poner en renta') ||
-    text.includes('quiero rentar mi propiedad');
+    text.includes('quiero poner en renta') ||
+    text.includes('rentar mi propiedad') ||
+    text.includes('renta mi casa') ||
+    text.includes('renta mi propiedad');
 
   const wantsSell =
     text.includes('vender') ||
     text.includes('quiero vender') ||
-    text.includes('venta mi casa');
+    text.includes('vendo') ||
+    text.includes('venta mi casa') ||
+    text.includes('venta mi propiedad');
 
   const wantsRent =
+    text.includes('quiero rentar') ||
+    text.includes('busco renta') ||
+    text.includes('quiero una renta') ||
     text.includes('rentar') ||
-    text.includes('renta') ||
     text.includes('alquilar') ||
     text.includes('alquiler');
 
   const wantsBuy =
+    text.includes('quiero comprar') ||
+    text.includes('busco comprar') ||
+    text.includes('busco casa') ||
+    text.includes('busco depa') ||
+    text.includes('busco terreno') ||
     text.includes('comprar') ||
-    text.includes('compra') ||
-    text.includes('busco') ||
-    text.includes('quiero una casa') ||
-    text.includes('quiero una propiedad');
+    text.includes('compra');
 
   let leadType = null;
   let operationType = null;
@@ -234,53 +144,28 @@ function detectIntent(message) {
     operationType = 'sale';
   }
 
-  let propertyType = null;
-  if (text.includes('terreno')) propertyType = 'land';
-  else if (text.includes('casa') || text.includes('residencia')) propertyType = 'house';
-  else if (text.includes('depa') || text.includes('departamento')) propertyType = 'apartment';
+  return { leadType, operationType };
+}
 
-  return {
-    leadType,
-    operationType,
-    propertyType
-  };
+function extractPropertyType(message) {
+  const text = normalizeText(message);
+
+  if (text.includes('quinta')) return 'land';
+  if (text.includes('terreno')) return 'land';
+  if (text.includes('casa') || text.includes('residencia')) return 'house';
+  if (text.includes('depa') || text.includes('departamento')) return 'apartment';
+  if (text.includes('oficina')) return 'office';
+  if (text.includes('local')) return 'commercial';
+  if (text.includes('nave')) return 'warehouse';
+
+  return null;
 }
 
 function extractLocation(message) {
   const text = normalizeText(message);
 
-  const knownLocations = [
-    'cumbres',
-    'san pedro',
-    'monterrey',
-    'garcía',
-    'garcia',
-    'carretera nacional',
-    'guadalupe',
-    'san nicolás',
-    'san nicolas',
-    'apodaca',
-    'santa catarina'
-  ];
-
-  const normalized = {
-    cumbres: 'Cumbres',
-    'san pedro': 'San Pedro',
-    monterrey: 'Monterrey',
-    'garcía': 'García',
-    garcia: 'García',
-    'carretera nacional': 'Carretera Nacional',
-    guadalupe: 'Guadalupe',
-    'san nicolás': 'San Nicolás',
-    'san nicolas': 'San Nicolás',
-    apodaca: 'Apodaca',
-    'santa catarina': 'Santa Catarina'
-  };
-
-  for (const location of knownLocations) {
-    if (text.includes(location)) {
-      return normalized[location];
-    }
+  for (const [key, value] of Object.entries(KNOWN_LOCATIONS)) {
+    if (text.includes(key)) return value;
   }
 
   return null;
@@ -289,14 +174,28 @@ function extractLocation(message) {
 function extractMaxPrice(message) {
   const text = normalizeText(message);
 
-  if (text.includes('10 millones') || text.includes('10m')) return 10000000;
-  if (text.includes('9 millones') || text.includes('9m')) return 9000000;
-  if (text.includes('8 millones') || text.includes('8m')) return 8000000;
-  if (text.includes('7 millones') || text.includes('7m')) return 7000000;
-  if (text.includes('6 millones') || text.includes('6m')) return 6000000;
-  if (text.includes('5 millones') || text.includes('5m')) return 5000000;
-  if (text.includes('4 millones') || text.includes('4m')) return 4000000;
-  if (text.includes('3 millones') || text.includes('3m')) return 3000000;
+  const shorthand = [
+    ['10 millones', 10000000],
+    ['9 millones', 9000000],
+    ['8 millones', 8000000],
+    ['7 millones', 7000000],
+    ['6 millones', 6000000],
+    ['5 millones', 5000000],
+    ['4 millones', 4000000],
+    ['3 millones', 3000000],
+    ['10m', 10000000],
+    ['9m', 9000000],
+    ['8m', 8000000],
+    ['7m', 7000000],
+    ['6m', 6000000],
+    ['5m', 5000000],
+    ['4m', 4000000],
+    ['3m', 3000000],
+  ];
+
+  for (const [needle, value] of shorthand) {
+    if (text.includes(needle)) return value;
+  }
 
   const numberMatch = text.match(/\$?\s*([\d,]+)\s*(mxn|pesos)?/i);
   if (numberMatch) {
@@ -313,28 +212,94 @@ function extractBedrooms(message) {
   return null;
 }
 
+function extractBathrooms(message) {
+  const text = normalizeText(message);
+  const match = text.match(/(\d+)\s*(bañ[oa]s?)/i);
+  if (match) return Number(match[1]);
+  return null;
+}
+
+function detectContactPreference(message) {
+  const text = normalizeText(message);
+
+  if (text.includes('whatsapp')) return 'whatsapp';
+  if (text.includes('llamada') || text.includes('marquen') || text.includes('llamar')) return 'call';
+  if (
+    text.includes('no importa') ||
+    text.includes('da igual') ||
+    text.includes('cualquiera') ||
+    text.includes('sin importar el canal')
+  ) {
+    return 'any';
+  }
+
+  return null;
+}
+
+function detectContextualSignals(message, prevState) {
+  const text = normalizeText(message);
+  const signals = {};
+  const awaitingField = prevState?.awaiting_field || null;
+
+  if (text === 'si' || text === 'sí') {
+    signals.answer_affirmative = true;
+  }
+
+  if (text === 'no') {
+    signals.answer_negative = true;
+  }
+
+  if (
+    text.includes('no importa') ||
+    text.includes('da igual') ||
+    text.includes('sin importar') ||
+    text.includes('cualquiera')
+  ) {
+    signals.answer_any = true;
+  }
+
+  if (awaitingField === 'bedrooms' && signals.answer_any) {
+    signals.bedrooms = null;
+    signals.bedrooms_any = true;
+  }
+
+  if (awaitingField === 'contact_preference' && signals.answer_any) {
+    signals.contact_preference = 'any';
+  }
+
+  if (awaitingField === 'location_text' && signals.answer_any) {
+    signals.location_text = null;
+    signals.location_any = true;
+  }
+
+  return signals;
+}
+
 function getDefaultAiState() {
   return {
-    lead_flow: null,
-    operation_type: null,
-    property_type: null,
+    lead_flow: null,                 // demand | offer
+    operation_type: null,            // sale | rent
+    property_type: null,             // house | apartment | land | office | commercial | warehouse
     location_text: null,
+    location_any: false,
     budget_min: null,
     budget_max: null,
     bedrooms: null,
+    bedrooms_any: false,
     bathrooms: null,
     must_have_features: [],
     timeline_text: null,
     contact_preference: null,
     contact_number_confirmed: null,
 
-    last_change_type: null,
+    awaiting_field: null,
+    last_change_type: null,          // append_info | minor_update | radical_change | restart_flow
     intent_version: 1,
 
     needs_fresh_search: false,
     last_search_filters: null,
     last_search_result_count: 0,
-    last_shown_property_ids: []
+    last_shown_property_ids: [],
   };
 }
 
@@ -348,24 +313,29 @@ function normalizeAiState(rawState) {
   return {
     ...base,
     ...rawState,
-    must_have_features: Array.isArray(rawState.must_have_features) ? rawState.must_have_features : [],
-    last_shown_property_ids: Array.isArray(rawState.last_shown_property_ids) ? rawState.last_shown_property_ids : []
+    must_have_features: Array.isArray(rawState.must_have_features)
+      ? rawState.must_have_features
+      : [],
+    last_shown_property_ids: Array.isArray(rawState.last_shown_property_ids)
+      ? rawState.last_shown_property_ids
+      : [],
   };
 }
 
-function parseMessageSignals(message) {
+function parseMessageSignals(message, prevState = getDefaultAiState()) {
   const intent = detectIntent(message);
-  const location = extractLocation(message);
-  const maxPrice = extractMaxPrice(message);
-  const bedrooms = extractBedrooms(message);
+  const contextual = detectContextualSignals(message, prevState);
 
   return {
     lead_flow: intent.leadType || null,
     operation_type: intent.operationType || null,
-    property_type: intent.propertyType || null,
-    location_text: location || null,
-    budget_max: maxPrice || null,
-    bedrooms: bedrooms || null
+    property_type: extractPropertyType(message),
+    location_text: extractLocation(message),
+    budget_max: extractMaxPrice(message),
+    bedrooms: extractBedrooms(message),
+    bathrooms: extractBathrooms(message),
+    contact_preference: detectContactPreference(message),
+    ...contextual,
   };
 }
 
@@ -401,13 +371,13 @@ function detectStateChange(prevState, signals) {
   }
 
   const budgetChanged =
-    signals.budget_max &&
-    prev.budget_max &&
+    signals.budget_max !== null &&
+    prev.budget_max !== null &&
     signals.budget_max !== prev.budget_max;
 
   const bedroomsChanged =
-    signals.bedrooms &&
-    prev.bedrooms &&
+    signals.bedrooms !== null &&
+    prev.bedrooms !== null &&
     signals.bedrooms !== prev.bedrooms;
 
   if (budgetChanged || bedroomsChanged) {
@@ -420,7 +390,8 @@ function detectStateChange(prevState, signals) {
     (signals.property_type && !prev.property_type) ||
     (signals.location_text && !prev.location_text) ||
     (signals.budget_max && !prev.budget_max) ||
-    (signals.bedrooms && !prev.bedrooms);
+    (signals.bedrooms && !prev.bedrooms) ||
+    (signals.contact_preference && !prev.contact_preference);
 
   if (appended) {
     return 'append_info';
@@ -431,7 +402,6 @@ function detectStateChange(prevState, signals) {
 
 function buildNextState(prevState, signals, changeType) {
   const prev = normalizeAiState(prevState);
-
   let next;
 
   if (changeType === 'restart_flow') {
@@ -442,8 +412,9 @@ function buildNextState(prevState, signals, changeType) {
       property_type: signals.property_type || null,
       location_text: signals.location_text || null,
       budget_max: signals.budget_max || null,
-      bedrooms: signals.bedrooms || null,
-      intent_version: (prev.intent_version || 1) + 1
+      bedrooms: typeof signals.bedrooms === 'number' ? signals.bedrooms : null,
+      bathrooms: typeof signals.bathrooms === 'number' ? signals.bathrooms : null,
+      intent_version: (prev.intent_version || 1) + 1,
     };
   } else {
     next = {
@@ -451,10 +422,35 @@ function buildNextState(prevState, signals, changeType) {
       lead_flow: signals.lead_flow || prev.lead_flow,
       operation_type: signals.operation_type || prev.operation_type,
       property_type: signals.property_type || prev.property_type,
-      location_text: signals.location_text || prev.location_text,
-      budget_max: signals.budget_max || prev.budget_max,
-      bedrooms: signals.bedrooms || prev.bedrooms
+      location_text:
+        signals.location_text !== null && signals.location_text !== undefined
+          ? signals.location_text
+          : prev.location_text,
+      budget_max:
+        signals.budget_max !== null && signals.budget_max !== undefined
+          ? signals.budget_max
+          : prev.budget_max,
+      bedrooms:
+        signals.bedrooms !== undefined
+          ? signals.bedrooms
+          : prev.bedrooms,
+      bathrooms:
+        signals.bathrooms !== null && signals.bathrooms !== undefined
+          ? signals.bathrooms
+          : prev.bathrooms,
+      contact_preference:
+        signals.contact_preference || prev.contact_preference,
     };
+
+    if (signals.location_any) {
+      next.location_text = null;
+      next.location_any = true;
+    }
+
+    if (signals.bedrooms_any) {
+      next.bedrooms = null;
+      next.bedrooms_any = true;
+    }
 
     if (changeType === 'radical_change') {
       next.intent_version = (prev.intent_version || 1) + 1;
@@ -465,15 +461,28 @@ function buildNextState(prevState, signals, changeType) {
   }
 
   next.last_change_type = changeType;
+
   return next;
+}
+
+function hasSearchableDemandState(state) {
+  return (
+    state.lead_flow === 'demand' &&
+    !!state.operation_type &&
+    (!!state.location_text ||
+      !!state.budget_max ||
+      !!state.property_type ||
+      !!state.bedrooms)
+  );
 }
 
 function shouldRunPropertySearch(prevState, nextState) {
   const prev = normalizeAiState(prevState);
   const next = normalizeAiState(nextState);
 
+  if (!hasSearchableDemandState(next)) return false;
   if (next.lead_flow !== 'demand') return false;
-  if (!next.operation_type || !next.location_text) return false;
+  if (!isSupportedLocation(next.location_text)) return false;
 
   return (
     prev.lead_flow !== next.lead_flow ||
@@ -481,7 +490,10 @@ function shouldRunPropertySearch(prevState, nextState) {
     prev.property_type !== next.property_type ||
     prev.location_text !== next.location_text ||
     prev.budget_max !== next.budget_max ||
-    prev.bedrooms !== next.bedrooms
+    prev.bedrooms !== next.bedrooms ||
+    prev.bathrooms !== next.bathrooms ||
+    prev.location_any !== next.location_any ||
+    prev.bedrooms_any !== next.bedrooms_any
   );
 }
 
@@ -493,7 +505,7 @@ async function saveConversationState(conversationId, nextState) {
       .from('conversations')
       .update({
         ai_state: nextState,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq('id', conversationId);
 
@@ -516,59 +528,208 @@ async function searchProperties({
   maxPrice = null,
   bedrooms = null,
   propertyType = null,
-  limit = 5
+  limit = 3,
 }) {
   try {
-    const { data, error } = await supabase.rpc('ai_search_properties', {
+    let result = await supabase.rpc('ai_search_properties', {
       p_operation_type: operationType,
       p_location: location,
       p_min_price: minPrice,
       p_max_price: maxPrice,
       p_bedrooms: bedrooms,
       p_limit: limit,
-      p_property_type: propertyType
+      p_property_type: propertyType,
     });
 
-    if (error) {
-      console.error('RPC error:', error);
+    if (result.error) {
+      // fallback por si la RPC aún no tiene p_property_type
+      result = await supabase.rpc('ai_search_properties', {
+        p_operation_type: operationType,
+        p_location: location,
+        p_min_price: minPrice,
+        p_max_price: maxPrice,
+        p_bedrooms: bedrooms,
+        p_limit: limit,
+      });
+    }
+
+    if (result.error) {
+      console.error('RPC error:', result.error);
       return [];
     }
 
-    return data || [];
+    return result.data || [];
   } catch (err) {
     console.error('FATAL searchProperties:', err);
     return [];
   }
 }
 
-function formatPropertyPrice(price, currencyCode) {
-  if (price == null) return 'Precio por confirmar';
-  return `$${Number(price).toLocaleString('es-MX')} ${currencyCode || 'MXN'}`;
-}
+function getPublicPropertyUrl(property) {
+  if (!property) return null;
 
-function formatProperties(properties) {
-  if (!properties || properties.length === 0) return null;
-
-  return properties.map((p, i) => {
-    const locationText = p.neighborhood || p.zone || p.city || 'Ubicación por confirmar';
-    const highlights =
-      Array.isArray(p.public_highlights) && p.public_highlights.length > 0
-        ? `✨ ${p.public_highlights.slice(0, 2).join(' · ')}\n`
-        : '';
-
-    return `${i + 1}. ${p.title}
-💰 ${formatPropertyPrice(p.price, p.currency_code)}
-📍 ${locationText}
-${highlights}🔗 ${p.listing_url}`;
-  }).join('\n\n');
-}
-
-function buildInventoryContext(properties) {
-  if (!properties || properties.length === 0) {
-    return 'RESULTADOS_REALES_DEL_SISTEMA: []';
+  if (property.listing_url && /^https?:\/\//i.test(property.listing_url)) {
+    return property.listing_url;
   }
 
-  return `RESULTADOS_REALES_DEL_SISTEMA:\n${JSON.stringify(properties, null, 2)}`;
+  if (
+    property.canonical_url &&
+    /^https?:\/\//i.test(property.canonical_url) &&
+    !property.canonical_url.includes('supabase.co/storage') &&
+    !property.canonical_url.includes('/storage/v1/object/public/')
+  ) {
+    return property.canonical_url;
+  }
+
+  if (property.slug) {
+    return `https://luxetty.com/propiedad/${property.slug}`;
+  }
+
+  return null;
+}
+
+function formatMoney(amount, currencyCode = 'MXN') {
+  if (amount == null) return 'Precio por confirmar';
+  return `$${Number(amount).toLocaleString('es-MX')} ${currencyCode}`;
+}
+
+function formatPropertyShort(property) {
+  const title = property.title || 'Propiedad disponible';
+  const price = formatMoney(property.price, property.currency_code || 'MXN');
+  const location =
+    property.neighborhood ||
+    property.zone ||
+    property.city ||
+    'Ubicación por confirmar';
+
+  const beds = property.bedrooms ?? null;
+  const baths = property.bathrooms ?? null;
+  const parking = property.parking_spaces ?? null;
+
+  const extras = [];
+  if (beds !== null) extras.push(`${beds} recámaras`);
+  if (baths !== null) extras.push(`${baths} baños`);
+  if (parking !== null) extras.push(`${parking} cajones`);
+
+  const publicUrl = getPublicPropertyUrl(property);
+
+  let text = `• ${title}\n${price}\n${location}`;
+  if (extras.length > 0) {
+    text += `\n${extras.join(' · ')}`;
+  }
+  if (publicUrl) {
+    text += `\nVer galería y detalles: ${publicUrl}`;
+  }
+
+  return text;
+}
+
+function getChangeAcknowledgement(changeType, state) {
+  if (changeType === 'restart_flow') {
+    if (state.lead_flow === 'offer' && state.operation_type === 'sale') {
+      return 'Perfecto, ahora te apoyo con venta.';
+    }
+    if (state.lead_flow === 'offer' && state.operation_type === 'rent') {
+      return 'Perfecto, ahora te apoyo con poner en renta.';
+    }
+    if (state.lead_flow === 'demand' && state.operation_type === 'sale') {
+      return 'Perfecto, ahora te apoyo con compra.';
+    }
+    if (state.lead_flow === 'demand' && state.operation_type === 'rent') {
+      return 'Perfecto, ahora te apoyo con renta.';
+    }
+  }
+
+  if (changeType === 'radical_change') {
+    if (state.location_text) {
+      return `Perfecto, actualizo la búsqueda a ${state.location_text}.`;
+    }
+    return 'Perfecto, actualizo la búsqueda.';
+  }
+
+  if (changeType === 'minor_update') {
+    return 'Perfecto, lo actualizo.';
+  }
+
+  return 'Perfecto.';
+}
+
+function buildDemandReply(state, changeType, properties) {
+  const ack = getChangeAcknowledgement(changeType, state);
+
+  if (state.location_text && !isSupportedLocation(state.location_text)) {
+    return `${ack}
+${state.location_text} está fuera de nuestra cobertura principal.
+¿Quieres que te ayude con una zona que sí trabajamos?`;
+  }
+
+  if (properties.length > 0) {
+    const top = properties[0];
+    return `${ack}
+Tengo una opción real que coincide con tu búsqueda:
+
+${formatPropertyShort(top)}
+
+¿Quieres otra opción o prefieres que te contacte un asesor por WhatsApp?`;
+  }
+
+  let base = `${ack}
+En este momento no tengo opciones exactas con esos filtros.`;
+
+  if (state.bedrooms == null && !state.bedrooms_any) {
+    return `${base}
+¿Tienes un mínimo de recámaras?`;
+  }
+
+  return `${base}
+¿Quieres que un asesor te contacte para buscar alternativas reales?`;
+}
+
+function buildOfferReply(state, changeType) {
+  const ack = getChangeAcknowledgement(changeType, state);
+
+  if (!state.location_text) {
+    return `${ack}
+¿En qué colonia o municipio está la propiedad?`;
+  }
+
+  if (!state.budget_max) {
+    return `${ack}
+¿Cuál es tu precio estimado de venta o renta?`;
+  }
+
+  return `${ack}
+Con esos datos ya puedo perfilar el caso.
+¿Quieres que te contacte un asesor por WhatsApp?`;
+}
+
+async function buildFallbackOpenAIReply(text, state, changeType) {
+  const response = await openai.chat.completions.create({
+    model: 'gpt-5-mini',
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'system',
+        content: `Estado actual:
+${JSON.stringify(state, null, 2)}
+
+Tipo de cambio detectado: ${changeType}
+
+IMPORTANTE:
+- No compartas propiedades específicas.
+- No inventes resultados.
+- Responde corto.
+- Máximo una pregunta.
+`,
+      },
+      { role: 'user', content: text },
+    ],
+  });
+
+  return (
+    response.choices?.[0]?.message?.content?.trim() ||
+    'Perfecto. ¿Me das un poco más de contexto para ayudarte mejor?'
+  );
 }
 
 async function getOrCreateConversation(phone) {
@@ -598,7 +759,7 @@ async function getOrCreateConversation(phone) {
         status: 'open',
         priority: 'medium',
         last_message_at: new Date().toISOString(),
-        ai_state: getDefaultAiState()
+        ai_state: getDefaultAiState(),
       })
       .select()
       .single();
@@ -623,7 +784,7 @@ async function saveConversationMessage({
   messageText,
   transcriptionText = null,
   metaMessageId = null,
-  rawPayload = {}
+  rawPayload = {},
 }) {
   try {
     if (!conversationId) return null;
@@ -638,7 +799,7 @@ async function saveConversationMessage({
         message_text: messageText,
         transcription_text: transcriptionText,
         meta_message_id: metaMessageId,
-        raw_payload: rawPayload
+        raw_payload: rawPayload,
       })
       .select()
       .single();
@@ -651,7 +812,7 @@ async function saveConversationMessage({
     await supabase
       .from('conversations')
       .update({
-        last_message_at: new Date().toISOString()
+        last_message_at: new Date().toISOString(),
       })
       .eq('id', conversationId);
 
@@ -673,7 +834,7 @@ async function savePropertySuggestions(conversationId, conversationMessageId, pr
         conversation_id: conversationId,
         conversation_message_id: conversationMessageId,
         property_id: property.id,
-        position: index + 1
+        position: index + 1,
       }));
 
     if (rows.length === 0) return;
@@ -691,21 +852,26 @@ async function savePropertySuggestions(conversationId, conversationMessageId, pr
 }
 
 async function sendWhatsAppText(to, body) {
-  await axios.post(
+  return axios.post(
     `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
     {
       messaging_product: 'whatsapp',
       to,
-      text: { body }
+      type: 'text',
+      text: { body },
     },
     {
       headers: {
         Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
+        'Content-Type': 'application/json',
+      },
     }
   );
 }
+
+app.get('/', (req, res) => {
+  return res.status(200).send('Luxetty Agent OK');
+});
 
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -719,10 +885,6 @@ app.get('/webhook', (req, res) => {
   return res.sendStatus(403);
 });
 
-app.get('/', (req, res) => {
-  res.status(200).send('Luxetty Agent OK');
-});
-
 app.post('/webhook', async (req, res) => {
   let from = null;
 
@@ -732,7 +894,9 @@ app.post('/webhook', async (req, res) => {
     const value = changes?.value;
     const message = value?.messages?.[0];
 
-    if (!message) return res.sendStatus(200);
+    if (!message) {
+      return res.sendStatus(200);
+    }
 
     from = message.from;
     const messageType = message.type;
@@ -741,13 +905,13 @@ app.post('/webhook', async (req, res) => {
     let text = '';
 
     if (messageType === 'text') {
-      text = message.text?.body || '';
+      text = cleanSpaces(message.text?.body || '');
     } else if (messageType === 'audio') {
-      text = 'El usuario envió un audio. Aún falta integrar la transcripción automática.';
+      text = 'El usuario envió un audio.';
     } else if (messageType === 'image') {
-      text = 'El usuario envió una imagen. Aún falta integrar el análisis de imágenes.';
+      text = 'El usuario envió una imagen.';
     } else {
-      text = `El usuario envió un mensaje de tipo: ${messageType}.`;
+      text = `El usuario envió un mensaje tipo ${messageType}.`;
     }
 
     console.log('--- NUEVO MENSAJE ---');
@@ -755,11 +919,9 @@ app.post('/webhook', async (req, res) => {
     console.log('Tipo:', messageType);
     console.log('Texto:', text);
 
-    console.log('1. Buscando o creando conversación...');
     const conversationRow = await getOrCreateConversation(from);
     const conversationId = conversationRow?.id || null;
 
-    console.log('2. Guardando inbound...');
     await saveConversationMessage({
       conversationId,
       direction: 'inbound',
@@ -774,14 +936,11 @@ app.post('/webhook', async (req, res) => {
           : 'system',
       messageText: text,
       metaMessageId,
-      rawPayload: req.body
+      rawPayload: req.body,
     });
 
-    const previousMessages = conversations.get(from) || [];
-
-    console.log('3. Calculando estado conversacional...');
     const previousAiState = normalizeAiState(conversationRow?.ai_state);
-    const incomingSignals = parseMessageSignals(text);
+    const incomingSignals = parseMessageSignals(text, previousAiState);
     const changeType = detectStateChange(previousAiState, incomingSignals);
     const nextAiState = buildNextState(previousAiState, incomingSignals, changeType);
 
@@ -795,17 +954,15 @@ app.post('/webhook', async (req, res) => {
     let matchedProperties = [];
 
     if (shouldRunPropertySearch(previousAiState, nextAiState)) {
-      console.log('4. Buscando propiedades reales...');
+      console.log('Buscando propiedades reales...');
       matchedProperties = await searchProperties({
         operationType: nextAiState.operation_type,
         location: nextAiState.location_text,
         maxPrice: nextAiState.budget_max,
         bedrooms: nextAiState.bedrooms,
         propertyType: nextAiState.property_type,
-        limit: 3
+        limit: 3,
       });
-
-      console.log('Propiedades encontradas:', matchedProperties.length);
 
       nextAiState.needs_fresh_search = false;
       nextAiState.last_search_filters = {
@@ -814,96 +971,75 @@ app.post('/webhook', async (req, res) => {
         budget_min: nextAiState.budget_min,
         budget_max: nextAiState.budget_max,
         bedrooms: nextAiState.bedrooms,
-        property_type: nextAiState.property_type
+        property_type: nextAiState.property_type,
       };
       nextAiState.last_search_result_count = matchedProperties.length;
       nextAiState.last_shown_property_ids = matchedProperties.map((p) => p.id);
 
       await saveConversationState(conversationId, nextAiState);
+    } else if (nextAiState.lead_flow === 'demand' && changeType !== 'append_info') {
+      // Limpia resultados previos si hubo cambio fuerte sin búsqueda nueva
+      nextAiState.last_search_result_count = 0;
+      nextAiState.last_shown_property_ids = [];
+      await saveConversationState(conversationId, nextAiState);
     }
 
     let reply = null;
 
-    if (matchedProperties.length > 0) {
-      console.log('5A. Generando respuesta con inventario real...');
-      const inventoryContext = buildInventoryContext(matchedProperties);
-
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        ...previousMessages,
-        {
-          role: 'system',
-          content: `Usa únicamente estas propiedades reales si decides compartir opciones.\n${inventoryContext}`
-        },
-        {
-          role: 'system',
-          content: `Estado conversacional actual del cliente:
-${JSON.stringify(nextAiState, null, 2)}`
-        },
-        {
-          role: 'system',
-          content: `Tipo de cambio detectado en este mensaje: ${changeType}`
-        },
-        { role: 'user', content: text }
-      ];
-
-      const response = await client.chat.completions.create({
-        model: 'gpt-5-mini',
-        messages
-      });
-
-      reply =
-        response.choices?.[0]?.message?.content?.trim() ||
-        `Te comparto opciones reales que encontré para ti:\n\n${formatProperties(matchedProperties)}`;
+    if (nextAiState.lead_flow === 'demand') {
+      reply = buildDemandReply(nextAiState, changeType, matchedProperties);
+    } else if (nextAiState.lead_flow === 'offer') {
+      reply = buildOfferReply(nextAiState, changeType);
     } else {
-      console.log('5B. Generando respuesta normal con OpenAI...');
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        ...previousMessages,
-        {
-          role: 'system',
-          content: `Estado conversacional actual del cliente:
-${JSON.stringify(nextAiState, null, 2)}`
-        },
-        {
-          role: 'system',
-          content: `Tipo de cambio detectado en este mensaje: ${changeType}`
-        },
-        { role: 'user', content: text }
-      ];
+      // fallback general si todavía no está claro el flujo
+      const prevMessages = conversations.get(from) || [];
 
-      const response = await client.chat.completions.create({
+      const response = await openai.chat.completions.create({
         model: 'gpt-5-mini',
-        messages
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          ...prevMessages,
+          {
+            role: 'system',
+            content: `Estado actual:
+${JSON.stringify(nextAiState, null, 2)}
+
+RESULTADOS_REALES_DEL_SISTEMA: []
+No hay propiedades para mostrar en este turno.
+Está prohibido reutilizar propiedades viejas.
+`,
+          },
+          { role: 'user', content: text },
+        ],
       });
 
       reply =
         response.choices?.[0]?.message?.content?.trim() ||
-        'Gracias por escribirnos. En un momento te apoyamos.';
+        'Hola, con gusto te ayudo. ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
     }
 
-    console.log('Reply final:', reply);
+    if (!reply) {
+      reply = await buildFallbackOpenAIReply(text, nextAiState, changeType);
+    }
 
     const updatedMessages = [
-      ...previousMessages,
+      ...(conversations.get(from) || []),
       { role: 'user', content: text },
-      { role: 'assistant', content: reply }
+      { role: 'assistant', content: reply },
     ];
 
-    conversations.set(from, updatedMessages.slice(-12));
+    conversations.set(from, updatedMessages.slice(-8));
 
-    console.log('6. Guardando outbound...');
     const outboundMessageRow = await saveConversationMessage({
       conversationId,
       direction: 'outbound',
       senderType: 'ai_agent',
       messageType: 'text',
       messageText: reply,
-      rawPayload: {}
+      rawPayload: {},
     });
 
     if (matchedProperties.length > 0 && outboundMessageRow?.id) {
-      console.log('7. Guardando sugerencias...');
       await savePropertySuggestions(
         conversationId,
         outboundMessageRow.id,
@@ -911,10 +1047,8 @@ ${JSON.stringify(nextAiState, null, 2)}`
       );
     }
 
-    console.log('8. Enviando WhatsApp...');
     await sendWhatsAppText(from, reply);
 
-    console.log('--- FIN OK ---');
     return res.sendStatus(200);
   } catch (error) {
     console.error('--- ERROR WEBHOOK ---');
@@ -924,10 +1058,13 @@ ${JSON.stringify(nextAiState, null, 2)}`
       try {
         await sendWhatsAppText(
           from,
-          'Perdón, tuve un problema momentáneo para procesar tu mensaje. ¿Me lo puedes repetir en una sola frase?'
+          'Perdón, tuve un problema momentáneo. ¿Me lo puedes repetir en una sola frase?'
         );
       } catch (sendError) {
-        console.error('Error enviando fallback:', sendError?.response?.data || sendError?.message || sendError);
+        console.error(
+          'Error enviando fallback:',
+          sendError?.response?.data || sendError?.message || sendError
+        );
       }
     }
 
