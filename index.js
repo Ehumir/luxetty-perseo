@@ -23,6 +23,9 @@ const supabase = createClient(
 // Memoria temporal corta por número para continuidad rápida
 const conversations = new Map();
 
+// Estado conversacional simple para perfilar búsquedas entre mensajes
+const searchStateByPhone = new Map();
+
 // Prompt maestro Luxetty
 const systemPrompt = `Eres el Asesor Inmobiliario IA de Luxetty.
 
@@ -140,8 +143,7 @@ Descartar comercialmente si:
 * compra menor a $3,000,000 MXN
 * renta menor a $10,000 MXN
 
-Si el caso no califica, responde con cortesía, sin sonar despectivo, por ejemplo con una idea como:
-Por el momento estamos enfocados en propiedades de mayor valor en ciertas zonas, pero con gusto puedo orientarte brevemente si lo necesitas.
+Si el caso no califica, responde con cortesía, sin sonar despectivo.
 
 # REGLAS CRÍTICAS ABSOLUTAS
 
@@ -166,38 +168,13 @@ Por el momento estamos enfocados en propiedades de mayor valor en ciertas zonas,
 
 ## COMPORTAMIENTO
 
-* Máximo 1 o 2 preguntas por mensaje, salvo que una sola respuesta breve pida una aclaración mínima adicional
+* Máximo 1 o 2 preguntas por mensaje
 * No hagas interrogatorios
 * No mandes textos excesivamente largos
 * No presiones
 * No uses lenguaje demasiado vendedor
 * No uses emojis en exceso
 * Puedes usar validaciones naturales como: “Perfecto”, “Claro”, “Entiendo”
-
-# QUÉ HACER SEGÚN EL TIPO DE MENSAJE
-
-## SI RECIBES TEXTO
-
-Interpretas intención, contexto y siguiente paso.
-
-## SI RECIBES AUDIO
-
-Debes comportarte como si ya se hubiera transcrito correctamente.
-
-* toma la transcripción como entrada válida
-* responde con naturalidad
-* si el contenido no está claro, pide solo la aclaración mínima necesaria
-* no menciones detalles técnicos de transcripción al usuario
-
-## SI RECIBES IMAGEN
-
-Debes comportarte como si el sistema ya hubiera procesado la imagen.
-Puedes usar la imagen como apoyo contextual, pero:
-
-* no inventes datos no visibles
-* no valores una propiedad por foto
-* no asegures metrajes, ubicación, precio o situación legal por una imagen
-* si la imagen sirve como referencia, úsala para perfilar mejor
 
 # REGLAS ESPECIALES PARA DEMANDA
 
@@ -227,8 +204,27 @@ Si no existe como dato real, no lo inventes.
 Si no hay integración o resultado real, no muestres propiedades específicas.
 `;
 
+function normalizeText(value) {
+  return (value || '').toLowerCase().trim();
+}
+
 function detectIntent(message) {
-  const text = (message || '').toLowerCase();
+  const text = normalizeText(message);
+
+  const wantsOfferRent =
+    text.includes('poner en renta') ||
+    text.includes('quiero rentar mi propiedad');
+
+  const wantsSell =
+    text.includes('vender') ||
+    text.includes('quiero vender') ||
+    text.includes('venta mi casa');
+
+  const wantsRent =
+    text.includes('rentar') ||
+    text.includes('renta') ||
+    text.includes('alquilar') ||
+    text.includes('alquiler');
 
   const wantsBuy =
     text.includes('comprar') ||
@@ -237,36 +233,21 @@ function detectIntent(message) {
     text.includes('quiero una casa') ||
     text.includes('quiero una propiedad');
 
-  const wantsRent =
-    text.includes('rentar') ||
-    text.includes('renta') ||
-    text.includes('alquilar') ||
-    text.includes('alquiler');
-
-  const wantsSell =
-    text.includes('vender') ||
-    text.includes('quiero vender') ||
-    text.includes('venta mi casa');
-
-  const wantsOfferRent =
-    text.includes('poner en renta') ||
-    text.includes('quiero rentar mi propiedad');
-
   let leadType = null;
   let operationType = null;
 
-  if (wantsBuy) {
-    leadType = 'demand';
-    operationType = 'sale';
-  } else if (wantsRent) {
-    leadType = 'demand';
+  if (wantsOfferRent) {
+    leadType = 'offer';
     operationType = 'rent';
   } else if (wantsSell) {
     leadType = 'offer';
     operationType = 'sale';
-  } else if (wantsOfferRent) {
-    leadType = 'offer';
+  } else if (wantsRent) {
+    leadType = 'demand';
     operationType = 'rent';
+  } else if (wantsBuy) {
+    leadType = 'demand';
+    operationType = 'sale';
   }
 
   let propertyType = null;
@@ -282,7 +263,8 @@ function detectIntent(message) {
 }
 
 function extractLocation(message) {
-  const text = (message || '').toLowerCase();
+  const text = normalizeText(message);
+
   const knownLocations = [
     'cumbres',
     'san pedro',
@@ -321,7 +303,7 @@ function extractLocation(message) {
 }
 
 function extractMaxPrice(message) {
-  const text = (message || '').toLowerCase();
+  const text = normalizeText(message);
 
   if (text.includes('10 millones') || text.includes('10m')) return 10000000;
   if (text.includes('9 millones') || text.includes('9m')) return 9000000;
@@ -341,14 +323,41 @@ function extractMaxPrice(message) {
 }
 
 function extractBedrooms(message) {
-  const text = (message || '').toLowerCase();
-
+  const text = normalizeText(message);
   const match = text.match(/(\d+)\s*(rec[aá]maras?|habitaciones?)/i);
-  if (match) {
-    return Number(match[1]);
-  }
-
+  if (match) return Number(match[1]);
   return null;
+}
+
+function getSearchState(phone) {
+  return searchStateByPhone.get(phone) || {
+    leadType: null,
+    operationType: null,
+    propertyType: null,
+    location: null,
+    maxPrice: null,
+    bedrooms: null
+  };
+}
+
+function mergeSearchState(phone, message) {
+  const current = getSearchState(phone);
+  const intent = detectIntent(message);
+  const location = extractLocation(message);
+  const maxPrice = extractMaxPrice(message);
+  const bedrooms = extractBedrooms(message);
+
+  const merged = {
+    leadType: intent.leadType || current.leadType,
+    operationType: intent.operationType || current.operationType,
+    propertyType: intent.propertyType || current.propertyType,
+    location: location || current.location,
+    maxPrice: maxPrice || current.maxPrice,
+    bedrooms: bedrooms || current.bedrooms
+  };
+
+  searchStateByPhone.set(phone, merged);
+  return merged;
 }
 
 async function searchProperties({
@@ -360,22 +369,27 @@ async function searchProperties({
   propertyType = null,
   limit = 5
 }) {
-  const { data, error } = await supabase.rpc('ai_search_properties', {
-    p_operation_type: operationType,
-    p_location: location,
-    p_min_price: minPrice,
-    p_max_price: maxPrice,
-    p_bedrooms: bedrooms,
-    p_limit: limit,
-    p_property_type: propertyType
-  });
+  try {
+    const { data, error } = await supabase.rpc('ai_search_properties', {
+      p_operation_type: operationType,
+      p_location: location,
+      p_min_price: minPrice,
+      p_max_price: maxPrice,
+      p_bedrooms: bedrooms,
+      p_limit: limit,
+      p_property_type: propertyType
+    });
 
-  if (error) {
-    console.error('Supabase RPC error:', error);
+    if (error) {
+      console.error('RPC error:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error('FATAL searchProperties:', err);
     return [];
   }
-
-  return data || [];
 }
 
 function formatPropertyPrice(price, currencyCode) {
@@ -388,9 +402,10 @@ function formatProperties(properties) {
 
   return properties.map((p, i) => {
     const locationText = p.neighborhood || p.zone || p.city || 'Ubicación por confirmar';
-    const highlights = Array.isArray(p.public_highlights) && p.public_highlights.length > 0
-      ? `✨ ${p.public_highlights.slice(0, 2).join(' · ')}\n`
-      : '';
+    const highlights =
+      Array.isArray(p.public_highlights) && p.public_highlights.length > 0
+        ? `✨ ${p.public_highlights.slice(0, 2).join(' · ')}\n`
+        : '';
 
     return `${i + 1}. ${p.title}
 💰 ${formatPropertyPrice(p.price, p.currency_code)}
@@ -408,35 +423,46 @@ function buildInventoryContext(properties) {
 }
 
 async function getOrCreateConversation(phone) {
-  const { data: existing, error: findError } = await supabase
-    .from('conversations')
-    .select('*')
-    .eq('channel', 'whatsapp')
-    .eq('phone', phone)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  try {
+    const { data: existing, error: findError } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('channel', 'whatsapp')
+      .eq('phone', phone)
+      .order('created_at', { ascending: false })
+      .limit(1);
 
-  if (findError) throw findError;
+    if (findError) {
+      console.error('Error buscando conversación:', findError);
+      return { id: null };
+    }
 
-  if (existing && existing.length > 0) {
-    return existing[0];
+    if (existing && existing.length > 0) {
+      return existing[0];
+    }
+
+    const { data: created, error: createError } = await supabase
+      .from('conversations')
+      .insert({
+        channel: 'whatsapp',
+        phone,
+        status: 'open',
+        priority: 'medium',
+        last_message_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Error creando conversación:', createError);
+      return { id: null };
+    }
+
+    return created;
+  } catch (err) {
+    console.error('FATAL getOrCreateConversation:', err);
+    return { id: null };
   }
-
-  const { data: created, error: createError } = await supabase
-    .from('conversations')
-    .insert({
-      channel: 'whatsapp',
-      phone,
-      status: 'open',
-      priority: 'medium',
-      last_message_at: new Date().toISOString()
-    })
-    .select()
-    .single();
-
-  if (createError) throw createError;
-
-  return created;
 }
 
 async function saveConversationMessage({
@@ -449,53 +475,68 @@ async function saveConversationMessage({
   metaMessageId = null,
   rawPayload = {}
 }) {
-  const { data, error } = await supabase
-    .from('conversation_messages')
-    .insert({
-      conversation_id: conversationId,
-      direction,
-      sender_type: senderType,
-      message_type: messageType,
-      message_text: messageText,
-      transcription_text: transcriptionText,
-      meta_message_id: metaMessageId,
-      raw_payload: rawPayload
-    })
-    .select()
-    .single();
+  try {
+    if (!conversationId) return null;
 
-  if (error) throw error;
+    const { data, error } = await supabase
+      .from('conversation_messages')
+      .insert({
+        conversation_id: conversationId,
+        direction,
+        sender_type: senderType,
+        message_type: messageType,
+        message_text: messageText,
+        transcription_text: transcriptionText,
+        meta_message_id: metaMessageId,
+        raw_payload: rawPayload
+      })
+      .select()
+      .single();
 
-  await supabase
-    .from('conversations')
-    .update({
-      last_message_at: new Date().toISOString()
-    })
-    .eq('id', conversationId);
+    if (error) {
+      console.error('Error guardando mensaje:', error);
+      return null;
+    }
 
-  return data;
+    await supabase
+      .from('conversations')
+      .update({
+        last_message_at: new Date().toISOString()
+      })
+      .eq('id', conversationId);
+
+    return data;
+  } catch (err) {
+    console.error('FATAL saveConversationMessage:', err);
+    return null;
+  }
 }
 
 async function savePropertySuggestions(conversationId, conversationMessageId, properties) {
-  if (!properties || properties.length === 0) return;
+  try {
+    if (!conversationId || !conversationMessageId) return;
+    if (!properties || properties.length === 0) return;
 
-  const rows = properties
-    .filter((property) => property?.id)
-    .map((property, index) => ({
-      conversation_id: conversationId,
-      conversation_message_id: conversationMessageId,
-      property_id: property.id,
-      position: index + 1
-    }));
+    const rows = properties
+      .filter((property) => property?.id)
+      .map((property, index) => ({
+        conversation_id: conversationId,
+        conversation_message_id: conversationMessageId,
+        property_id: property.id,
+        position: index + 1
+      }));
 
-  if (rows.length === 0) return;
+    if (rows.length === 0) return;
 
-  const { error } = await supabase
-    .from('conversation_property_suggestions')
-    .insert(rows);
+    const { error } = await supabase
+      .from('conversation_property_suggestions')
+      .insert(rows);
 
-  if (error) {
-    console.error('Error saving property suggestions:', error);
+    if (error) {
+      console.error('Error saving property suggestions:', error);
+    }
+  } catch (err) {
+    console.error('FATAL savePropertySuggestions:', err);
   }
 }
 
@@ -528,7 +569,13 @@ app.get('/webhook', (req, res) => {
   return res.sendStatus(403);
 });
 
+app.get('/', (req, res) => {
+  res.status(200).send('Luxetty Agent OK');
+});
+
 app.post('/webhook', async (req, res) => {
+  let from = null;
+
   try {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
@@ -537,7 +584,7 @@ app.post('/webhook', async (req, res) => {
 
     if (!message) return res.sendStatus(200);
 
-    const from = message.from;
+    from = message.from;
     const messageType = message.type;
     const metaMessageId = message.id || null;
 
@@ -553,15 +600,28 @@ app.post('/webhook', async (req, res) => {
       text = `El usuario envió un mensaje de tipo: ${messageType}.`;
     }
 
-    console.log('Mensaje recibido:', text);
+    console.log('--- NUEVO MENSAJE ---');
+    console.log('From:', from);
+    console.log('Tipo:', messageType);
+    console.log('Texto:', text);
 
+    console.log('1. Buscando o creando conversación...');
     const conversationRow = await getOrCreateConversation(from);
+    const conversationId = conversationRow?.id || null;
 
+    console.log('2. Guardando inbound...');
     await saveConversationMessage({
-      conversationId: conversationRow.id,
+      conversationId,
       direction: 'inbound',
       senderType: 'lead',
-      messageType: messageType === 'text' ? 'text' : (messageType === 'audio' ? 'audio' : (messageType === 'image' ? 'image' : 'system')),
+      messageType:
+        messageType === 'text'
+          ? 'text'
+          : messageType === 'audio'
+          ? 'audio'
+          : messageType === 'image'
+          ? 'image'
+          : 'system',
       messageText: text,
       metaMessageId,
       rawPayload: req.body
@@ -569,29 +629,33 @@ app.post('/webhook', async (req, res) => {
 
     const previousMessages = conversations.get(from) || [];
 
-    const intent = detectIntent(text);
-    const detectedLocation = extractLocation(text);
-    const detectedMaxPrice = extractMaxPrice(text);
-    const detectedBedrooms = extractBedrooms(text);
+    console.log('3. Mezclando estado conversacional...');
+    const mergedState = mergeSearchState(from, text);
+    console.log('Search state:', mergedState);
 
     let matchedProperties = [];
 
-    if (intent.leadType === 'demand' && detectedLocation) {
+    if (
+      mergedState.leadType === 'demand' &&
+      mergedState.location &&
+      mergedState.operationType
+    ) {
+      console.log('4. Buscando propiedades reales...');
       matchedProperties = await searchProperties({
-        operationType: intent.operationType || 'sale',
-        location: detectedLocation,
-        maxPrice: detectedMaxPrice,
-        bedrooms: detectedBedrooms,
-        propertyType: intent.propertyType,
+        operationType: mergedState.operationType,
+        location: mergedState.location,
+        maxPrice: mergedState.maxPrice,
+        bedrooms: mergedState.bedrooms,
+        propertyType: mergedState.propertyType,
         limit: 3
       });
-
-      console.log('Propiedades encontradas:', matchedProperties);
+      console.log('Propiedades encontradas:', matchedProperties.length);
     }
 
     let reply = null;
 
     if (matchedProperties.length > 0) {
+      console.log('5A. Generando respuesta con inventario real...');
       const inventoryContext = buildInventoryContext(matchedProperties);
 
       const messages = [
@@ -600,6 +664,11 @@ app.post('/webhook', async (req, res) => {
         {
           role: 'system',
           content: `Usa únicamente estas propiedades reales si decides compartir opciones.\n${inventoryContext}`
+        },
+        {
+          role: 'system',
+          content: `Contexto acumulado del cliente:
+${JSON.stringify(mergedState, null, 2)}`
         },
         { role: 'user', content: text }
       ];
@@ -610,12 +679,18 @@ app.post('/webhook', async (req, res) => {
       });
 
       reply =
-        response.choices[0].message.content?.trim() ||
+        response.choices?.[0]?.message?.content?.trim() ||
         `Te comparto opciones reales que encontré para ti:\n\n${formatProperties(matchedProperties)}`;
     } else {
+      console.log('5B. Generando respuesta normal con OpenAI...');
       const messages = [
         { role: 'system', content: systemPrompt },
         ...previousMessages,
+        {
+          role: 'system',
+          content: `Contexto acumulado del cliente:
+${JSON.stringify(mergedState, null, 2)}`
+        },
         { role: 'user', content: text }
       ];
 
@@ -625,9 +700,11 @@ app.post('/webhook', async (req, res) => {
       });
 
       reply =
-        response.choices[0].message.content?.trim() ||
+        response.choices?.[0]?.message?.content?.trim() ||
         'Gracias por escribirnos. En un momento te apoyamos.';
     }
+
+    console.log('Reply final:', reply);
 
     const updatedMessages = [
       ...previousMessages,
@@ -637,8 +714,9 @@ app.post('/webhook', async (req, res) => {
 
     conversations.set(from, updatedMessages.slice(-12));
 
+    console.log('6. Guardando outbound...');
     const outboundMessageRow = await saveConversationMessage({
-      conversationId: conversationRow.id,
+      conversationId,
       direction: 'outbound',
       senderType: 'ai_agent',
       messageType: 'text',
@@ -646,20 +724,36 @@ app.post('/webhook', async (req, res) => {
       rawPayload: {}
     });
 
-    if (matchedProperties.length > 0) {
+    if (matchedProperties.length > 0 && outboundMessageRow?.id) {
+      console.log('7. Guardando sugerencias...');
       await savePropertySuggestions(
-        conversationRow.id,
+        conversationId,
         outboundMessageRow.id,
         matchedProperties
       );
     }
 
+    console.log('8. Enviando WhatsApp...');
     await sendWhatsAppText(from, reply);
 
+    console.log('--- FIN OK ---');
     return res.sendStatus(200);
   } catch (error) {
-    console.error('Error webhook:', error.response?.data || error.message || error);
-    return res.sendStatus(500);
+    console.error('--- ERROR WEBHOOK ---');
+    console.error(error?.response?.data || error?.stack || error?.message || error);
+
+    if (from) {
+      try {
+        await sendWhatsAppText(
+          from,
+          'Perdón, tuve un problema momentáneo para procesar tu mensaje. ¿Me lo puedes repetir en una sola frase?'
+        );
+      } catch (sendError) {
+        console.error('Error enviando fallback:', sendError?.response?.data || sendError?.message || sendError);
+      }
+    }
+
+    return res.sendStatus(200);
   }
 });
 
