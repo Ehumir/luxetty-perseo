@@ -1,16 +1,26 @@
 require('dotenv').config();
+
 const express = require('express');
 const axios = require('axios');
 const OpenAI = require('openai');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'luxetty_token';
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Memoria temporal por número de teléfono
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// Memoria temporal corta por número para continuidad rápida
 const conversations = new Map();
 
 // Prompt maestro Luxetty
@@ -93,8 +103,8 @@ Clientes que quieren:
 
 Clientes que quieren:
 
-* comprar una propiedad
-* rentar una propiedad
+* comprar
+* rentar
 
 # ZONAS DE ATENCIÓN
 
@@ -189,125 +199,7 @@ Puedes usar la imagen como apoyo contextual, pero:
 * no asegures metrajes, ubicación, precio o situación legal por una imagen
 * si la imagen sirve como referencia, úsala para perfilar mejor
 
-Ejemplos de uso correcto:
-
-* “Te mando fotos de mi casa” → tomas eso como contexto de oferta
-* “Busco algo así” → tomas la imagen como referencia de estilo o tipo, pero aterrizas zona, presupuesto y tipo
-
-# ESTRUCTURA GENERAL DE CONVERSACIÓN
-
-## PASO 1. IDENTIFICAR LA INTENCIÓN
-
-Debes detectar si la persona quiere:
-
-* comprar
-* rentar
-* vender
-* poner en renta
-
-Si no está claro, preguntas de forma natural y breve.
-
-## PASO 2. PERFILAR LO MÍNIMO NECESARIO
-
-Debes obtener lo mínimo útil sin hacer sentir al lead interrogado.
-
-### Si es DEMANDA
-
-Orden ideal:
-
-1. zona
-2. presupuesto
-3. tipo de propiedad
-4. necesidad clave, por ejemplo recámaras o uso
-5. tiempo aproximado
-6. si ya trabaja con algún asesor, solo cuando ya haya contexto suficiente
-
-### Si es OFERTA
-
-Orden ideal:
-
-1. zona
-2. valor estimado o rango
-3. tipo de propiedad
-4. si es suya o apoya a alguien
-5. características clave
-6. motivación
-7. tiempo aproximado
-
-## PASO 3. DETECTAR PRIORIDAD
-
-Clasifica mentalmente el caso como:
-
-* alta
-* media
-* exploratoria
-
-Usa señales como:
-
-* urgencia declarada
-* motivación real
-* claridad del requerimiento
-* capacidad económica
-* propiedad ya lista para vender/rentar
-* deseo real de avanzar
-
-## PASO 4. AVANZAR HACIA EL SIGUIENTE PASO CORRECTO
-
-Ese siguiente paso normalmente es:
-
-* aceptación para contacto humano
-* valuación o revisión profesional en Oferta
-* seguimiento con opciones reales en Demanda
-* solicitud interna para asesor
-
-# REGLAS ESPECIALES PARA OFERTA
-
-Si el lead quiere vender o poner en renta una propiedad:
-
-* detecta zona
-* detecta valor aproximado
-* detecta tipo de propiedad
-* confirma si es suya o está apoyando a alguien
-* explora motivación y tiempo
-* nunca valides un precio como definitivo
-
-Si te preguntan por valor o precio, responde con una idea como:
-Para darte una referencia seria, lo correcto es revisar comparables reales de la zona y el caso específico.
-
-Cuando el caso valga la pena:
-
-* orienta hacia revisión profesional
-* busca aceptación para que un asesor humano dé seguimiento
-
-Ejemplos de intención de cierre correctos:
-
-* Por la zona y el tipo de propiedad, sí vale la pena que un asesor lo revise bien contigo.
-* Si te parece, dejo tu caso listo para que un asesor especialista te contacte y lo revise contigo.
-* Con lo que me compartes, sí tiene sentido que un asesor te dé seguimiento para orientarte con estrategia y valor de mercado.
-
 # REGLAS ESPECIALES PARA DEMANDA
-
-## CUANDO NO HAY RESULTADOS REALES DEL SISTEMA
-
-Si el inventario real todavía no ha sido consultado o no hubo resultados reales del sistema:
-
-* no menciones propiedades específicas
-* no digas que ya revisaste el inventario
-* no prometas links concretos
-* no digas “tengo estas opciones” si el sistema no te las dio
-
-En ese caso tu función es:
-
-* perfilar correctamente la búsqueda
-* dejarla lista para seguimiento humano
-* explicar que Luxetty trabaja con propiedades reales y vigentes
-* lograr aceptación para que un asesor comparta opciones reales
-
-Ejemplos correctos:
-
-* Perfecto. Con esos datos ya puedo dejar bien perfilada tu búsqueda para que un asesor especialista te comparta opciones reales y vigentes.
-* Para cuidarte el tiempo y compartirte solo opciones reales, primero dejo tu perfil bien armado y un asesor te da seguimiento.
-* En Luxetty trabajamos únicamente con propiedades reales y vigentes. En cuanto tu perfil quede claro, un asesor puede compartirte alternativas alineadas.
 
 ## CUANDO SÍ HAY RESULTADOS REALES DEL SISTEMA
 
@@ -319,113 +211,14 @@ Si el sistema te entrega propiedades reales:
 * puedes resumir coincidencias reales
 * puedes comparar opciones solo con base en datos reales disponibles
 
-Formato recomendado:
+## CUANDO NO HAY RESULTADOS REALES DEL SISTEMA
 
-* mencionar pocas opciones, bien seleccionadas
-* no saturar
-* cerrar con una pregunta útil
+Si no hubo resultados reales:
 
-Ejemplo de estructura:
-
-* opción 1: tipo, zona, precio, rasgo relevante, link real
-* opción 2: tipo, zona, precio, rasgo relevante, link real
-* opción 3: tipo, zona, precio, rasgo relevante, link real
-
-Luego avanzar con algo como:
-
-* ¿Cuál te interesa más revisar?
-* ¿Prefieres que enfoquemos la búsqueda en algo más amplio o más específico?
-
-## SI NO HAY MATCH EXACTO
-
-Si el sistema no devuelve coincidencias exactas:
-
-* dilo con claridad
 * no inventes nada
-* puedes ofrecer ampliar o ajustar criterios
-* o dejar el caso listo para seguimiento humano
-
-Ejemplos:
-
-* No encontré una coincidencia exacta con ese criterio, pero sí podemos ajustar la búsqueda o dejarla lista para que un asesor te comparta alternativas cercanas.
-* Con ese rango no veo aquí una coincidencia exacta confirmada, pero sí vale la pena que un asesor revise contigo opciones cercanas o nuevas oportunidades.
-
-# RESPUESTAS SOBRE PROPIEDADES YA MOSTRADAS
-
-Si ya se mostraron propiedades reales en la conversación:
-
-* puedes responder preguntas sobre ellas
-* pero solo con datos reales disponibles del sistema
-* si no tienes el dato, dilo claramente
-* no completes información por intuición
-
-Ejemplos correctos:
-
-* De esa opción sí tengo confirmado el precio y la zona, pero no tengo aquí confirmado ese detalle específico.
-* De las que te compartí, esta parece ajustarse mejor por zona y rango, pero para validar disponibilidad y detalle fino conviene que un asesor lo confirme contigo.
-
-# MICRO-COMPROMISO
-
-Cuando veas una oportunidad clara, usa una transición suave para avanzar, por ejemplo:
-
-* Si te parece, dejo tu caso bien perfilado para que un asesor especialista te dé seguimiento.
-* Si quieres, puedo dejar esto listo para que te contacten con mejor precisión.
-* Con lo que ya me compartiste, ya vale la pena pasarlo a seguimiento.
-
-# CONFIRMACIÓN DE CONTACTO
-
-Cuando el lead acepte seguimiento, confirma de forma simple:
-
-* si ese mismo número es el mejor medio de contacto
-* si conviene llamada o WhatsApp
-* disponibilidad general solo si ayuda
-
-Ejemplo:
-Perfecto 👍 ¿Este es el mejor número para contactarte?
-
-No conviertas eso en una cita cerrada.
-
-# MANEJO DE OBJECIONES
-
-## “Solo quiero saber cuánto vale”
-
-Responde con serenidad. Idea base:
-Claro, es totalmente válido. Para darte una referencia seria, lo correcto es revisar comparables reales de la zona y del tipo de propiedad.
-
-## “Otra inmobiliaria me dijo más”
-
-Idea base:
-Puede variar según comparables y estrategia. Lo importante es evitar sobreprecio y tiempos largos en el mercado.
-
-## “No quiero exclusividad”
-
-Idea base:
-Es completamente válido. Primero conviene revisar el caso y luego decidir qué esquema te conviene más.
-
-## “Solo mándame opciones”
-
-Si no hay inventario real integrado o no tienes resultados reales:
-No inventes nada. Responde con una idea como:
-Con gusto. Para compartirte opciones reales y vigentes, primero necesito dejar bien perfilada tu búsqueda.
-
-# CUÁNDO CERRAR LA CONVERSACIÓN
-
-Si el caso está fuera de zona, fuera de perfil o claramente no califica:
-
-* responde con educación
-* no alargues innecesariamente
-* no fuerces seguimiento
-
-# OBJETIVO FINAL
-
-Tu meta en cada conversación es lograr al menos uno de estos resultados:
-
-* aceptación para que un asesor humano contacte
-* búsqueda bien perfilada
-* caso de oferta bien calificado
-* interés real en valuación o análisis
-* continuidad útil de conversación
-* envío de propiedades reales solo cuando el sistema las haya dado
+* no prometas propiedades específicas
+* perfila mejor la búsqueda
+* o deja el caso listo para seguimiento humano
 
 # REGLA FINAL ABSOLUTA
 
@@ -434,63 +227,407 @@ Si no existe como dato real, no lo inventes.
 Si no hay integración o resultado real, no muestres propiedades específicas.
 `;
 
-app.get('/webhook', (req, res) => {
-  const verify_token = 'luxetty_token';
+function detectIntent(message) {
+  const text = (message || '').toLowerCase();
 
+  const wantsBuy =
+    text.includes('comprar') ||
+    text.includes('compra') ||
+    text.includes('busco') ||
+    text.includes('quiero una casa') ||
+    text.includes('quiero una propiedad');
+
+  const wantsRent =
+    text.includes('rentar') ||
+    text.includes('renta') ||
+    text.includes('alquilar') ||
+    text.includes('alquiler');
+
+  const wantsSell =
+    text.includes('vender') ||
+    text.includes('quiero vender') ||
+    text.includes('venta mi casa');
+
+  const wantsOfferRent =
+    text.includes('poner en renta') ||
+    text.includes('quiero rentar mi propiedad');
+
+  let leadType = null;
+  let operationType = null;
+
+  if (wantsBuy) {
+    leadType = 'demand';
+    operationType = 'sale';
+  } else if (wantsRent) {
+    leadType = 'demand';
+    operationType = 'rent';
+  } else if (wantsSell) {
+    leadType = 'offer';
+    operationType = 'sale';
+  } else if (wantsOfferRent) {
+    leadType = 'offer';
+    operationType = 'rent';
+  }
+
+  let propertyType = null;
+  if (text.includes('terreno')) propertyType = 'land';
+  else if (text.includes('casa') || text.includes('residencia')) propertyType = 'house';
+  else if (text.includes('depa') || text.includes('departamento')) propertyType = 'apartment';
+
+  return {
+    leadType,
+    operationType,
+    propertyType
+  };
+}
+
+function extractLocation(message) {
+  const text = (message || '').toLowerCase();
+  const knownLocations = [
+    'cumbres',
+    'san pedro',
+    'monterrey',
+    'garcía',
+    'garcia',
+    'carretera nacional',
+    'guadalupe',
+    'san nicolás',
+    'san nicolas',
+    'apodaca',
+    'santa catarina'
+  ];
+
+  const normalized = {
+    cumbres: 'Cumbres',
+    'san pedro': 'San Pedro',
+    monterrey: 'Monterrey',
+    'garcía': 'García',
+    garcia: 'García',
+    'carretera nacional': 'Carretera Nacional',
+    guadalupe: 'Guadalupe',
+    'san nicolás': 'San Nicolás',
+    'san nicolas': 'San Nicolás',
+    apodaca: 'Apodaca',
+    'santa catarina': 'Santa Catarina'
+  };
+
+  for (const location of knownLocations) {
+    if (text.includes(location)) {
+      return normalized[location];
+    }
+  }
+
+  return null;
+}
+
+function extractMaxPrice(message) {
+  const text = (message || '').toLowerCase();
+
+  if (text.includes('10 millones') || text.includes('10m')) return 10000000;
+  if (text.includes('9 millones') || text.includes('9m')) return 9000000;
+  if (text.includes('8 millones') || text.includes('8m')) return 8000000;
+  if (text.includes('7 millones') || text.includes('7m')) return 7000000;
+  if (text.includes('6 millones') || text.includes('6m')) return 6000000;
+  if (text.includes('5 millones') || text.includes('5m')) return 5000000;
+  if (text.includes('4 millones') || text.includes('4m')) return 4000000;
+  if (text.includes('3 millones') || text.includes('3m')) return 3000000;
+
+  const numberMatch = text.match(/\$?\s*([\d,]+)\s*(mxn|pesos)?/i);
+  if (numberMatch) {
+    return Number(numberMatch[1].replace(/,/g, ''));
+  }
+
+  return null;
+}
+
+function extractBedrooms(message) {
+  const text = (message || '').toLowerCase();
+
+  const match = text.match(/(\d+)\s*(rec[aá]maras?|habitaciones?)/i);
+  if (match) {
+    return Number(match[1]);
+  }
+
+  return null;
+}
+
+async function searchProperties({
+  operationType,
+  location,
+  minPrice = null,
+  maxPrice = null,
+  bedrooms = null,
+  propertyType = null,
+  limit = 5
+}) {
+  const { data, error } = await supabase.rpc('ai_search_properties', {
+    p_operation_type: operationType,
+    p_location: location,
+    p_min_price: minPrice,
+    p_max_price: maxPrice,
+    p_bedrooms: bedrooms,
+    p_limit: limit,
+    p_property_type: propertyType
+  });
+
+  if (error) {
+    console.error('Supabase RPC error:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+function formatPropertyPrice(price, currencyCode) {
+  if (price == null) return 'Precio por confirmar';
+  return `$${Number(price).toLocaleString('es-MX')} ${currencyCode || 'MXN'}`;
+}
+
+function formatProperties(properties) {
+  if (!properties || properties.length === 0) return null;
+
+  return properties.map((p, i) => {
+    const locationText = p.neighborhood || p.zone || p.city || 'Ubicación por confirmar';
+    const highlights = Array.isArray(p.public_highlights) && p.public_highlights.length > 0
+      ? `✨ ${p.public_highlights.slice(0, 2).join(' · ')}\n`
+      : '';
+
+    return `${i + 1}. ${p.title}
+💰 ${formatPropertyPrice(p.price, p.currency_code)}
+📍 ${locationText}
+${highlights}🔗 ${p.listing_url}`;
+  }).join('\n\n');
+}
+
+function buildInventoryContext(properties) {
+  if (!properties || properties.length === 0) {
+    return 'RESULTADOS_REALES_DEL_SISTEMA: []';
+  }
+
+  return `RESULTADOS_REALES_DEL_SISTEMA:\n${JSON.stringify(properties, null, 2)}`;
+}
+
+async function getOrCreateConversation(phone) {
+  const { data: existing, error: findError } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('channel', 'whatsapp')
+    .eq('phone', phone)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (findError) throw findError;
+
+  if (existing && existing.length > 0) {
+    return existing[0];
+  }
+
+  const { data: created, error: createError } = await supabase
+    .from('conversations')
+    .insert({
+      channel: 'whatsapp',
+      phone,
+      status: 'open',
+      priority: 'medium',
+      last_message_at: new Date().toISOString()
+    })
+    .select()
+    .single();
+
+  if (createError) throw createError;
+
+  return created;
+}
+
+async function saveConversationMessage({
+  conversationId,
+  direction,
+  senderType,
+  messageType,
+  messageText,
+  transcriptionText = null,
+  metaMessageId = null,
+  rawPayload = {}
+}) {
+  const { data, error } = await supabase
+    .from('conversation_messages')
+    .insert({
+      conversation_id: conversationId,
+      direction,
+      sender_type: senderType,
+      message_type: messageType,
+      message_text: messageText,
+      transcription_text: transcriptionText,
+      meta_message_id: metaMessageId,
+      raw_payload: rawPayload
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await supabase
+    .from('conversations')
+    .update({
+      last_message_at: new Date().toISOString()
+    })
+    .eq('id', conversationId);
+
+  return data;
+}
+
+async function savePropertySuggestions(conversationId, conversationMessageId, properties) {
+  if (!properties || properties.length === 0) return;
+
+  const rows = properties
+    .filter((property) => property?.id)
+    .map((property, index) => ({
+      conversation_id: conversationId,
+      conversation_message_id: conversationMessageId,
+      property_id: property.id,
+      position: index + 1
+    }));
+
+  if (rows.length === 0) return;
+
+  const { error } = await supabase
+    .from('conversation_property_suggestions')
+    .insert(rows);
+
+  if (error) {
+    console.error('Error saving property suggestions:', error);
+  }
+}
+
+async function sendWhatsAppText(to, body) {
+  await axios.post(
+    `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: 'whatsapp',
+      to,
+      text: { body }
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+}
+
+app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode === 'subscribe' && token === verify_token) {
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     return res.status(200).send(challenge);
-  } else {
-    return res.sendStatus(403);
   }
+
+  return res.sendStatus(403);
 });
 
 app.post('/webhook', async (req, res) => {
   try {
     const entry = req.body.entry?.[0];
     const changes = entry?.changes?.[0];
-    const message = changes?.value?.messages?.[0];
+    const value = changes?.value;
+    const message = value?.messages?.[0];
 
     if (!message) return res.sendStatus(200);
 
     const from = message.from;
     const messageType = message.type;
+    const metaMessageId = message.id || null;
 
     let text = '';
 
     if (messageType === 'text') {
       text = message.text?.body || '';
+    } else if (messageType === 'audio') {
+      text = 'El usuario envió un audio. Aún falta integrar la transcripción automática.';
+    } else if (messageType === 'image') {
+      text = 'El usuario envió una imagen. Aún falta integrar el análisis de imágenes.';
     } else {
       text = `El usuario envió un mensaje de tipo: ${messageType}.`;
     }
 
     console.log('Mensaje recibido:', text);
 
-    const previousMessages = conversations.get(from) || [];
+    const conversationRow = await getOrCreateConversation(from);
 
-    const messages = [
-      {
-        role: 'system',
-        content: systemPrompt
-      },
-      ...previousMessages,
-      {
-        role: 'user',
-        content: text
-      }
-    ];
-
-    const response = await client.chat.completions.create({
-      model: 'gpt-5-mini',
-      messages
+    await saveConversationMessage({
+      conversationId: conversationRow.id,
+      direction: 'inbound',
+      senderType: 'lead',
+      messageType: messageType === 'text' ? 'text' : (messageType === 'audio' ? 'audio' : (messageType === 'image' ? 'image' : 'system')),
+      messageText: text,
+      metaMessageId,
+      rawPayload: req.body
     });
 
-    const reply = response.choices[0].message.content?.trim() || 'Gracias por escribirnos. En un momento te apoyamos.';
+    const previousMessages = conversations.get(from) || [];
 
-    console.log('Respuesta IA:', reply);
+    const intent = detectIntent(text);
+    const detectedLocation = extractLocation(text);
+    const detectedMaxPrice = extractMaxPrice(text);
+    const detectedBedrooms = extractBedrooms(text);
+
+    let matchedProperties = [];
+
+    if (intent.leadType === 'demand' && detectedLocation) {
+      matchedProperties = await searchProperties({
+        operationType: intent.operationType || 'sale',
+        location: detectedLocation,
+        maxPrice: detectedMaxPrice,
+        bedrooms: detectedBedrooms,
+        propertyType: intent.propertyType,
+        limit: 3
+      });
+
+      console.log('Propiedades encontradas:', matchedProperties);
+    }
+
+    let reply = null;
+
+    if (matchedProperties.length > 0) {
+      const inventoryContext = buildInventoryContext(matchedProperties);
+
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        ...previousMessages,
+        {
+          role: 'system',
+          content: `Usa únicamente estas propiedades reales si decides compartir opciones.\n${inventoryContext}`
+        },
+        { role: 'user', content: text }
+      ];
+
+      const response = await client.chat.completions.create({
+        model: 'gpt-5-mini',
+        messages
+      });
+
+      reply =
+        response.choices[0].message.content?.trim() ||
+        `Te comparto opciones reales que encontré para ti:\n\n${formatProperties(matchedProperties)}`;
+    } else {
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        ...previousMessages,
+        { role: 'user', content: text }
+      ];
+
+      const response = await client.chat.completions.create({
+        model: 'gpt-5-mini',
+        messages
+      });
+
+      reply =
+        response.choices[0].message.content?.trim() ||
+        'Gracias por escribirnos. En un momento te apoyamos.';
+    }
 
     const updatedMessages = [
       ...previousMessages,
@@ -498,31 +635,34 @@ app.post('/webhook', async (req, res) => {
       { role: 'assistant', content: reply }
     ];
 
-    // Conserva solo los últimos 12 mensajes para no inflar contexto
     conversations.set(from, updatedMessages.slice(-12));
 
-    await axios.post(
-      `https://graph.facebook.com/v19.0/${process.env.PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: 'whatsapp',
-        to: from,
-        text: { body: reply }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    const outboundMessageRow = await saveConversationMessage({
+      conversationId: conversationRow.id,
+      direction: 'outbound',
+      senderType: 'ai_agent',
+      messageType: 'text',
+      messageText: reply,
+      rawPayload: {}
+    });
+
+    if (matchedProperties.length > 0) {
+      await savePropertySuggestions(
+        conversationRow.id,
+        outboundMessageRow.id,
+        matchedProperties
+      );
+    }
+
+    await sendWhatsAppText(from, reply);
 
     return res.sendStatus(200);
   } catch (error) {
-    console.error('Error webhook:', error.response?.data || error.message);
+    console.error('Error webhook:', error.response?.data || error.message || error);
     return res.sendStatus(500);
   }
 });
 
-app.listen(3000, () => {
-  console.log('Servidor corriendo en puerto 3000 🚀');
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en puerto ${PORT} 🚀`);
 });
