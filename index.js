@@ -930,6 +930,34 @@ async function sendWhatsAppText(to, body) {
   );
 }
 
+app.get('/conversations', async (req, res) => {
+  const { data, error } = await supabase.rpc('get_conversations_list');
+
+  if (error) {
+    return res.status(500).json({ error });
+  }
+
+  res.json(data);
+});
+
+app.get('/conversations/:id', async (req, res) => {
+  const { id } = req.params;
+
+  const { data, error } = await supabase
+    .from('conversation_messages')
+    .select('*')
+    .eq('conversation_id', id)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    return res.status(500).json({ error });
+  }
+
+  res.json(data);
+});
+
+
+
 app.get('/', (req, res) => {
   return res.status(200).send('Luxetty Agent OK');
 });
