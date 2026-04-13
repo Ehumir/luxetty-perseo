@@ -1,5 +1,14 @@
 require('dotenv').config();
 
+console.log('ENV CHECK:', {
+  SUPABASE_URL: !!process.env.SUPABASE_URL,
+  SUPABASE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+  OPENAI: !!process.env.OPENAI_API_KEY,
+  WHATSAPP: !!process.env.WHATSAPP_TOKEN,
+  PHONE_ID: !!process.env.PHONE_NUMBER_ID,
+});
+
+
 const express = require('express');
 const axios = require('axios');
 const OpenAI = require('openai');
