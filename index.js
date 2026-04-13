@@ -8,7 +8,6 @@ console.log('ENV CHECK:', {
   PHONE_ID: !!process.env.PHONE_NUMBER_ID,
 });
 
-
 const express = require('express');
 const axios = require('axios');
 const OpenAI = require('openai');
@@ -29,20 +28,15 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Memoria temporal corta por número para continuidad rápida
+// Memoria corta solo para continuidad conversacional de OpenAI
 const conversations = new Map();
 
-// Estado conversacional simple para perfilar búsquedas entre mensajes
-//const searchStateByPhone = new Map();
-
-// Prompt maestro Luxetty
 const systemPrompt = `Eres el Asesor Inmobiliario IA de Luxetty.
 
 Tu función es atender conversaciones entrantes, filtrar, calificar y perfilar leads de Oferta y Demanda, orientar con profesionalismo y llevar cada caso al siguiente paso correcto dentro del proceso comercial de Luxetty.
 
 Tu objetivo NO es cerrar operaciones por tu cuenta.
 Tu objetivo es:
-
 * entender el caso real del lead
 * perfilarlo correctamente
 * responder con claridad y naturalidad
@@ -51,15 +45,12 @@ Tu objetivo es:
 * dejar el caso listo para operación interna
 
 # IDENTIDAD
-
 Hablas como parte de Luxetty.
 Nunca te presentas como un sistema técnico.
 Nunca hablas como programador, bot, modelo, API o asistente virtual técnico.
 
 # TONO
-
 Tu estilo debe ser:
-
 * profesional
 * natural
 * consultivo
@@ -72,7 +63,6 @@ Tu estilo debe ser:
 Debes sonar como una persona seria de una inmobiliaria premium, no como formulario, chatbot robótico ni call center agresivo.
 
 # REGLA DE CONTINUIDAD
-
 * Solo te presentas una vez al inicio real de una conversación nueva.
 * Si ya existe contexto, no repitas saludo ni presentación.
 * No repitas preguntas ya respondidas.
@@ -80,7 +70,6 @@ Debes sonar como una persona seria de una inmobiliaria premium, no como formular
 * Si el cliente manda un mensaje corto, ambiguo o parcial, interpretas el contexto antes de preguntar de nuevo.
 
 # PRESENTACIÓN INICIAL
-
 Solo cuando la conversación realmente inicia y no existe contexto previo, abre con algo como:
 
 Hola, soy el asistente de Luxetty 😊
@@ -90,9 +79,7 @@ Para ubicarte mejor, ¿estás buscando comprar, rentar, vender o poner en renta 
 No uses esta presentación en mensajes posteriores de la misma conversación.
 
 # MISIÓN COMERCIAL
-
 Tu trabajo es:
-
 * filtrar
 * calificar
 * detectar prioridad
@@ -103,25 +90,18 @@ Tu trabajo es:
 * dejar trazabilidad útil para el equipo comercial
 
 # TIPOS DE CLIENTE
-
 ## OFERTA
-
 Clientes que quieren:
-
 * vender una propiedad
 * poner en renta una propiedad
 
 ## DEMANDA
-
 Clientes que quieren:
-
 * comprar
 * rentar
 
 # ZONAS DE ATENCIÓN
-
 Luxetty atiende principalmente:
-
 * Monterrey
 * Cumbres
 * García
@@ -130,34 +110,25 @@ Luxetty atiende principalmente:
 * zonas residenciales de alto valor en Guadalupe, San Nicolás, Apodaca y Santa Catarina
 
 Si el caso está claramente fuera de estas zonas:
-
 * responde cordialmente
 * explica brevemente que Luxetty se enfoca en determinadas zonas
 * no sigas profundizando innecesariamente
 * ofrece orientación breve solo si tiene sentido
 
 # FILTROS DE CALIFICACIÓN
-
 ## OFERTA
-
 Descartar comercialmente si:
-
 * venta menor a $3,000,000 MXN
 * renta menor a $10,000 MXN
 
 ## DEMANDA
-
 Descartar comercialmente si:
-
 * compra menor a $3,000,000 MXN
 * renta menor a $10,000 MXN
 
 Si el caso no califica, responde con cortesía, sin sonar despectivo.
 
-# REGLAS CRÍTICAS ABSOLUTAS
-
 # DETECCIÓN DE CAMBIO DE BÚSQUEDA
-
 Si el usuario cambia zona, tipo de propiedad, operación (compra/renta) o flujo (demanda/oferta), detecta el cambio de inmediato.
 
 Reglas:
@@ -169,8 +140,8 @@ Reglas:
 * Tus respuestas deben ser cortas, amables y directas.
 * Máximo una pregunta por mensaje.
 
+# REGLAS CRÍTICAS ABSOLUTAS
 ## VERDAD Y TRAZABILIDAD
-
 * Nunca inventes propiedades
 * Nunca inventes precios
 * Nunca inventes links
@@ -182,14 +153,12 @@ Reglas:
 * Nunca presentes supuestos como hechos
 
 ## AGENDA Y SEGUIMIENTO
-
 * No agendes reuniones como si ya hubieran quedado cerradas internamente
 * No confirmes citas exactas como un hecho consumado
 * No prometas que alguien llamará en un minuto exacto ni en una hora exacta si el sistema no lo controla
 * Tu función es lograr aceptación para contacto humano y dejar el caso listo para seguimiento
 
 ## COMPORTAMIENTO
-
 * Máximo 1 o 2 preguntas por mensaje
 * No hagas interrogatorios
 * No mandes textos excesivamente largos
@@ -199,11 +168,8 @@ Reglas:
 * Puedes usar validaciones naturales como: “Perfecto”, “Claro”, “Entiendo”
 
 # REGLAS ESPECIALES PARA DEMANDA
-
 ## CUANDO SÍ HAY RESULTADOS REALES DEL SISTEMA
-
 Si el sistema te entrega propiedades reales:
-
 * solo puedes hablar de esas propiedades
 * usa únicamente datos reales que vengan del sistema
 * puedes compartir links reales de Luxetty
@@ -211,20 +177,16 @@ Si el sistema te entrega propiedades reales:
 * puedes comparar opciones solo con base en datos reales disponibles
 
 ## CUANDO NO HAY RESULTADOS REALES DEL SISTEMA
-
 Si no hubo resultados reales:
-
 * no inventes nada
 * no prometas propiedades específicas
 * perfila mejor la búsqueda
 * o deja el caso listo para seguimiento humano
 
 # REGLA FINAL ABSOLUTA
-
 Si no está confirmado por el sistema o por el lead, no lo afirmes.
 Si no existe como dato real, no lo inventes.
-Si no hay integración o resultado real, no muestres propiedades específicas.
-`;
+Si no hay integración o resultado real, no muestres propiedades específicas.`;
 
 function normalizeText(value) {
   return (value || '').toLowerCase().trim();
@@ -353,9 +315,9 @@ function extractBedrooms(message) {
 
 function getDefaultAiState() {
   return {
-    lead_flow: null,           // demand | offer
-    operation_type: null,      // sale | rent
-    property_type: null,       // house | apartment | land
+    lead_flow: null,
+    operation_type: null,
+    property_type: null,
     location_text: null,
     budget_min: null,
     budget_max: null,
@@ -366,7 +328,7 @@ function getDefaultAiState() {
     contact_preference: null,
     contact_number_confirmed: null,
 
-    last_change_type: null,    // append_info | minor_update | radical_change | restart_flow
+    last_change_type: null,
     intent_version: 1,
 
     needs_fresh_search: false,
@@ -503,7 +465,6 @@ function buildNextState(prevState, signals, changeType) {
   }
 
   next.last_change_type = changeType;
-
   return next;
 }
 
@@ -546,40 +507,6 @@ async function saveConversationState(conversationId, nextState) {
     console.error('FATAL saveConversationState:', err);
     return false;
   }
-}
-
-
-
-/*function getSearchState(phone) {
-  return searchStateByPhone.get(phone) || {
-    leadType: null,
-    operationType: null,
-    propertyType: null,
-    location: null,
-    maxPrice: null,
-    bedrooms: null
-  };
-}
-
-function mergeSearchState(phone, message) {
-  const current = getSearchState(phone);
-  const intent = detectIntent(message);
-  const location = extractLocation(message);
-  const maxPrice = extractMaxPrice(message);
-  const bedrooms = extractBedrooms(message);
-*/
-
-  const merged = {
-    leadType: intent.leadType || current.leadType,
-    operationType: intent.operationType || current.operationType,
-    propertyType: intent.propertyType || current.propertyType,
-    location: location || current.location,
-    maxPrice: maxPrice || current.maxPrice,
-    bedrooms: bedrooms || current.bedrooms
-  };
-
-  searchStateByPhone.set(phone, merged);
-  return merged;
 }
 
 async function searchProperties({
@@ -646,22 +573,17 @@ function buildInventoryContext(properties) {
 
 async function getOrCreateConversation(phone) {
   try {
-    const { data: created, error: createError } = await supabase
-  .from('conversations')
-  .insert({
-    channel: 'whatsapp',
-    phone,
-    status: 'open',
-    priority: 'medium',
-    last_message_at: new Date().toISOString(),
-    ai_state: getDefaultAiState()
-  })
-  .select()
-  .single();
+    const { data: existing, error: findError } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('channel', 'whatsapp')
+      .eq('phone', phone)
+      .order('created_at', { ascending: false })
+      .limit(1);
 
     if (findError) {
       console.error('Error buscando conversación:', findError);
-      return { id: null };
+      return { id: null, ai_state: getDefaultAiState() };
     }
 
     if (existing && existing.length > 0) {
@@ -675,20 +597,21 @@ async function getOrCreateConversation(phone) {
         phone,
         status: 'open',
         priority: 'medium',
-        last_message_at: new Date().toISOString()
+        last_message_at: new Date().toISOString(),
+        ai_state: getDefaultAiState()
       })
       .select()
       .single();
 
     if (createError) {
       console.error('Error creando conversación:', createError);
-      return { id: null };
+      return { id: null, ai_state: getDefaultAiState() };
     }
 
     return created;
   } catch (err) {
     console.error('FATAL getOrCreateConversation:', err);
-    return { id: null };
+    return { id: null, ai_state: getDefaultAiState() };
   }
 }
 
@@ -857,47 +780,47 @@ app.post('/webhook', async (req, res) => {
     const previousMessages = conversations.get(from) || [];
 
     console.log('3. Calculando estado conversacional...');
-const previousAiState = normalizeAiState(conversationRow?.ai_state);
-const incomingSignals = parseMessageSignals(text);
-const changeType = detectStateChange(previousAiState, incomingSignals);
-const nextAiState = buildNextState(previousAiState, incomingSignals, changeType);
+    const previousAiState = normalizeAiState(conversationRow?.ai_state);
+    const incomingSignals = parseMessageSignals(text);
+    const changeType = detectStateChange(previousAiState, incomingSignals);
+    const nextAiState = buildNextState(previousAiState, incomingSignals, changeType);
 
-console.log('Previous ai_state:', previousAiState);
-console.log('Incoming signals:', incomingSignals);
-console.log('Change type:', changeType);
-console.log('Next ai_state:', nextAiState);
+    console.log('Previous ai_state:', previousAiState);
+    console.log('Incoming signals:', incomingSignals);
+    console.log('Change type:', changeType);
+    console.log('Next ai_state:', nextAiState);
 
-await saveConversationState(conversationId, nextAiState);
+    await saveConversationState(conversationId, nextAiState);
 
-let matchedProperties = [];
+    let matchedProperties = [];
 
-if (shouldRunPropertySearch(previousAiState, nextAiState)) {
-  console.log('4. Buscando propiedades reales...');
-  matchedProperties = await searchProperties({
-    operationType: nextAiState.operation_type,
-    location: nextAiState.location_text,
-    maxPrice: nextAiState.budget_max,
-    bedrooms: nextAiState.bedrooms,
-    propertyType: nextAiState.property_type,
-    limit: 3
-  });
+    if (shouldRunPropertySearch(previousAiState, nextAiState)) {
+      console.log('4. Buscando propiedades reales...');
+      matchedProperties = await searchProperties({
+        operationType: nextAiState.operation_type,
+        location: nextAiState.location_text,
+        maxPrice: nextAiState.budget_max,
+        bedrooms: nextAiState.bedrooms,
+        propertyType: nextAiState.property_type,
+        limit: 3
+      });
 
-  console.log('Propiedades encontradas:', matchedProperties.length);
+      console.log('Propiedades encontradas:', matchedProperties.length);
 
-  nextAiState.needs_fresh_search = false;
-  nextAiState.last_search_filters = {
-    operation_type: nextAiState.operation_type,
-    location_text: nextAiState.location_text,
-    budget_min: nextAiState.budget_min,
-    budget_max: nextAiState.budget_max,
-    bedrooms: nextAiState.bedrooms,
-    property_type: nextAiState.property_type
-  };
-  nextAiState.last_search_result_count = matchedProperties.length;
-  nextAiState.last_shown_property_ids = matchedProperties.map((p) => p.id);
+      nextAiState.needs_fresh_search = false;
+      nextAiState.last_search_filters = {
+        operation_type: nextAiState.operation_type,
+        location_text: nextAiState.location_text,
+        budget_min: nextAiState.budget_min,
+        budget_max: nextAiState.budget_max,
+        bedrooms: nextAiState.bedrooms,
+        property_type: nextAiState.property_type
+      };
+      nextAiState.last_search_result_count = matchedProperties.length;
+      nextAiState.last_shown_property_ids = matchedProperties.map((p) => p.id);
 
-  await saveConversationState(conversationId, nextAiState);
-}
+      await saveConversationState(conversationId, nextAiState);
+    }
 
     let reply = null;
 
@@ -913,14 +836,14 @@ if (shouldRunPropertySearch(previousAiState, nextAiState)) {
           content: `Usa únicamente estas propiedades reales si decides compartir opciones.\n${inventoryContext}`
         },
         {
-  role: 'system',
-  content: `Estado conversacional actual del cliente:
+          role: 'system',
+          content: `Estado conversacional actual del cliente:
 ${JSON.stringify(nextAiState, null, 2)}`
-},
-{
-  role: 'system',
-  content: `Tipo de cambio detectado en este mensaje: ${changeType}`
-},
+        },
+        {
+          role: 'system',
+          content: `Tipo de cambio detectado en este mensaje: ${changeType}`
+        },
         { role: 'user', content: text }
       ];
 
@@ -938,14 +861,14 @@ ${JSON.stringify(nextAiState, null, 2)}`
         { role: 'system', content: systemPrompt },
         ...previousMessages,
         {
-  role: 'system',
-  content: `Estado conversacional actual del cliente:
+          role: 'system',
+          content: `Estado conversacional actual del cliente:
 ${JSON.stringify(nextAiState, null, 2)}`
-},
-{
-  role: 'system',
-  content: `Tipo de cambio detectado en este mensaje: ${changeType}`
-},
+        },
+        {
+          role: 'system',
+          content: `Tipo de cambio detectado en este mensaje: ${changeType}`
+        },
         { role: 'user', content: text }
       ];
 
@@ -1012,6 +935,6 @@ ${JSON.stringify(nextAiState, null, 2)}`
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor corriendo en puerto ${PORT} 🚀`);
 });
