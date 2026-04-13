@@ -156,11 +156,15 @@ function extractPropertyType(message) {
   return null;
 }
 
-function extractLocation(message) {
+function extractLocation(message, prevState = null) {
   const text = normalizeText(message);
 
   for (const [needle, normalized] of Object.entries(KNOWN_LOCATIONS)) {
     if (text.includes(needle)) return normalized;
+  }
+
+  if (prevState?.awaiting_field === 'location_text') {
+    return cleanSpaces(message);
   }
 
   return null;
@@ -206,7 +210,6 @@ function extractBedrooms(message) {
   let match = text.match(/(\d+)\s*(rec[aá]maras?|habitaciones?)/i);
   if (match) return Number(match[1]);
 
-  // Respuestas cortas tipo: "3" o "sí, 3"
   match = text.match(/\b(\d+)\b/);
   if (match && text.length <= 10) return Number(match[1]);
 
@@ -242,7 +245,11 @@ function detectContextualSignals(message, prevState) {
   const awaitingField = prevState?.awaiting_field || null;
 
   const signals = {
-    answer_affirmative: text === 'si' || text === 'sí' || text.startsWith('sí,') || text.startsWith('si,'),
+    answer_affirmative:
+      text === 'si' ||
+      text === 'sí' ||
+      text.startsWith('sí,') ||
+      text.startsWith('si,'),
     answer_negative: text === 'no',
     answer_any:
       text.includes('no importa') ||
@@ -308,8 +315,12 @@ function normalizeAiState(rawState) {
   return {
     ...base,
     ...rawState,
-    must_have_features: Array.isArray(rawState.must_have_features) ? rawState.must_have_features : [],
-    last_shown_property_ids: Array.isArray(rawState.last_shown_property_ids) ? rawState.last_shown_property_ids : [],
+    must_have_features: Array.isArray(rawState.must_have_features)
+      ? rawState.must_have_features
+      : [],
+    last_shown_property_ids: Array.isArray(rawState.last_shown_property_ids)
+      ? rawState.last_shown_property_ids
+      : [],
   };
 }
 
@@ -321,7 +332,7 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
     lead_flow: intent.leadType || null,
     operation_type: intent.operationType || null,
     property_type: extractPropertyType(message),
-    location_text: extractLocation(message),
+    location_text: extractLocation(message, prevState),
     budget_max: extractMaxPrice(message),
     bedrooms: extractBedrooms(message),
     bathrooms: extractBathrooms(message),
@@ -384,8 +395,10 @@ function detectStateChange(prevState, signals) {
     (signals.operation_type && !prev.operation_type) ||
     (signals.property_type && !prev.property_type) ||
     (signals.location_text && !prev.location_text) ||
-    ((signals.budget_max !== null && signals.budget_max !== undefined) && (prev.budget_max === null || prev.budget_max === undefined)) ||
-    ((signals.bedrooms !== null && signals.bedrooms !== undefined) && (prev.bedrooms === null || prev.bedrooms === undefined)) ||
+    ((signals.budget_max !== null && signals.budget_max !== undefined) &&
+      (prev.budget_max === null || prev.budget_max === undefined)) ||
+    ((signals.bedrooms !== null && signals.bedrooms !== undefined) &&
+      (prev.bedrooms === null || prev.bedrooms === undefined)) ||
     (signals.contact_preference && !prev.contact_preference);
 
   if (appended) {
@@ -743,12 +756,12 @@ function buildOfferReply(state, changeType) {
 
   if (state.budget_max === null || state.budget_max === undefined) {
     return `${ack}
-¿Cuál es tu precio estimado de venta o renta?`;
+¿Cuál es tu precio estimado de venta?`;
   }
 
   return `${ack}
-Con esos datos ya puedo perfilar el caso.
-¿Quieres que te contacte un asesor por WhatsApp?`;
+Perfecto, con eso avanzamos.
+¿Prefieres que te contacte por WhatsApp o llamada?`;
 }
 
 async function buildFallbackOpenAIReply(text, state, changeType) {
