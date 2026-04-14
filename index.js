@@ -11,10 +11,31 @@ app.use(express.json({ limit: '10mb' }));
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'luxetty_token';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-5-mini';
-const LOCATION_CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
+const LOCATION_CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_SHORT_MEMORY_MESSAGES = 8;
 const DEFAULT_PROPERTY_LIMIT = 3;
-const SEARCH_BUDGET_FALLBACK_MULTIPLIER = 1.2;
+const SEARCH_BUDGET_FALLBACK_MULTIPLIER = 1.15;
+
+const DEMAND_MIN_SALE_MXN = 3000000;
+const DEMAND_MIN_RENT_MXN = 10000;
+const OFFER_MIN_SALE_MXN = 3000000;
+const OFFER_MIN_RENT_MXN = 10000;
+
+const CAPTURE_ALLOWED_AREAS = [
+  'monterrey',
+  'cumbres',
+  'garcia',
+  'garcía',
+  'san pedro',
+  'san pedro garza garcia',
+  'san pedro garza garcía',
+  'carretera nacional',
+  'guadalupe',
+  'san nicolas',
+  'san nicolas',
+  'apodaca',
+  'santa catarina',
+];
 
 console.log('ENV CHECK:', {
   SUPABASE_URL: !!process.env.SUPABASE_URL,
@@ -33,34 +54,28 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Memoria corta de fallback conversacional (solo chitchat / mensajes ambiguos)
 const conversations = new Map();
 
-// Catálogo dinámico de ubicaciones del sistema
 const locationCatalog = {
   loadedAt: 0,
   rawNames: [],
-  normalizedMap: new Map(), // normalized -> canonical
+  normalizedMap: new Map(),
 };
 
 const SYSTEM_PROMPT = `
-Eres el asesor conversacional premium de Luxetty.
+Eres Luxetty IA, asistente inmobiliario premium de Luxetty Real Estate.
 
 Reglas no negociables:
-- Responde corto, amable, claro y elegante.
+- Responde breve, amable, profesional y natural.
 - Máximo una pregunta por mensaje.
-- Nunca inventes propiedades, precios, ubicaciones, disponibilidad, amenidades, recámaras, baños ni links.
-- Solo puedes ofrecer propiedades reales encontradas en el sistema en el turno actual.
-- Nunca reutilices propiedades viejas si en el turno actual no llegaron resultados reales.
-- Nunca envíes URLs técnicas de storage, CDN, Supabase o rutas internas.
-- Si existe landing pública, usa solo esa URL pública.
-- Si el usuario quiere fotos, indícale que vea la galería en la landing.
-- Si el usuario cambia zona, operación o tipo de propiedad, reconoce el cambio y continúa con la nueva búsqueda.
-- Si cambia de buscar a vender o de vender a buscar, cambia completamente de flujo.
-- Si no hay coincidencias exactas, ofrece ampliar búsqueda o escalar con un asesor.
-- Si el usuario quiere vender o poner en renta, capta la propiedad con trato premium.
-- No hagas textos largos.
-- No repitas saludo si ya hay contexto.
+- Nunca inventes propiedades, precios, ubicaciones, disponibilidad, links, amenidades o datos técnicos.
+- Solo puedes ofrecer propiedades reales encontradas en el sistema en este turno.
+- Solo usa links públicos de Luxetty: https://luxetty.com
+- Nunca envíes links técnicos de storage, supabase, cdn o internos.
+- Si no hay coincidencia exacta, dilo con tacto y ofrece ampliar búsqueda o pasar con asesor.
+- Si el usuario quiere vender o poner en renta, filtra, califica y lleva a seguimiento humano.
+- Si ya quedó listo para seguimiento humano, confirma el siguiente paso y no entres en loop.
+- No envíes resúmenes internos al prospecto.
 `;
 
 function normalizeText(value) {
@@ -76,7 +91,11 @@ function cleanSpaces(value) {
 }
 
 function uniq(arr) {
-  return [...new Set(arr.filter(Boolean))];
+  return [...new Set((arr || []).filter(Boolean))];
+}
+
+function nowIso() {
+  return new Date().toISOString();
 }
 
 function safeJsonStringify(value) {
@@ -87,43 +106,82 @@ function safeJsonStringify(value) {
   }
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function toBoolean(value) {
-  return value === true;
-}
-
-function hasQuestion(text) {
-  return (text || '').includes('?') || (text || '').includes('¿');
-}
-
-function capFirst(text) {
-  if (!text) return text;
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
 function formatMoney(amount, currencyCode = 'MXN') {
   if (amount == null) return 'Precio por confirmar';
   return `$${Number(amount).toLocaleString('es-MX')} ${currencyCode}`;
 }
 
+function formatOperationLabel(operationType) {
+  if (operationType === 'sale') return 'compra';
+  if (operationType === 'rent') return 'renta';
+  return 'operación';
+}
+
+function formatPropertyTypeLabel(propertyType) {
+  const labels = {
+    house: 'casa',
+    apartment: 'departamento',
+    land: 'terreno',
+    office: 'oficina',
+    commercial: 'local comercial',
+    warehouse: 'nave',
+  };
+  return labels[propertyType] || propertyType || 'propiedad';
+}
+
+function isGreetingOnly(text) {
+  const t = normalizeText(text);
+  const greetings = [
+    'hola',
+    'buenas',
+    'buenos dias',
+    'buenos días',
+    'buenas tardes',
+    'buenas noches',
+    'hello',
+    'hi',
+  ];
+  return greetings.includes(t);
+}
+
+function isClosureCheck(text) {
+  const t = normalizeText(text);
+  return (
+    t.includes('es todo') ||
+    t.includes('algo mas') ||
+    t.includes('algo más') ||
+    t === 'bueno' ||
+    t === 'ok' ||
+    t === 'gracias' ||
+    t === 'listo'
+  );
+}
+
 function getDefaultAiState() {
   return {
-    lead_flow: null, // 'demand' | 'offer'
-    operation_type: null, // 'sale' | 'rent'
-    property_type: null, // house | apartment | land | office | commercial | warehouse
+    lead_flow: null,
+    operation_type: null,
+    property_type: null,
+
     location_text: null,
+    matched_location_from_catalog: null,
     location_any: false,
+
     budget_min: null,
     budget_max: null,
+    budget_currency: null,
+
     bedrooms: null,
     bedrooms_any: false,
     bathrooms: null,
+
     must_have_features: [],
     timeline_text: null,
-    contact_preference: null, // whatsapp | call | any
+    urgency_level: null,
+
+    full_name: null,
+    owner_relation: null,
+    contact_preference: null,
     contact_number_confirmed: null,
 
     awaiting_field: null,
@@ -135,11 +193,17 @@ function getDefaultAiState() {
     last_search_result_count: 0,
     last_shown_property_ids: [],
 
-    // Nuevo
     wants_human: false,
-    user_goal: null, // 'search_property' | 'capture_property' | 'browse' | null
-    confidence: 'low', // low | medium | high
-    matched_location_from_catalog: null,
+    user_goal: null,
+    confidence: 'low',
+
+    geo_qualified: null,
+    value_qualified: null,
+    capture_qualified: null,
+
+    handoff_ready: false,
+    handoff_sent: false,
+    closing_message_sent: false,
   };
 }
 
@@ -221,12 +285,10 @@ function findCanonicalLocation(rawText) {
 
   if (!text) return null;
 
-  // match exact
   if (locationCatalog.normalizedMap.has(text)) {
     return locationCatalog.normalizedMap.get(text);
   }
 
-  // match contains
   for (const [normalized, canonical] of locationCatalog.normalizedMap.entries()) {
     if (text.includes(normalized) || normalized.includes(text)) {
       return canonical;
@@ -275,11 +337,11 @@ function detectIntent(message, prevState = null) {
     text.includes('busco departamento') ||
     text.includes('busco terreno') ||
     text.includes('comprar') ||
-    text.includes('compra');
+    text.includes('compra') ||
+    text.includes('busco una propiedad');
 
   const implicitDemand =
     text.includes('tienes propiedades') ||
-    text.includes('tiene propiedades') ||
     text.includes('que propiedades tienes') ||
     text.includes('qué propiedades tienes') ||
     text.includes('que tienes') ||
@@ -311,11 +373,7 @@ function detectIntent(message, prevState = null) {
     text.includes('agente') ||
     text.includes('persona') ||
     text.includes('humano') ||
-    text.includes('marquenme') ||
-    text.includes('marquenme') ||
     text.includes('marquen') ||
-    text.includes('llamenme') ||
-    text.includes('llámenme') ||
     text.includes('llamen') ||
     text.includes('llamada') ||
     text.includes('contactenme') ||
@@ -324,10 +382,9 @@ function detectIntent(message, prevState = null) {
 
   const hasPriceExpressions =
     text.includes('millones') ||
-    text.includes('m ') ||
     text.endsWith('m') ||
     text.includes('$') ||
-    /\b\d{6,8}\b/.test(text);
+    /\b\d{4,8}\b/.test(text);
 
   let leadType = null;
   let operationType = null;
@@ -357,20 +414,13 @@ function detectIntent(message, prevState = null) {
   if (!operationType) {
     if (leadType === 'demand' && hasPriceExpressions) {
       operationType = 'sale';
-    } else if (leadType === 'demand' && prev.operation_type) {
-      operationType = prev.operation_type;
-    } else if (leadType === 'offer' && prev.operation_type) {
+    } else if (leadType && prev.operation_type) {
       operationType = prev.operation_type;
     }
   }
 
-  if (!operationType && text.includes('renta')) {
-    operationType = 'rent';
-  }
-
-  if (!operationType && text.includes('venta')) {
-    operationType = 'sale';
-  }
+  if (!operationType && text.includes('renta')) operationType = 'rent';
+  if (!operationType && text.includes('venta')) operationType = 'sale';
 
   return { leadType, operationType, wantsHuman };
 }
@@ -392,14 +442,40 @@ function extractPropertyType(message) {
 function extractLocation(message, prevState = null) {
   const text = normalizeText(message);
 
-  // Buscar primero una ubicación conocida del catálogo
   for (const [normalized, canonical] of locationCatalog.normalizedMap.entries()) {
     if (text.includes(normalized)) return canonical;
   }
 
-  // Si el sistema está esperando ubicación, usar el texto limpio
   if (prevState?.awaiting_field === 'location_text') {
     return cleanSpaces(message);
+  }
+
+  return null;
+}
+
+function extractBudgetCurrency(message) {
+  const text = normalizeText(message);
+
+  if (
+    text.includes('usd') ||
+    text.includes('dolares') ||
+    text.includes('dólares') ||
+    text.includes('dlls') ||
+    text.includes('us dollars')
+  ) {
+    return 'USD';
+  }
+
+  if (
+    text.includes('mxn') ||
+    text.includes('pesos') ||
+    text.includes('millon') ||
+    text.includes('millón') ||
+    text.includes('millones') ||
+    text.includes('$') ||
+    /\b\d{4,8}\b/.test(text)
+  ) {
+    return 'MXN';
   }
 
   return null;
@@ -439,7 +515,7 @@ function extractMaxPrice(message) {
     if (text.includes(needle)) return value;
   }
 
-  const numberMatch = text.match(/\$?\s*([\d,]{6,10})\s*(mxn|pesos)?/i);
+  const numberMatch = text.match(/\$?\s*([\d,]{4,10})\s*(mxn|pesos|usd|dolares|dólares)?/i);
   if (numberMatch) {
     return Number(numberMatch[1].replace(/,/g, ''));
   }
@@ -474,13 +550,82 @@ function detectContactPreference(message) {
   if (
     text.includes('no importa') ||
     text.includes('da igual') ||
-    text.includes('cualquiera') ||
-    text.includes('sin importar el canal')
+    text.includes('cualquiera')
   ) {
     return 'any';
   }
 
   return null;
+}
+
+function extractPossibleName(message, prevState = null) {
+  const raw = cleanSpaces(message);
+  const text = normalizeText(message);
+
+  const patterns = [
+    /me llamo\s+([a-záéíóúñ\s]+)/i,
+    /soy\s+([a-záéíóúñ\s]+)/i,
+    /mi nombre es\s+([a-záéíóúñ\s]+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (match?.[1]) {
+      return cleanSpaces(match[1]).replace(/[.,!?]+$/g, '');
+    }
+  }
+
+  if (prevState?.awaiting_field === 'full_name') {
+    if (
+      raw.length >= 3 &&
+      raw.length <= 80 &&
+      !/\d/.test(raw) &&
+      !text.includes('comprar') &&
+      !text.includes('rentar') &&
+      !text.includes('vender') &&
+      !text.includes('whatsapp') &&
+      !text.includes('llamada')
+    ) {
+      return raw.replace(/[.,!?]+$/g, '');
+    }
+  }
+
+  return null;
+}
+
+function detectOwnerRelation(message) {
+  const text = normalizeText(message);
+
+  if (
+    text.includes('es mia') ||
+    text.includes('es mía') ||
+    text.includes('es mi propiedad') ||
+    text.includes('es propia') ||
+    text.includes('soy el propietario') ||
+    text.includes('soy la propietaria')
+  ) {
+    return 'owner';
+  }
+
+  if (
+    text.includes('ayudo a alguien') ||
+    text.includes('de un familiar') ||
+    text.includes('de mi mama') ||
+    text.includes('de mi mamá') ||
+    text.includes('de mi papa') ||
+    text.includes('de mi papá') ||
+    text.includes('de un amigo') ||
+    text.includes('de un cliente')
+  ) {
+    return 'representative';
+  }
+
+  return null;
+}
+
+function extractPhoneNumber(message) {
+  const match = (message || '').replace(/[^\d+]/g, '').match(/(\+?\d{10,15})/);
+  return match ? match[1] : null;
 }
 
 function detectContextualSignals(message, prevState) {
@@ -492,7 +637,8 @@ function detectContextualSignals(message, prevState) {
       text === 'si' ||
       text === 'sí' ||
       text.startsWith('sí,') ||
-      text.startsWith('si,'),
+      text.startsWith('si,') ||
+      text === 'correcto',
     answer_negative: text === 'no',
     answer_any:
       text.includes('no importa') ||
@@ -501,6 +647,7 @@ function detectContextualSignals(message, prevState) {
       text.includes('cualquiera'),
     location_any: false,
     bedrooms_any: false,
+    contact_number_confirmed: null,
   };
 
   if (awaitingField === 'bedrooms' && signals.answer_any) {
@@ -515,6 +662,11 @@ function detectContextualSignals(message, prevState) {
 
   if (awaitingField === 'contact_preference' && signals.answer_any) {
     signals.contact_preference = 'any';
+  }
+
+  if (awaitingField === 'contact_number_confirmed') {
+    if (signals.answer_affirmative) signals.contact_number_confirmed = true;
+    if (signals.answer_negative) signals.contact_number_confirmed = false;
   }
 
   return signals;
@@ -532,9 +684,13 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
   const propertyType = extractPropertyType(message);
   const locationText = extractLocation(message, prevState);
   const budgetMax = extractMaxPrice(message);
+  const budgetCurrency = extractBudgetCurrency(message);
   const bedrooms = extractBedrooms(message);
   const bathrooms = extractBathrooms(message);
   const contactPreference = detectContactPreference(message);
+  const fullName = extractPossibleName(message, prevState);
+  const ownerRelation = detectOwnerRelation(message);
+  const betterPhone = prevState?.awaiting_field === 'contact_number' ? extractPhoneNumber(message) : null;
 
   let confidence = 'low';
   const filledCount = [
@@ -543,12 +699,14 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
     propertyType,
     locationText,
     budgetMax,
+    budgetCurrency,
     bedrooms,
-    bathrooms,
+    fullName,
+    ownerRelation,
   ].filter((v) => v !== null && v !== undefined).length;
 
-  if (filledCount >= 4) confidence = 'high';
-  else if (filledCount >= 2) confidence = 'medium';
+  if (filledCount >= 5) confidence = 'high';
+  else if (filledCount >= 3) confidence = 'medium';
 
   return {
     lead_flow: intent.leadType || null,
@@ -556,9 +714,13 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
     property_type: propertyType,
     location_text: locationText,
     budget_max: budgetMax,
+    budget_currency: budgetCurrency,
     bedrooms,
     bathrooms,
     contact_preference: contactPreference,
+    full_name: fullName,
+    owner_relation: ownerRelation,
+    better_phone: betterPhone,
     wants_human: !!intent.wantsHuman,
     user_goal: inferUserGoal(intent.leadType),
     confidence,
@@ -575,9 +737,7 @@ function detectStateChange(prevState, signals) {
     prev.lead_flow &&
     signals.lead_flow !== prev.lead_flow;
 
-  if (flowChanged) {
-    return 'restart_flow';
-  }
+  if (flowChanged) return 'restart_flow';
 
   const operationChanged =
     signals.operation_type &&
@@ -605,31 +765,7 @@ function detectStateChange(prevState, signals) {
     prev.budget_max !== undefined &&
     signals.budget_max !== prev.budget_max;
 
-  const bedroomsChanged =
-    signals.bedrooms !== null &&
-    signals.bedrooms !== undefined &&
-    prev.bedrooms !== null &&
-    prev.bedrooms !== undefined &&
-    signals.bedrooms !== prev.bedrooms;
-
-  if (budgetChanged || bedroomsChanged || signals.bedrooms_any) {
-    return 'minor_update';
-  }
-
-  const appended =
-    (signals.lead_flow && !prev.lead_flow) ||
-    (signals.operation_type && !prev.operation_type) ||
-    (signals.property_type && !prev.property_type) ||
-    (signals.location_text && !prev.location_text) ||
-    ((signals.budget_max !== null && signals.budget_max !== undefined) &&
-      (prev.budget_max === null || prev.budget_max === undefined)) ||
-    ((signals.bedrooms !== null && signals.bedrooms !== undefined) &&
-      (prev.bedrooms === null || prev.bedrooms === undefined)) ||
-    (signals.contact_preference && !prev.contact_preference);
-
-  if (appended) {
-    return 'append_info';
-  }
+  if (budgetChanged || signals.bedrooms_any) return 'minor_update';
 
   return 'append_info';
 }
@@ -645,10 +781,12 @@ function buildNextState(prevState, signals, changeType) {
       operation_type: signals.operation_type || null,
       property_type: signals.property_type || null,
       location_text: signals.location_text || null,
+      matched_location_from_catalog: signals.matched_location_from_catalog || null,
       budget_max:
         signals.budget_max !== null && signals.budget_max !== undefined
           ? signals.budget_max
           : null,
+      budget_currency: signals.budget_currency || null,
       bedrooms:
         signals.bedrooms !== null && signals.bedrooms !== undefined
           ? signals.bedrooms
@@ -662,7 +800,10 @@ function buildNextState(prevState, signals, changeType) {
       wants_human: !!signals.wants_human,
       user_goal: signals.user_goal || null,
       confidence: signals.confidence || 'low',
-      matched_location_from_catalog: signals.matched_location_from_catalog || null,
+      full_name: signals.full_name || null,
+      owner_relation: signals.owner_relation || null,
+      contact_preference: signals.contact_preference || null,
+      contact_number_confirmed: signals.contact_number_confirmed,
       intent_version: (prev.intent_version || 1) + 1,
     };
   } else {
@@ -675,10 +816,13 @@ function buildNextState(prevState, signals, changeType) {
         signals.location_text !== null && signals.location_text !== undefined
           ? signals.location_text
           : prev.location_text,
+      matched_location_from_catalog:
+        signals.matched_location_from_catalog || prev.matched_location_from_catalog,
       budget_max:
         signals.budget_max !== null && signals.budget_max !== undefined
           ? signals.budget_max
           : prev.budget_max,
+      budget_currency: signals.budget_currency || prev.budget_currency,
       bedrooms:
         signals.bedrooms !== null && signals.bedrooms !== undefined
           ? signals.bedrooms
@@ -687,12 +831,16 @@ function buildNextState(prevState, signals, changeType) {
         signals.bathrooms !== null && signals.bathrooms !== undefined
           ? signals.bathrooms
           : prev.bathrooms,
+      full_name: signals.full_name || prev.full_name,
+      owner_relation: signals.owner_relation || prev.owner_relation,
       contact_preference: signals.contact_preference || prev.contact_preference,
+      contact_number_confirmed:
+        signals.contact_number_confirmed !== null && signals.contact_number_confirmed !== undefined
+          ? signals.contact_number_confirmed
+          : prev.contact_number_confirmed,
       wants_human: prev.wants_human || !!signals.wants_human,
       user_goal: signals.user_goal || prev.user_goal,
       confidence: signals.confidence || prev.confidence,
-      matched_location_from_catalog:
-        signals.matched_location_from_catalog || prev.matched_location_from_catalog,
       location_any: prev.location_any,
       bedrooms_any: prev.bedrooms_any,
     };
@@ -712,6 +860,9 @@ function buildNextState(prevState, signals, changeType) {
       next.last_shown_property_ids = [];
       next.last_search_filters = null;
       next.last_search_result_count = 0;
+      next.handoff_ready = false;
+      next.handoff_sent = false;
+      next.closing_message_sent = false;
     }
   }
 
@@ -719,15 +870,39 @@ function buildNextState(prevState, signals, changeType) {
   return next;
 }
 
-function hasSearchableDemandState(state) {
+function qualifiesDemandValue(state) {
+  if (state.operation_type === 'sale' && state.budget_max != null) {
+    return Number(state.budget_max) >= DEMAND_MIN_SALE_MXN;
+  }
+  if (state.operation_type === 'rent' && state.budget_max != null) {
+    return Number(state.budget_max) >= DEMAND_MIN_RENT_MXN;
+  }
+  return true;
+}
+
+function qualifiesOfferGeo(locationText) {
+  if (!locationText) return null;
+  const normalized = normalizeText(locationText);
+  return CAPTURE_ALLOWED_AREAS.some((term) => normalized.includes(term));
+}
+
+function qualifiesOfferValue(state) {
+  if (state.operation_type === 'sale' && state.budget_max != null) {
+    return Number(state.budget_max) >= OFFER_MIN_SALE_MXN;
+  }
+  if (state.operation_type === 'rent' && state.budget_max != null) {
+    return Number(state.budget_max) >= OFFER_MIN_RENT_MXN;
+  }
+  return null;
+}
+
+function hasDemandSearchableState(state) {
   return (
     state.lead_flow === 'demand' &&
     !!state.operation_type &&
-    (!!state.location_text ||
-      state.location_any ||
-      !!state.budget_max ||
-      !!state.property_type ||
-      !!state.bedrooms)
+    (!!state.location_text || state.location_any) &&
+    state.budget_max != null &&
+    !!state.budget_currency
   );
 }
 
@@ -735,7 +910,7 @@ function shouldRunPropertySearch(prevState, nextState) {
   const prev = normalizeAiState(prevState);
   const next = normalizeAiState(nextState);
 
-  if (!hasSearchableDemandState(next)) return false;
+  if (!hasDemandSearchableState(next)) return false;
   if (next.lead_flow !== 'demand') return false;
 
   return (
@@ -744,6 +919,7 @@ function shouldRunPropertySearch(prevState, nextState) {
     prev.property_type !== next.property_type ||
     prev.location_text !== next.location_text ||
     prev.budget_max !== next.budget_max ||
+    prev.budget_currency !== next.budget_currency ||
     prev.bedrooms !== next.bedrooms ||
     prev.bathrooms !== next.bathrooms ||
     prev.location_any !== next.location_any ||
@@ -752,58 +928,42 @@ function shouldRunPropertySearch(prevState, nextState) {
   );
 }
 
-function setAwaitingField(state, matchedProperties) {
-  const next = { ...state };
+function propertyMatchesLocation(property, locationText) {
+  if (!locationText) return true;
+  const needle = normalizeText(locationText);
+  const hay = [
+    property.zone,
+    property.neighborhood,
+    property.city,
+    property.municipality,
+    property.state,
+    property.formatted_address,
+  ]
+    .filter(Boolean)
+    .map(normalizeText)
+    .join(' | ');
 
-  if (next.lead_flow === 'demand') {
-    if (!next.location_any && !next.location_text) {
-      next.awaiting_field = 'location_text';
-      return next;
-    }
+  return hay.includes(needle);
+}
 
-    if (matchedProperties.length > 0) {
-      next.awaiting_field = 'contact_preference';
-      return next;
-    }
-
-    if ((next.bedrooms === null || next.bedrooms === undefined) && !next.bedrooms_any) {
-      next.awaiting_field = 'bedrooms';
-      return next;
-    }
-
-    next.awaiting_field = 'contact_preference';
-    return next;
-  }
-
-  if (next.lead_flow === 'offer') {
-    if (!next.location_text) {
-      next.awaiting_field = 'location_text';
-      return next;
-    }
-
-    if (next.budget_max === null || next.budget_max === undefined) {
-      next.awaiting_field = 'price_estimate';
-      return next;
-    }
-
-    next.awaiting_field = 'contact_preference';
-    return next;
-  }
-
-  next.awaiting_field = null;
-  return next;
+function propertyMatchesCurrency(property, currency) {
+  if (!currency) return true;
+  return normalizeText(property.currency_code || 'MXN') === normalizeText(currency);
 }
 
 function getPublicPropertyUrl(property) {
   if (!property) return null;
 
-  if (property.listing_url && /^https?:\/\//i.test(property.listing_url)) {
+  if (
+    property.listing_url &&
+    /^https:\/\/luxetty\.com/i.test(property.listing_url)
+  ) {
     return property.listing_url;
   }
 
   if (
     property.canonical_url &&
-    /^https?:\/\//i.test(property.canonical_url) &&
+    /^https:\/\/luxetty\.com/i.test(property.canonical_url) &&
     !property.canonical_url.includes('supabase.co/storage') &&
     !property.canonical_url.includes('/storage/v1/object/public/')
   ) {
@@ -827,25 +987,15 @@ function formatPropertyShort(property) {
     'Ubicación por confirmar';
 
   const extras = [];
-  if (property.bedrooms !== null && property.bedrooms !== undefined) {
-    extras.push(`${property.bedrooms} recámaras`);
-  }
-  if (property.bathrooms !== null && property.bathrooms !== undefined) {
-    extras.push(`${property.bathrooms} baños`);
-  }
-  if (property.parking_spaces !== null && property.parking_spaces !== undefined) {
-    extras.push(`${property.parking_spaces} cajones`);
-  }
+  if (property.bedrooms != null) extras.push(`${property.bedrooms} recámaras`);
+  if (property.bathrooms != null) extras.push(`${property.bathrooms} baños`);
+  if (property.parking_spaces != null) extras.push(`${property.parking_spaces} cajones`);
 
   const publicUrl = getPublicPropertyUrl(property);
 
   let text = `• ${title}\n${price}\n${location}`;
-  if (extras.length > 0) {
-    text += `\n${extras.join(' · ')}`;
-  }
-  if (publicUrl) {
-    text += `\nVer galería y detalles: ${publicUrl}`;
-  }
+  if (extras.length > 0) text += `\n${extras.join(' · ')}`;
+  if (publicUrl) text += `\nVer galería y detalles: ${publicUrl}`;
 
   return text;
 }
@@ -870,26 +1020,60 @@ function dedupePropertiesById(properties) {
 
 function filterOutPreviouslyShown(properties, state) {
   const shownIds = new Set(state.last_shown_property_ids || []);
-  const filtered = (properties || []).filter((p) => !shownIds.has(p.id));
-  return filtered;
+  return (properties || []).filter((p) => !shownIds.has(p.id));
+}
+
+function applyDemandResultGuards(properties, state) {
+  let rows = [...(properties || [])];
+
+  if (state.budget_currency) {
+    rows = rows.filter((p) => propertyMatchesCurrency(p, state.budget_currency));
+  }
+
+  if (state.location_text && !state.location_any) {
+    rows = rows.filter((p) => propertyMatchesLocation(p, state.location_text));
+  }
+
+  if (state.property_type) {
+    const desired = normalizeText(state.property_type);
+    rows = rows.filter((p) => {
+      const rawType = normalizeText(p.property_type || p.property_type_code || '');
+      if (!rawType) return true;
+      if (desired === 'house' && (rawType.includes('casa') || rawType.includes('house'))) return true;
+      if (desired === 'apartment' && (rawType.includes('depa') || rawType.includes('depart') || rawType.includes('apartment'))) return true;
+      if (desired === 'land' && (rawType.includes('terreno') || rawType.includes('land'))) return true;
+      if (desired === 'office' && (rawType.includes('oficina') || rawType.includes('office'))) return true;
+      if (desired === 'commercial' && (rawType.includes('local') || rawType.includes('commercial'))) return true;
+      if (desired === 'warehouse' && (rawType.includes('nave') || rawType.includes('warehouse'))) return true;
+      return true;
+    });
+  }
+
+  return rows;
 }
 
 async function saveConversationEvent(conversationId, type, payload = {}, createdBy = null) {
   try {
     if (!conversationId) return;
-
     const { error } = await supabase.from('conversation_events').insert({
       conversation_id: conversationId,
       type,
       payload,
       created_by: createdBy,
     });
-
-    if (error) {
-      console.error('Error saving conversation event:', error);
-    }
+    if (error) console.error('Error saving conversation event:', error);
   } catch (err) {
     console.error('FATAL saveConversationEvent:', err);
+  }
+}
+
+async function updateConversationMeta(conversationId, payload) {
+  try {
+    if (!conversationId) return;
+    const { error } = await supabase.from('conversations').update(payload).eq('id', conversationId);
+    if (error) console.error('Error updating conversation meta:', error);
+  } catch (err) {
+    console.error('FATAL updateConversationMeta:', err);
   }
 }
 
@@ -902,9 +1086,7 @@ async function saveConversationState(conversationId, nextState, aiSummary = null
       updated_at: nowIso(),
     };
 
-    if (aiSummary !== null) {
-      payload.ai_summary = aiSummary;
-    }
+    if (aiSummary !== null) payload.ai_summary = aiSummary;
 
     const { error } = await supabase
       .from('conversations')
@@ -972,8 +1154,7 @@ async function saveConversationMessage({
 
 async function savePropertySuggestions(conversationId, conversationMessageId, properties) {
   try {
-    if (!conversationId || !conversationMessageId) return;
-    if (!properties || properties.length === 0) return;
+    if (!conversationId || !conversationMessageId || !properties?.length) return;
 
     const rows = properties
       .filter((property) => property?.id)
@@ -984,15 +1165,13 @@ async function savePropertySuggestions(conversationId, conversationMessageId, pr
         position: index + 1,
       }));
 
-    if (rows.length === 0) return;
+    if (!rows.length) return;
 
     const { error } = await supabase
       .from('conversation_property_suggestions')
       .insert(rows);
 
-    if (error) {
-      console.error('Error saving property suggestions:', error);
-    }
+    if (error) console.error('Error saving property suggestions:', error);
   } catch (err) {
     console.error('FATAL savePropertySuggestions:', err);
   }
@@ -1018,7 +1197,6 @@ async function searchProperties({
       p_property_type: propertyType,
     });
 
-    // fallback si la RPC vieja no acepta property_type
     if (result.error) {
       result = await supabase.rpc('ai_search_properties', {
         p_operation_type: operationType,
@@ -1044,12 +1222,12 @@ async function searchProperties({
 
 async function searchPropertiesWithFallbacks(state) {
   const attempts = [];
-  const seenAttemptKeys = new Set();
+  const seen = new Set();
 
   function pushAttempt(attempt) {
     const key = JSON.stringify(attempt);
-    if (!seenAttemptKeys.has(key)) {
-      seenAttemptKeys.add(key);
+    if (!seen.has(key)) {
+      seen.add(key);
       attempts.push(attempt);
     }
   }
@@ -1100,24 +1278,12 @@ async function searchPropertiesWithFallbacks(state) {
     });
   }
 
-  if (state.location_text) {
-    pushAttempt({
-      operationType: state.operation_type,
-      location: null,
-      minPrice: state.budget_min,
-      maxPrice: state.budget_max,
-      bedrooms: null,
-      propertyType: state.property_type,
-      limit: DEFAULT_PROPERTY_LIMIT,
-      label: 'without_location',
-    });
-  }
-
   for (const attempt of attempts) {
     const rows = await searchProperties(attempt);
     const deduped = dedupePropertiesById(rows);
-    const fresh = filterOutPreviouslyShown(deduped, state);
-    const usable = fresh.length > 0 ? fresh : deduped;
+    const guarded = applyDemandResultGuards(deduped, state);
+    const fresh = filterOutPreviouslyShown(guarded, state);
+    const usable = fresh.length > 0 ? fresh : guarded;
 
     if (usable.length > 0) {
       return {
@@ -1136,63 +1302,33 @@ async function searchPropertiesWithFallbacks(state) {
 function buildAiSummary(state, properties = []) {
   const parts = [];
 
+  if (state.full_name) parts.push(`Nombre: ${state.full_name}.`);
+
   if (state.lead_flow === 'demand') {
-    parts.push(`Cliente buscando ${state.operation_type === 'rent' ? 'renta' : 'compra'}.`);
+    parts.push(`Lead buscando ${state.operation_type === 'rent' ? 'renta' : 'compra'}.`);
   } else if (state.lead_flow === 'offer') {
-    parts.push(`Cliente quiere ${state.operation_type === 'rent' ? 'poner en renta' : 'vender'} su propiedad.`);
+    parts.push(`Lead quiere ${state.operation_type === 'rent' ? 'poner en renta' : 'vender'} su propiedad.`);
   }
 
-  if (state.property_type) {
-    const labels = {
-      house: 'casa',
-      apartment: 'departamento',
-      land: 'terreno',
-      office: 'oficina',
-      commercial: 'local comercial',
-      warehouse: 'nave',
-    };
-    parts.push(`Tipo: ${labels[state.property_type] || state.property_type}.`);
-  }
+  if (state.property_type) parts.push(`Tipo: ${formatPropertyTypeLabel(state.property_type)}.`);
+  if (state.location_text) parts.push(`Ubicación: ${state.location_text}.`);
+  if (state.budget_max) parts.push(`Monto: ${formatMoney(state.budget_max, state.budget_currency || 'MXN')}.`);
+  if (state.owner_relation) parts.push(`Relación con propiedad: ${state.owner_relation}.`);
+  if (state.contact_preference) parts.push(`Canal preferido: ${state.contact_preference}.`);
+  if (state.timeline_text) parts.push(`Tiempo: ${state.timeline_text}.`);
 
-  if (state.location_text) {
-    parts.push(`Ubicación: ${state.location_text}.`);
-  }
-
-  if (state.budget_max) {
-    parts.push(`Presupuesto máximo: ${formatMoney(state.budget_max)}.`);
-  }
-
-  if (state.bedrooms) {
-    parts.push(`Mínimo ${state.bedrooms} recámaras.`);
-  }
-
-  if (state.contact_preference) {
-    parts.push(`Canal preferido: ${state.contact_preference}.`);
-  }
-
-  if (properties.length > 0) {
-    parts.push(`Resultados actuales: ${properties.length}.`);
-  } else if (state.last_search_result_count === 0 && state.lead_flow === 'demand') {
-    parts.push('Sin resultados exactos en la última búsqueda.');
-  }
+  if (properties.length > 0) parts.push(`Resultados actuales: ${properties.length}.`);
+  else if (state.last_search_result_count === 0 && state.lead_flow === 'demand') parts.push('Sin resultados exactos en última búsqueda.');
 
   return parts.join(' ').trim() || null;
 }
 
 function getChangeAcknowledgement(changeType, state) {
   if (changeType === 'restart_flow') {
-    if (state.lead_flow === 'offer' && state.operation_type === 'sale') {
-      return 'Perfecto, ahora te apoyo con la venta.';
-    }
-    if (state.lead_flow === 'offer' && state.operation_type === 'rent') {
-      return 'Perfecto, ahora te apoyo con ponerla en renta.';
-    }
-    if (state.lead_flow === 'demand' && state.operation_type === 'sale') {
-      return 'Perfecto, ahora te apoyo con la búsqueda de compra.';
-    }
-    if (state.lead_flow === 'demand' && state.operation_type === 'rent') {
-      return 'Perfecto, ahora te apoyo con la búsqueda de renta.';
-    }
+    if (state.lead_flow === 'offer' && state.operation_type === 'sale') return 'Perfecto, ahora te apoyo con la venta.';
+    if (state.lead_flow === 'offer' && state.operation_type === 'rent') return 'Perfecto, ahora te apoyo con ponerla en renta.';
+    if (state.lead_flow === 'demand' && state.operation_type === 'sale') return 'Perfecto, ahora te apoyo con la búsqueda de compra.';
+    if (state.lead_flow === 'demand' && state.operation_type === 'rent') return 'Perfecto, ahora te apoyo con la búsqueda de renta.';
   }
 
   if (changeType === 'radical_change') {
@@ -1201,20 +1337,70 @@ function getChangeAcknowledgement(changeType, state) {
     return 'Perfecto, actualizo la búsqueda.';
   }
 
-  if (changeType === 'minor_update') {
-    return 'Perfecto, lo actualizo.';
+  if (changeType === 'minor_update') return 'Perfecto, lo actualizo.';
+  return 'Perfecto.';
+}
+
+function buildDemandLowValueReply(state) {
+  if (state.operation_type === 'sale') {
+    return 'Por el momento estamos enfocados en opciones de compra desde $3,000,000 MXN. Si quieres, te oriento brevemente o te ayudo a ajustar la búsqueda.';
+  }
+  return 'Por el momento estamos enfocados en opciones de renta desde $10,000 MXN. Si quieres, te ayudo a ajustar la búsqueda.';
+}
+
+function buildOfferRejectedReply(state) {
+  if (state.geo_qualified === false) {
+    return 'Por el momento estamos enfocados en Monterrey, Cumbres, García, San Pedro, Carretera Nacional y zonas residenciales de alto valor en Guadalupe, San Nicolás, Apodaca y Santa Catarina.';
   }
 
-  return 'Perfecto.';
+  if (state.value_qualified === false) {
+    return 'Por el momento estamos enfocados en propiedades de mayor valor en ciertas zonas, pero con gusto puedo orientarte brevemente si lo necesitas.';
+  }
+
+  return 'Por el momento necesito revisar un poco más el caso para orientarte correctamente.';
+}
+
+function buildFinalHandoffReply(state) {
+  const name = state.full_name ? `, ${state.full_name}` : '';
+  const channel =
+    state.contact_preference === 'call'
+      ? 'por llamada'
+      : 'por WhatsApp';
+
+  if (state.lead_flow === 'offer') {
+    return `Perfecto${name}. Ya dejé tu caso registrado y un asesor de Luxetty te contactará ${channel} para revisar la propiedad contigo.`;
+  }
+
+  return `Perfecto${name}. Ya dejé tu búsqueda registrada y un asesor de Luxetty te contactará ${channel} para ayudarte con opciones alineadas.`;
 }
 
 function buildDemandReply(state, changeType, properties, attemptUsed) {
   const ack = getChangeAcknowledgement(changeType, state);
 
+  if (!state.operation_type) {
+    return 'Con gusto te ayudo. ¿Buscas comprar o rentar?';
+  }
+
+  if (!state.location_text && !state.location_any) {
+    return `${ack}\n¿En qué zona te interesa buscar?`;
+  }
+
+  if (state.budget_max == null) {
+    return `${ack}\n¿Cuál es tu presupuesto aproximado?`;
+  }
+
+  if (!state.budget_currency) {
+    return `${ack}\n¿Tu presupuesto es en MXN o USD?`;
+  }
+
+  if (!qualifiesDemandValue(state)) {
+    return buildDemandLowValueReply(state);
+  }
+
   if (properties.length > 0) {
     if (properties.length === 1) {
       return `${ack}
-Tengo una opción real que coincide con tu búsqueda:
+Tengo una opción real para ti:
 
 ${formatPropertyShort(properties[0])}
 
@@ -1229,34 +1415,16 @@ ${formatPropertyList(properties)}
 ¿Prefieres que te contacte un asesor o quieres que afine la búsqueda?`;
   }
 
-  const exactContext =
-    state.location_text || state.budget_max || state.property_type || state.bedrooms;
-
-  if (!exactContext) {
-    return `${ack}
-¿En qué zona te gustaría buscar?`;
-  }
-
   const noExact = `${ack}
 No tengo una coincidencia exacta en este momento.`;
 
-  if (!state.location_text && !state.location_any) {
-    return `${noExact}
-¿Qué zona te interesa?`;
-  }
-
-  if ((state.bedrooms === null || state.bedrooms === undefined) && !state.bedrooms_any) {
-    return `${noExact}
-¿Tienes un mínimo de recámaras?`;
-  }
-
   if (attemptUsed === 'expanded_budget') {
     return `${noExact}
-Puedo buscar en zonas cercanas o dejarle el caso a un asesor para alternativas reales. ¿Qué prefieres?`;
+Puedo ampliar zona o presupuesto, o dejarte con un asesor para alternativas reales. ¿Qué prefieres?`;
   }
 
   return `${noExact}
-¿Quieres que amplíe zona o presupuesto, o prefieres que te contacte un asesor?`;
+¿Quieres que amplíe la búsqueda o prefieres que te contacte un asesor?`;
 }
 
 function buildOfferReply(state, changeType) {
@@ -1267,23 +1435,46 @@ function buildOfferReply(state, changeType) {
 ¿En qué zona, colonia o municipio está la propiedad?`;
   }
 
+  if (state.geo_qualified === false || state.value_qualified === false) {
+    return buildOfferRejectedReply(state);
+  }
+
+  if (state.budget_max == null) {
+    return `${ack}
+¿Cuál es tu precio estimado?`;
+  }
+
+  if (!state.budget_currency) {
+    return `${ack}
+¿Ese monto es en MXN o USD?`;
+  }
+
+  if (state.owner_relation == null) {
+    return `${ack}
+¿La propiedad es tuya o estás apoyando a alguien?`;
+  }
+
   if (!state.property_type) {
     return `${ack}
 ¿Qué tipo de propiedad es?`;
   }
 
-  if (state.budget_max === null || state.budget_max === undefined) {
+  if (!state.full_name) {
     return `${ack}
-¿Cuál es tu precio estimado?`;
+¿Me compartes tu nombre completo?`;
   }
 
   if (!state.contact_preference) {
     return `${ack}
-Perfecto, con eso avanzamos. ¿Prefieres que te contacte por WhatsApp o llamada?`;
+¿Prefieres que te contacten por WhatsApp o por llamada?`;
   }
 
-  return `${ack}
-Perfecto, ya tengo lo necesario para que un asesor lo revise contigo.`;
+  if (state.contact_number_confirmed == null) {
+    return `${ack}
+¿Este es el mejor número para contactarte?`;
+  }
+
+  return buildFinalHandoffReply(state);
 }
 
 async function buildFallbackOpenAIReply(text, state, changeType) {
@@ -1431,9 +1622,87 @@ async function maybeCreateFollowupRequest({
       summary,
     });
 
+    await updateConversationMeta(conversationId, {
+      status: 'pending',
+      next_action: 'human_followup',
+      next_action_due_at: nowIso(),
+      follow_up_status: 'due_soon',
+    });
+
     return data;
   } catch (err) {
     console.error('FATAL maybeCreateFollowupRequest:', err);
+    return null;
+  }
+}
+
+async function upsertContactForConversation(conversationRow, state, phone) {
+  try {
+    if (!conversationRow?.id || !phone) return null;
+
+    const contactName = state.full_name || null;
+
+    let existingContact = null;
+
+    if (conversationRow.contact_id) {
+      const { data } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('id', conversationRow.contact_id)
+        .maybeSingle();
+      existingContact = data || null;
+    }
+
+    if (!existingContact) {
+      const { data } = await supabase
+        .from('contacts')
+        .select('*')
+        .or(`phone.eq.${phone},whatsapp.eq.${phone}`)
+        .limit(1);
+      existingContact = data?.[0] || null;
+    }
+
+    if (existingContact) {
+      const payload = {};
+      if (contactName && !existingContact.full_name) payload.full_name = contactName;
+      if (!existingContact.phone) payload.phone = phone;
+      if (!existingContact.whatsapp) payload.whatsapp = phone;
+
+      if (Object.keys(payload).length > 0) {
+        await supabase.from('contacts').update(payload).eq('id', existingContact.id);
+      }
+
+      if (!conversationRow.contact_id) {
+        await updateConversationMeta(conversationRow.id, {
+          contact_id: existingContact.id,
+        });
+      }
+
+      return existingContact.id;
+    }
+
+    const { data: created, error } = await supabase
+      .from('contacts')
+      .insert({
+        full_name: contactName,
+        phone,
+        whatsapp: phone,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating contact:', error);
+      return null;
+    }
+
+    await updateConversationMeta(conversationRow.id, {
+      contact_id: created.id,
+    });
+
+    return created.id;
+  } catch (err) {
+    console.error('FATAL upsertContactForConversation:', err);
     return null;
   }
 }
@@ -1450,40 +1719,46 @@ function shouldEscalateDemand(state, properties, text) {
 
   const enoughContextForHuman =
     !!state.location_text &&
-    (!!state.budget_max || !!state.property_type || !!state.bedrooms);
+    !!state.budget_max &&
+    !!state.budget_currency &&
+    !!state.operation_type;
 
   return explicitHuman || (properties.length === 0 && enoughContextForHuman);
 }
 
-function shouldEscalateOffer(state, text) {
-  const normalized = normalizeText(text);
-
-  if (state.contact_preference) return true;
-
+function shouldEscalateOffer(state) {
   return (
-    state.wants_human ||
-    normalized.includes('asesor') ||
-    normalized.includes('agente') ||
-    normalized.includes('llamen') ||
-    normalized.includes('marquen')
+    state.capture_qualified === true &&
+    !!state.location_text &&
+    !!state.budget_max &&
+    !!state.budget_currency &&
+    !!state.owner_relation &&
+    !!state.property_type &&
+    !!state.full_name &&
+    !!state.contact_preference &&
+    state.contact_number_confirmed === true
   );
 }
 
 async function maybeGenerateAiSummary(conversationId, state, properties) {
   const aiSummary = buildAiSummary(state, properties);
   if (!aiSummary) return null;
-
   await saveConversationState(conversationId, state, aiSummary);
   return aiSummary;
 }
 
+function sanitizeReply(reply) {
+  return (reply || '')
+    .replace(/https?:\/\/[^\s]*supabase[^\s]*/gi, '')
+    .replace(/https?:\/\/[^\s]*storage[^\s]*/gi, '')
+    .replace(/https?:\/\/(?!luxetty\.com)[^\s]+/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 app.get('/conversations', async (req, res) => {
   const { data, error } = await supabase.rpc('get_conversations_list');
-
-  if (error) {
-    return res.status(500).json({ error });
-  }
-
+  if (error) return res.status(500).json({ error });
   res.json(data);
 });
 
@@ -1496,10 +1771,7 @@ app.get('/conversations/:id', async (req, res) => {
     .eq('conversation_id', id)
     .order('created_at', { ascending: true });
 
-  if (error) {
-    return res.status(500).json({ error });
-  }
-
+  if (error) return res.status(500).json({ error });
   res.json(data);
 });
 
@@ -1530,9 +1802,7 @@ app.post('/webhook', async (req, res) => {
     const value = changes?.value;
     const message = value?.messages?.[0];
 
-    if (!message) {
-      return res.sendStatus(200);
-    }
+    if (!message) return res.sendStatus(200);
 
     from = message.from;
     const messageType = message.type;
@@ -1580,6 +1850,22 @@ app.post('/webhook', async (req, res) => {
     const changeType = detectStateChange(previousAiState, incomingSignals);
     let nextAiState = buildNextState(previousAiState, incomingSignals, changeType);
 
+    if (incomingSignals.better_phone) {
+      nextAiState.contact_number_confirmed = true;
+    }
+
+    if (nextAiState.lead_flow === 'offer') {
+      if (nextAiState.location_text) {
+        nextAiState.geo_qualified = qualifiesOfferGeo(nextAiState.location_text);
+      }
+      if (nextAiState.budget_max != null) {
+        nextAiState.value_qualified = qualifiesOfferValue(nextAiState);
+      }
+      nextAiState.capture_qualified =
+        nextAiState.geo_qualified === true &&
+        nextAiState.value_qualified === true;
+    }
+
     console.log('Previous ai_state:', previousAiState);
     console.log('Incoming signals:', incomingSignals);
     console.log('Change type:', changeType);
@@ -1597,14 +1883,12 @@ app.post('/webhook', async (req, res) => {
     let attemptUsed = null;
 
     if (shouldRunPropertySearch(previousAiState, nextAiState)) {
-      console.log('Buscando propiedades reales con fallbacks...');
       await saveConversationEvent(conversationId, 'search_started', {
         filters: {
           operation_type: nextAiState.operation_type,
           location_text: nextAiState.location_text,
-          location_any: nextAiState.location_any,
-          budget_min: nextAiState.budget_min,
           budget_max: nextAiState.budget_max,
+          budget_currency: nextAiState.budget_currency,
           bedrooms: nextAiState.bedrooms,
           property_type: nextAiState.property_type,
         },
@@ -1618,9 +1902,8 @@ app.post('/webhook', async (req, res) => {
       nextAiState.last_search_filters = {
         operation_type: nextAiState.operation_type,
         location_text: nextAiState.location_text,
-        location_any: nextAiState.location_any,
-        budget_min: nextAiState.budget_min,
         budget_max: nextAiState.budget_max,
+        budget_currency: nextAiState.budget_currency,
         bedrooms: nextAiState.bedrooms,
         property_type: nextAiState.property_type,
         attempt_used: attemptUsed,
@@ -1636,31 +1919,61 @@ app.post('/webhook', async (req, res) => {
           result_count: matchedProperties.length,
         }
       );
-    } else if (nextAiState.lead_flow === 'demand' && changeType !== 'append_info') {
-      nextAiState.last_search_result_count = 0;
-      nextAiState.last_shown_property_ids = [];
-      nextAiState.last_search_filters = {
-        operation_type: nextAiState.operation_type,
-        location_text: nextAiState.location_text,
-        location_any: nextAiState.location_any,
-        budget_min: nextAiState.budget_min,
-        budget_max: nextAiState.budget_max,
-        bedrooms: nextAiState.bedrooms,
-        property_type: nextAiState.property_type,
-      };
     }
 
-    nextAiState = setAwaitingField(nextAiState, matchedProperties);
-
-    await saveConversationState(conversationId, nextAiState);
     await maybeGenerateAiSummary(conversationId, nextAiState, matchedProperties);
 
     let reply = null;
 
-    if (nextAiState.lead_flow === 'demand') {
+    if (isGreetingOnly(text) && !previousAiState.lead_flow) {
+      reply =
+        'Hola, soy el asistente de Luxetty 😊\nCon gusto te ayudo.\n¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
+    } else if (nextAiState.handoff_sent && isClosureCheck(text)) {
+      reply = nextAiState.lead_flow === 'offer'
+        ? 'Gracias. Quedó registrado y un asesor de Luxetty te contactará por el canal que elegiste.'
+        : 'Gracias. Quedó registrada tu búsqueda y un asesor de Luxetty te contactará para continuar.';
+      nextAiState.closing_message_sent = true;
+    } else if (nextAiState.lead_flow === 'demand') {
       reply = buildDemandReply(nextAiState, changeType, matchedProperties, attemptUsed);
 
-      if (shouldEscalateDemand(nextAiState, matchedProperties, text)) {
+      const explicitHandoffIntent =
+        nextAiState.wants_human ||
+        normalizeText(text).includes('contacte un asesor') ||
+        normalizeText(text).includes('contacte un agente');
+
+      if (
+        explicitHandoffIntent &&
+        !nextAiState.full_name
+      ) {
+        reply = 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
+        nextAiState.awaiting_field = 'full_name';
+      } else if (
+        explicitHandoffIntent &&
+        nextAiState.full_name &&
+        !nextAiState.contact_number_confirmed &&
+        !nextAiState.contact_preference
+      ) {
+        reply = 'Perfecto. ¿Prefieres que te contacten por WhatsApp o por llamada?';
+        nextAiState.awaiting_field = 'contact_preference';
+      } else if (
+        explicitHandoffIntent &&
+        nextAiState.full_name &&
+        nextAiState.contact_preference &&
+        nextAiState.contact_number_confirmed == null
+      ) {
+        reply = 'Perfecto. ¿Este es el mejor número para contactarte?';
+        nextAiState.awaiting_field = 'contact_number_confirmed';
+      }
+
+      const canCreateDemandHandoff =
+        shouldEscalateDemand(nextAiState, matchedProperties, text) &&
+        !!nextAiState.full_name &&
+        !!nextAiState.contact_preference &&
+        nextAiState.contact_number_confirmed === true &&
+        !nextAiState.handoff_sent;
+
+      if (canCreateDemandHandoff) {
+        await upsertContactForConversation(conversationRow, nextAiState, from);
         const summary =
           buildAiSummary(nextAiState, matchedProperties) ||
           'Cliente buscando propiedad y requiere seguimiento humano.';
@@ -1676,11 +1989,57 @@ app.post('/webhook', async (req, res) => {
               : 'medium',
           requestType: 'demand',
         });
+        nextAiState.handoff_ready = true;
+        nextAiState.handoff_sent = true;
+        nextAiState.awaiting_field = null;
+        reply = buildFinalHandoffReply(nextAiState);
+      } else {
+        if (!matchedProperties.length && nextAiState.full_name && nextAiState.contact_preference && nextAiState.contact_number_confirmed === true && !nextAiState.handoff_sent) {
+          await upsertContactForConversation(conversationRow, nextAiState, from);
+          const summary =
+            buildAiSummary(nextAiState, matchedProperties) ||
+            'Cliente buscando propiedad y requiere seguimiento humano.';
+          await maybeCreateFollowupRequest({
+            conversationId,
+            state: nextAiState,
+            summary,
+            priority: 'high',
+            requestType: 'demand',
+          });
+          nextAiState.handoff_ready = true;
+          nextAiState.handoff_sent = true;
+          nextAiState.awaiting_field = null;
+          reply = buildFinalHandoffReply(nextAiState);
+        } else {
+          if (nextAiState.awaiting_field == null) {
+            if (
+              matchedProperties.length > 0 &&
+              !nextAiState.full_name &&
+              (normalizeText(text).includes('asesor') || normalizeText(text).includes('contacte'))
+            ) {
+              nextAiState.awaiting_field = 'full_name';
+              reply = 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
+            }
+          }
+        }
       }
     } else if (nextAiState.lead_flow === 'offer') {
       reply = buildOfferReply(nextAiState, changeType);
 
-      if (shouldEscalateOffer(nextAiState, text)) {
+      if (
+        nextAiState.capture_qualified === false &&
+        nextAiState.location_text &&
+        nextAiState.budget_max != null
+      ) {
+        nextAiState.handoff_ready = false;
+        nextAiState.awaiting_field = null;
+        await updateConversationMeta(conversationId, {
+          status: 'closed',
+        });
+      }
+
+      if (shouldEscalateOffer(nextAiState) && !nextAiState.handoff_sent) {
+        await upsertContactForConversation(conversationRow, nextAiState, from);
         const summary =
           buildAiSummary(nextAiState, matchedProperties) ||
           'Cliente quiere vender o poner en renta una propiedad.';
@@ -1688,9 +2047,13 @@ app.post('/webhook', async (req, res) => {
           conversationId,
           state: nextAiState,
           summary,
-          priority: nextAiState.contact_preference ? 'high' : 'medium',
+          priority: 'high',
           requestType: 'offer',
         });
+        nextAiState.handoff_ready = true;
+        nextAiState.handoff_sent = true;
+        nextAiState.awaiting_field = null;
+        reply = buildFinalHandoffReply(nextAiState);
       }
     } else {
       const prevMessages = conversations.get(from) || [];
@@ -1718,19 +2081,14 @@ ${locationCatalog.rawNames.join(', ')}
 
       reply =
         response.choices?.[0]?.message?.content?.trim() ||
-        'Hola, con gusto te ayudo. ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
+        'Con gusto te ayudo. ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
     }
 
     if (!reply) {
       reply = await buildFallbackOpenAIReply(text, nextAiState, changeType);
     }
 
-    // Sanitizar respuesta para evitar URLs técnicas
-    reply = reply
-      .replace(/https?:\/\/[^\s]*supabase[^\s]*/gi, '')
-      .replace(/https?:\/\/[^\s]*storage[^\s]*/gi, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    reply = sanitizeReply(reply);
 
     const updatedMessages = [
       ...(conversations.get(from) || []),
@@ -1762,6 +2120,8 @@ ${locationCatalog.rawNames.join(', ')}
       });
     }
 
+    await saveConversationState(conversationId, nextAiState);
+    await maybeGenerateAiSummary(conversationId, nextAiState, matchedProperties);
     await sendWhatsAppText(from, reply);
 
     return res.sendStatus(200);
@@ -1787,7 +2147,6 @@ ${locationCatalog.rawNames.join(', ')}
   }
 });
 
-// Warmup inicial del catálogo de ubicaciones
 refreshLocationCatalog(true).catch((err) => {
   console.error('Error on initial location catalog warmup:', err);
 });
