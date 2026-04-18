@@ -1,6 +1,5 @@
 const { formatMoney, formatPropertyTypeLabel, formatPropertyShort, formatPropertyList } = require('../utils/formatting');
-const { safeJsonStringify, sanitizeReply } = require('../utils/helpers');
-const { normalizeText } = require('../utils/text');
+const { safeJsonStringify } = require('../utils/helpers');
 const { SYSTEM_PROMPT } = require('../config/prompts');
 const { openai } = require('../services/openaiService');
 const { qualifiesDemandValue } = require('./searchRules');
@@ -23,18 +22,29 @@ function buildAiSummary(state, properties = []) {
   if (state.contact_preference) parts.push(`Canal preferido: ${state.contact_preference}.`);
   if (state.timeline_text) parts.push(`Tiempo: ${state.timeline_text}.`);
 
-  if (properties.length > 0) parts.push(`Resultados actuales: ${properties.length}.`);
-  else if (state.last_search_result_count === 0 && state.lead_flow === 'demand') parts.push('Sin resultados exactos en última búsqueda.');
+  if (properties.length > 0) {
+    parts.push(`Resultados actuales: ${properties.length}.`);
+  } else if (state.last_search_result_count === 0 && state.lead_flow === 'demand') {
+    parts.push('Sin resultados exactos en última búsqueda.');
+  }
 
   return parts.join(' ').trim() || null;
 }
 
 function getChangeAcknowledgement(changeType, state) {
   if (changeType === 'restart_flow') {
-    if (state.lead_flow === 'offer' && state.operation_type === 'sale') return 'Perfecto, ahora te apoyo con la venta.';
-    if (state.lead_flow === 'offer' && state.operation_type === 'rent') return 'Perfecto, ahora te apoyo con ponerla en renta.';
-    if (state.lead_flow === 'demand' && state.operation_type === 'sale') return 'Perfecto, ahora te apoyo con la búsqueda de compra.';
-    if (state.lead_flow === 'demand' && state.operation_type === 'rent') return 'Perfecto, ahora te apoyo con la búsqueda de renta.';
+    if (state.lead_flow === 'offer' && state.operation_type === 'sale') {
+      return 'Perfecto, ahora te apoyo con la venta.';
+    }
+    if (state.lead_flow === 'offer' && state.operation_type === 'rent') {
+      return 'Perfecto, ahora te apoyo con ponerla en renta.';
+    }
+    if (state.lead_flow === 'demand' && state.operation_type === 'sale') {
+      return 'Perfecto, ahora te apoyo con la búsqueda de compra.';
+    }
+    if (state.lead_flow === 'demand' && state.operation_type === 'rent') {
+      return 'Perfecto, ahora te apoyo con la búsqueda de renta.';
+    }
   }
 
   if (changeType === 'radical_change') {
@@ -49,8 +59,9 @@ function getChangeAcknowledgement(changeType, state) {
 
 function buildDemandLowValueReply(state) {
   if (state.operation_type === 'sale') {
-    return 'Por el momento estamos enfocados en opciones de compra desde $3,000,000 MXN. Si quieres, te oriento brevemente o te ayudo a ajustar la búsqueda.';
+    return 'Por el momento estamos enfocados en opciones de compra desde $3,000,000 MXN. Si quieres, te ayudo a ajustar la búsqueda o te paso con un asesor.';
   }
+
   return 'Por el momento estamos enfocados en opciones de renta desde $10,000 MXN. Si quieres, te ayudo a ajustar la búsqueda.';
 }
 
@@ -82,6 +93,7 @@ function buildFinalHandoffReply(state) {
 
 function buildDemandReply(state, changeType, properties, attemptUsed) {
   const ack = getChangeAcknowledgement(changeType, state);
+  const hasResults = Array.isArray(properties) && properties.length > 0;
 
   if (!state.operation_type) {
     return 'Con gusto te ayudo. ¿Buscas comprar o rentar?';
@@ -103,42 +115,32 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
     return buildDemandLowValueReply(state);
   }
 
-  if (properties.length > 0) {
+  if (hasResults) {
     if (properties.length === 1) {
-      return `${ack}
-Tengo una opción real para ti:
-
-${formatPropertyShort(properties[0])}
-
-¿Quieres que te comparta otra opción o prefieres que te contacte un asesor?`;
+      return `${ack}\nEncontré una opción que puede hacer sentido para ti:\n\n${formatPropertyShort(properties[0])}\n\nSi quieres, te comparto otra opción o afinamos la búsqueda.`;
     }
 
-    return `${ack}
-Encontré opciones reales para ti:
-
-${formatPropertyList(properties)}
-
-¿Prefieres que te contacte un asesor o quieres que afine la búsqueda?`;
+    return `${ack}\nEstas opciones pueden hacer sentido para ti:\n\n${formatPropertyList(properties)}\n\nSi quieres, puedo afinar más la búsqueda o ayudarte a pasar con un asesor.`;
   }
 
-  const noExact = `${ack}
-No tengo una coincidencia exacta en este momento.`;
+  const noExact = `${ack}\nNo encontré una coincidencia exacta en este momento.`;
 
   if (attemptUsed === 'expanded_budget') {
-    return `${noExact}
-Puedo ampliar zona o presupuesto, o dejarte con un asesor para alternativas reales. ¿Qué prefieres?`;
+    return `${noExact}\nPuedo ampliar zona o presupuesto, o dejarte con un asesor para revisar alternativas reales. ¿Qué prefieres?`;
   }
 
-  return `${noExact}
-¿Quieres que amplíe la búsqueda o prefieres que te contacte un asesor?`;
+  return `${noExact}\nPuedo ajustar la búsqueda o dejarte con un asesor para ayudarte mejor. ¿Qué prefieres?`;
 }
 
 function buildOfferReply(state, changeType) {
   const ack = getChangeAcknowledgement(changeType, state);
 
+  if (!state.property_type) {
+    return `${ack}\n¿Qué tipo de propiedad quieres vender o poner en renta?`;
+  }
+
   if (!state.location_text) {
-    return `${ack}
-¿En qué zona, colonia o municipio está la propiedad?`;
+    return `${ack}\n¿En qué zona, colonia o municipio está la propiedad?`;
   }
 
   if (state.geo_qualified === false || state.value_qualified === false) {
@@ -146,41 +148,30 @@ function buildOfferReply(state, changeType) {
   }
 
   if (state.budget_max == null) {
-    return `${ack}
-¿Cuál es tu precio estimado?`;
+    return `${ack}\n¿En cuánto te gustaría venderla o rentarla aproximadamente?`;
   }
 
   if (!state.budget_currency) {
-    return `${ack}
-¿Ese monto es en MXN o USD?`;
+    return `${ack}\n¿Ese monto es en MXN o USD?`;
   }
 
   if (state.owner_relation == null) {
-    return `${ack}
-¿La propiedad es tuya o estás apoyando a alguien?`;
-  }
-
-  if (!state.property_type) {
-    return `${ack}
-¿Qué tipo de propiedad es?`;
+    return `${ack}\n¿La propiedad es tuya o estás apoyando a alguien?`;
   }
 
   if (!state.full_name) {
-    return `${ack}
-¿Me compartes tu nombre completo?`;
+    return `${ack}\n¿Me compartes tu nombre completo?`;
   }
 
   if (!state.contact_preference) {
-    return `${ack}
-¿Prefieres que te contacten por WhatsApp o por llamada?`;
+    return `${ack}\n¿Prefieres que te contacten por WhatsApp o por llamada?`;
   }
 
   if (state.contact_number_confirmed == null) {
-    return `${ack}
-¿Este es el mejor número para contactarte?`;
+    return `${ack}\n¿Este es el mejor número para contactarte?`;
   }
 
-  return buildFinalHandoffReply(state);
+  return 'Perfecto, ya tengo todo lo necesario. Te voy a conectar con un asesor para continuar.';
 }
 
 async function buildFallbackOpenAIReply(text, state, changeType) {
@@ -199,7 +190,8 @@ IMPORTANTE:
 - No compartas propiedades específicas.
 - No inventes resultados.
 - Máximo una pregunta.
-- Mantén tono premium y amable.
+- Mantén tono premium, natural y amable.
+- No suenes como bot.
 `,
       },
       { role: 'user', content: text },
