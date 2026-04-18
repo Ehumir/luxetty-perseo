@@ -63,22 +63,22 @@ function getChangeAcknowledgement(changeType, state) {
 
 function buildDemandLowValueReply(state) {
   if (state.operation_type === 'sale') {
-    return 'Por el momento estamos enfocados en opciones de compra desde $3,000,000 MXN. Si quieres, te ayudo a ajustar la búsqueda o te paso con un asesor.';
+    return 'Por el momento estamos enfocados en opciones de compra desde $3,000,000 MXN. Si quieres, te ayudo a ajustar la búsqueda o te puedo conectar con un asesor para ver alternativas.';
   }
 
-  return 'Por el momento estamos enfocados en opciones de renta desde $10,000 MXN. Si quieres, te ayudo a ajustar la búsqueda.';
+  return 'Por el momento estamos enfocados en opciones de renta desde $10,000 MXN. Si quieres, te ayudo a ajustar la búsqueda o vemos alternativas contigo.';
 }
 
 function buildOfferRejectedReply(state) {
   if (state.geo_qualified === false) {
-    return 'Por el momento estamos enfocados en Monterrey, Cumbres, García, San Pedro, Carretera Nacional y zonas residenciales de alto valor en Guadalupe, San Nicolás, Apodaca y Santa Catarina.';
+    return 'Por el momento estamos enfocados en ciertas zonas de alto valor en Monterrey y alrededores. Si quieres, te puedo orientar brevemente o revisar otras opciones contigo.';
   }
 
   if (state.value_qualified === false) {
     return 'Por el momento estamos enfocados en propiedades de mayor valor en ciertas zonas, pero con gusto puedo orientarte brevemente si lo necesitas.';
   }
 
-  return 'Por el momento necesito revisar un poco más el caso para orientarte correctamente.';
+  return 'Déjame revisar mejor tu caso para orientarte correctamente.';
 }
 
 function buildFinalHandoffReply(state) {
@@ -89,14 +89,14 @@ function buildFinalHandoffReply(state) {
       : 'por WhatsApp';
 
   if (state.lead_flow === 'offer') {
-    return `Perfecto${name}. Ya dejé tu caso registrado y un asesor de Luxetty te contactará ${channel} para revisar la propiedad contigo.`;
+    return `Perfecto${name}. Ya dejé tu caso listo y un asesor de Luxetty te contactará ${channel} para revisarlo contigo.`;
   }
 
   if (state.wants_visit) {
-    return `Perfecto${name}. Ya dejé tu solicitud registrada y un asesor de Luxetty te contactará ${channel} para ayudarte a coordinar la visita.`;
+    return `Perfecto${name}. Ya dejé tu solicitud para coordinar la visita y un asesor te contactará ${channel} para avanzar contigo.`;
   }
 
-  return `Perfecto${name}. Ya dejé tu búsqueda registrada y un asesor de Luxetty te contactará ${channel} para ayudarte con opciones alineadas.`;
+  return `Perfecto${name}. Ya dejé tu búsqueda lista y un asesor de Luxetty te contactará ${channel} para ayudarte a avanzar con las mejores opciones.`;
 }
 
 function getDemandMatchQuality(state, properties = []) {
@@ -120,25 +120,26 @@ function hasCommercialIntent(state) {
 
 function getDemandActionClosing(state, matchQuality) {
   if (state.wants_visit) {
-    return 'Si quieres, te ayudo a coordinar una visita o te conecto con un asesor.';
+    return 'Si esta propiedad te hace sentido, te ayudo a coordinar la visita o avanzamos con un asesor.';
   }
 
   if (state.asks_property_details) {
-    return 'Si quieres, te conecto con un asesor para darte más detalle y revisar la mejor opción contigo.';
+    return 'Si quieres, te conecto con un asesor para darte más detalle y ayudarte a avanzar con esta opción.';
   }
 
   if (state.shows_high_interest) {
-    if (matchQuality === 'strong' || matchQuality === 'medium') {
-      return 'Si quieres, te conecto con un asesor para revisar esta opción contigo y ayudarte a avanzar.';
-    }
-    return 'Si quieres, ajusto un poco más la búsqueda o te conecto con un asesor para revisar alternativas.';
+    return 'Si esta opción te hace sentido, te conecto con un asesor para revisarla contigo y ayudarte a avanzar.';
   }
 
   if (matchQuality === 'strong') {
-    return 'Si quieres, te ayudo a agendar visita o te conecto con un asesor.';
+    return 'Esta es una muy buena opción. Si te hace sentido, te ayudo a coordinar visita o a avanzar con un asesor.';
   }
 
-  return 'Si quieres, puedo afinar más la búsqueda o ayudarte a pasar con un asesor.';
+  if (matchQuality === 'medium') {
+    return 'Puede ser una buena opción para ti. Si quieres, la revisamos contigo y vemos si vale la pena avanzar.';
+  }
+
+  return 'Si quieres, ajustamos la búsqueda o vemos contigo opciones más alineadas.';
 }
 
 function buildDemandReply(state, changeType, properties, attemptUsed) {
@@ -168,54 +169,24 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
   }
 
   if (matchQuality === 'very_weak') {
-    if (commercialIntent) {
-      return `${ack}\nNo veo algo realmente alineado con lo que buscas como para recomendarte avanzar con una opción específica. Si quieres, ajusto la búsqueda o te conecto con un asesor para revisar alternativas mejores.`;
-    }
-
-    return `${ack}\nEncontré algunas opciones en el sistema, pero no veo algo realmente alineado con lo que buscas. Puedo ajustar la búsqueda o pasarte con un asesor para revisar alternativas mejores. ¿Qué prefieres?`;
+    return `${ack}\nNo veo algo realmente alineado con lo que buscas. Si quieres, ajustamos la búsqueda o lo revisamos contigo con un asesor.`;
   }
 
   if (hasResults) {
     if (properties.length === 1) {
-      if (matchQuality === 'strong') {
-        return `${ack}\nEncontré una opción muy alineada con lo que buscas:\n\n${formatPropertyShort(properties[0])}\n\n${getDemandActionClosing(state, matchQuality)}`;
-      }
-
-      if (matchQuality === 'medium') {
-        return `${ack}\nEncontré una opción bastante cercana a lo que buscas:\n\n${formatPropertyShort(properties[0])}\n\n${getDemandActionClosing(state, matchQuality)}`;
-      }
-
-      return `${ack}\nEncontré una alternativa que podría servirte:\n\n${formatPropertyShort(properties[0])}\n\n${getDemandActionClosing(state, matchQuality)}`;
+      return `${ack}\nTe comparto una opción que vale la pena revisar:\n\n${formatPropertyShort(properties[0])}\n\n${getDemandActionClosing(state, matchQuality)}`;
     }
 
-    if (matchQuality === 'strong') {
-      return `${ack}\nEstas son las opciones más alineadas que encontré para ti:\n\n${formatPropertyList(properties)}\n\n${getDemandActionClosing(state, matchQuality)}`;
-    }
-
-    if (matchQuality === 'medium') {
-      return `${ack}\nEncontré opciones bastante cercanas a lo que buscas:\n\n${formatPropertyList(properties)}\n\n${getDemandActionClosing(state, matchQuality)}`;
-    }
-
-    if (matchQuality === 'weak') {
-      return `${ack}\nEncontré algunas alternativas que podrían servirte, aunque no las veo como una coincidencia exacta:\n\n${formatPropertyList(properties)}\n\n${getDemandActionClosing(state, matchQuality)}`;
-    }
+    return `${ack}\nEstas son las opciones más relevantes que encontré:\n\n${formatPropertyList(properties)}\n\n${getDemandActionClosing(state, matchQuality)}`;
   }
 
   const noExact = `${ack}\nNo encontré una coincidencia exacta en este momento.`;
 
-  if (attemptUsed === 'expanded_budget') {
-    if (commercialIntent) {
-      return `${noExact}\nYa amplié criterios y no vi algo realmente alineado. Te puedo conectar con un asesor para revisar alternativas contigo.`;
-    }
-
-    return `${noExact}\nYa amplié criterios para buscar alternativas, pero no vi algo realmente alineado. Puedo ampliar zona o presupuesto, o dejarte con un asesor. ¿Qué prefieres?`;
-  }
-
   if (commercialIntent) {
-    return `${noExact}\nSi quieres, te conecto con un asesor para revisar opciones contigo y ayudarte a avanzar.`;
+    return `${noExact}\nSi quieres, te conecto con un asesor para revisar opciones contigo y avanzar.`;
   }
 
-  return `${noExact}\nPuedo ajustar la búsqueda o dejarte con un asesor para ayudarte mejor. ¿Qué prefieres?`;
+  return `${noExact}\nSi quieres, ajustamos la búsqueda o lo revisamos contigo para encontrar algo más alineado.`;
 }
 
 function buildOfferReply(state, changeType) {
@@ -226,7 +197,7 @@ function buildOfferReply(state, changeType) {
   }
 
   if (!state.location_text) {
-    return `${ack}\n¿En qué zona, colonia o municipio está la propiedad?`;
+    return `${ack}\n¿En qué zona está la propiedad?`;
   }
 
   if (state.geo_qualified === false || state.value_qualified === false) {
@@ -257,7 +228,7 @@ function buildOfferReply(state, changeType) {
     return `${ack}\n¿Este es el mejor número para contactarte?`;
   }
 
-  return 'Perfecto, ya tengo todo lo necesario. Te voy a conectar con un asesor para continuar.';
+  return 'Perfecto, ya tengo todo listo. Te conecto con un asesor para continuar.';
 }
 
 async function buildFallbackOpenAIReply(text, state, changeType) {
@@ -276,8 +247,8 @@ IMPORTANTE:
 - No compartas propiedades específicas.
 - No inventes resultados.
 - Máximo una pregunta.
-- Mantén tono premium, natural y amable.
-- Si detectas interés comercial, orienta la respuesta hacia visita, asesor o siguiente paso.
+- Mantén tono premium, natural y comercial.
+- Si detectas interés, orienta a visita o asesor.
 - No suenes como bot.
 `,
       },

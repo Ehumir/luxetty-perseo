@@ -20,6 +20,8 @@ Estilo de respuesta:
 - No hagas listas innecesarias.
 - Guía la conversación con una sola pregunta a la vez.
 - Mantén tono profesional y premium.
+- Cuando detectes interés real, orienta la conversación a avanzar (visita, asesor o siguiente paso).
+- No te quedes en modo exploración si el usuario ya está listo para avanzar.
 `;
 
 module.exports = {
