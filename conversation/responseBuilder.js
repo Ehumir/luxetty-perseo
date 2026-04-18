@@ -1,4 +1,9 @@
-const { formatMoney, formatPropertyTypeLabel, formatPropertyShort, formatPropertyList } = require('../utils/formatting');
+const {
+  formatMoney,
+  formatPropertyTypeLabel,
+  formatPropertyShort,
+  formatPropertyList,
+} = require('../utils/formatting');
 const { safeJsonStringify } = require('../utils/helpers');
 const { SYSTEM_PROMPT } = require('../config/prompts');
 const { openai } = require('../services/openaiService');
@@ -15,13 +20,39 @@ function buildAiSummary(state, properties = []) {
     parts.push(`Lead quiere ${state.operation_type === 'rent' ? 'poner en renta' : 'vender'} su propiedad.`);
   }
 
-  if (state.property_code) parts.push(`Referencia directa a propiedad: ${state.property_code}.`);
-  if (state.property_type) parts.push(`Tipo: ${formatPropertyTypeLabel(state.property_type)}.`);
-  if (state.location_text) parts.push(`Ubicación: ${state.location_text}.`);
-  if (state.budget_max) parts.push(`Monto: ${formatMoney(state.budget_max, state.budget_currency || 'MXN')}.`);
-  if (state.owner_relation) parts.push(`Relación con propiedad: ${state.owner_relation}.`);
-  if (state.contact_preference) parts.push(`Canal preferido: ${state.contact_preference}.`);
-  if (state.timeline_text) parts.push(`Tiempo: ${state.timeline_text}.`);
+  if (state.property_code) {
+    parts.push(`Referencia directa a propiedad por ID oficial: ${state.property_code}.`);
+  }
+
+  if (state.property_type) {
+    parts.push(`Tipo: ${formatPropertyTypeLabel(state.property_type)}.`);
+  }
+
+  if (state.location_text) {
+    parts.push(`Ubicación: ${state.location_text}.`);
+  } else if (state.location_any) {
+    parts.push('Ubicación abierta.');
+  }
+
+  if (state.budget_max) {
+    parts.push(`Monto: ${formatMoney(state.budget_max, state.budget_currency || 'MXN')}.`);
+  }
+
+  if (state.owner_relation) {
+    parts.push(`Relación con propiedad: ${state.owner_relation}.`);
+  }
+
+  if (state.contact_preference) {
+    parts.push(`Canal preferido: ${state.contact_preference}.`);
+  }
+
+  if (state.timeline_text) {
+    parts.push(`Tiempo: ${state.timeline_text}.`);
+  }
+
+  if (state.contact_number_confirmed === true) {
+    parts.push('Número confirmado.');
+  }
 
   if (state.wants_visit) parts.push('Quiere agendar visita.');
   if (state.shows_high_interest) parts.push('Muestra alto interés.');
@@ -99,7 +130,7 @@ function buildFinalHandoffReply(state) {
   }
 
   if (state.direct_property_reference && state.property_code) {
-    return `Perfecto${name}. Ya dejé registrada tu solicitud sobre la propiedad ${state.property_code} y un asesor de Luxetty te contactará ${channel} para ayudarte a avanzar.`;
+    return `Perfecto${name}. Ya dejé registrada tu solicitud sobre la propiedad con ID ${state.property_code} y un asesor de Luxetty te contactará ${channel} para ayudarte a avanzar.`;
   }
 
   return `Perfecto${name}. Ya dejé tu búsqueda lista y un asesor de Luxetty te contactará ${channel} para ayudarte a avanzar con las mejores opciones.`;
@@ -132,14 +163,14 @@ function hasCommercialIntent(state) {
 function getDemandActionClosing(state, matchQuality) {
   if (state.direct_property_reference && state.property_code) {
     if (state.wants_visit) {
-      return `Si esta propiedad te hace sentido, te ayudo a coordinar la visita o avanzamos con un asesor.`;
+      return 'Si esta propiedad te hace sentido, te ayudo a coordinar la visita o avanzamos con un asesor.';
     }
 
     if (state.asks_property_details) {
-      return `Si quieres, te conecto con un asesor para darte más detalle sobre la propiedad ${state.property_code} y ayudarte a avanzar.`;
+      return `Si quieres, te conecto con un asesor para darte más detalle sobre la propiedad con ID ${state.property_code} y ayudarte a avanzar.`;
     }
 
-    return `Si esta propiedad te interesa, te conecto con un asesor para revisarla contigo y ayudarte a avanzar.`;
+    return 'Si esta propiedad te interesa, te conecto con un asesor para revisarla contigo y ayudarte a avanzar.';
   }
 
   if (state.wants_visit) {
@@ -176,8 +207,8 @@ function buildDirectPropertyReply(state, changeType, properties = []) {
   const codeLabel = state.property_code ? ` ${state.property_code}` : '';
   const baseIntro =
     changeType === 'radical_change' || changeType === 'restart_flow'
-      ? `${ack}\nYa ubiqué la propiedad${codeLabel}.`
-      : `Ya ubiqué la propiedad${codeLabel}.`;
+      ? `${ack}\nYa ubiqué la propiedad con ID${codeLabel}.`
+      : `Ya ubiqué la propiedad con ID${codeLabel}.`;
 
   if (state.wants_visit) {
     return `${baseIntro}\n\n${formatPropertyShort(property)}\n\nSi te hace sentido, te ayudo a coordinar la visita o te conecto con un asesor para avanzar.`;
@@ -306,6 +337,7 @@ IMPORTANTE:
 - Mantén tono premium, natural y comercial.
 - Si detectas interés, orienta a visita o asesor.
 - Si existe referencia directa a propiedad, responde como seguimiento de esa propiedad.
+- Habla del ID oficial si ya existe uno detectado.
 - No suenes como bot.
 `,
       },

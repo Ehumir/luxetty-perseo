@@ -571,39 +571,60 @@ async function searchProperties({
   }
 }
 
+function normalizeListingId(rawValue) {
+  if (!rawValue) return null;
+
+  const text = String(rawValue).trim().toUpperCase();
+
+  const full = text.match(/\bLUX[\s\-]?([A-Z])\s?([0-9]{4})\b/i);
+  if (full) return `LUX-${full[1]}${full[2]}`;
+
+  const short = text.match(/\b([A-Z])([0-9]{4})\b/i);
+  if (short) return `LUX-${short[1]}${short[2]}`;
+
+  return null;
+}
+
 async function getPropertyByCode(propertyCode) {
   try {
-    if (!propertyCode) return null;
+    const normalizedListingId = normalizeListingId(propertyCode);
+    if (!normalizedListingId) return null;
 
-    const normalizedCode = String(propertyCode).trim().toUpperCase();
-
-    let { data, error } = await supabase
+    const { data, error } = await supabase
       .from('properties')
-      .select('*')
-      .eq('property_code', normalizedCode)
+      .select(`
+        id,
+        listing_id,
+        title,
+        slug,
+        price,
+        currency_code,
+        neighborhood,
+        zone,
+        city,
+        bedrooms,
+        bathrooms,
+        parking_spaces,
+        main_image_url,
+        canonical_url,
+        operation_type,
+        status,
+        archived_at,
+        visible_on_website,
+        is_public
+      `)
+      .eq('listing_id', normalizedListingId)
+      .is('archived_at', null)
+      .eq('visible_on_website', true)
+      .in('status', ['active', 'sold', 'rented'])
       .limit(1);
 
-    if (!error && Array.isArray(data) && data.length > 0) {
-      return data[0];
+    if (error) {
+      console.error('Error buscando propiedad por listing_id:', error);
+      return null;
     }
 
-    ({ data, error } = await supabase
-      .from('properties')
-      .select('*')
-      .eq('code', normalizedCode)
-      .limit(1));
-
-    if (!error && Array.isArray(data) && data.length > 0) {
-      return data[0];
-    }
-
-    ({ data, error } = await supabase
-      .from('properties')
-      .select('*')
-      .eq('public_id', normalizedCode)
-      .limit(1));
-
-    if (!error && Array.isArray(data) && data.length > 0) {
+    if (Array.isArray(data) && data.length > 0) {
       return data[0];
     }
 
@@ -906,6 +927,113 @@ async function upsertContactForConversation(conversationRow, state, phone) {
     return created.id;
   } catch (err) {
     console.error('FATAL upsertContactForConversation:', err);
+    return null;
+  }
+}
+
+async function getInitialRequestStageId(requestType = 'demand') {
+  try {
+    const { data, error } = await supabase
+      .from('request_stages')
+      .select('id, code, stage_order')
+      .eq('request_type', requestType)
+      .eq('code', 'new')
+      .limit(1);
+
+    if (error) {
+      console.error('Error getting initial request stage:', error);
+      return null;
+    }
+
+    return data?.[0]?.id || null;
+  } catch (err) {
+    console.error('FATAL getInitialRequestStageId:', err);
+    return null;
+  }
+}
+
+async function maybeCreateDemandRequest({
+  conversationId,
+  conversationRow,
+  state,
+  contactId,
+  property,
+}) {
+  try {
+    if (!conversationId || !contactId || !property?.id) return null;
+
+    const { data: existing, error: existingError } = await supabase
+      .from('requests')
+      .select('id, property_id, contact_id, request_type, operation_type, stage_id')
+      .eq('conversation_id', conversationId)
+      .eq('request_type', 'demand')
+      .eq('contact_id', contactId)
+      .eq('property_id', property.id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (existingError) {
+      console.error('Error checking existing demand request:', existingError);
+      return null;
+    }
+
+    if (existing && existing.length > 0) {
+      return existing[0];
+    }
+
+    const stageId = await getInitialRequestStageId('demand');
+
+    const title =
+      property?.listing_id && property?.title
+        ? `Demanda directa ${property.listing_id} - ${property.title}`
+        : property?.listing_id
+        ? `Demanda directa ${property.listing_id}`
+        : 'Demanda directa sobre propiedad';
+
+    const notes =
+      buildAiSummary(state, property ? [property] : []) ||
+      'Cliente entró por referencia directa de propiedad y requiere seguimiento comercial.';
+
+    const payload = {
+      request_type: 'demand',
+      operation_type: property.operation_type || state.operation_type || 'sale',
+      status: 'open',
+      contact_id: contactId,
+      assigned_agent_profile_id: conversationRow?.assigned_agent_profile_id || null,
+      created_by: null,
+      source: 'ai_agent',
+      property_id: property.id,
+      conversation_id: conversationId,
+      stage_id: stageId,
+      title,
+      notes_summary: notes,
+      next_action: state.wants_visit ? 'Coordinar visita' : 'Contactar lead',
+      next_action_due_at: nowIso(),
+      is_active: true,
+    };
+
+    const { data: created, error: createError } = await supabase
+      .from('requests')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Error creating demand request:', createError);
+      return null;
+    }
+
+    await saveConversationEvent(conversationId, 'demand_request_created', {
+      request_id: created.id,
+      property_id: property.id,
+      listing_id: property.listing_id || null,
+      operation_type: payload.operation_type,
+    });
+
+    return created;
+  } catch (err) {
+    console.error('FATAL maybeCreateDemandRequest:', err);
     return null;
   }
 }
@@ -1281,7 +1409,7 @@ app.post('/webhook', async (req, res) => {
         !nextAiState.handoff_sent;
 
       if (canCreateDemandHandoff) {
-        await upsertContactForConversation(conversationRow, nextAiState, from);
+        const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
         const summary =
           buildAiSummary(nextAiState, matchedProperties) ||
           'Cliente buscando propiedad y requiere seguimiento humano.';
@@ -1292,6 +1420,17 @@ app.post('/webhook', async (req, res) => {
           priority: getDemandFollowupPriority(nextAiState, matchedProperties),
           requestType: 'demand',
         });
+
+        if (nextAiState.direct_property_reference && matchedProperties.length > 0 && contactId) {
+          await maybeCreateDemandRequest({
+            conversationId,
+            conversationRow,
+            state: nextAiState,
+            contactId,
+            property: matchedProperties[0],
+          });
+        }
+
         nextAiState.handoff_ready = true;
         nextAiState.handoff_sent = true;
         nextAiState.awaiting_field = null;
@@ -1304,7 +1443,7 @@ app.post('/webhook', async (req, res) => {
           nextAiState.contact_number_confirmed === true &&
           !nextAiState.handoff_sent
         ) {
-          await upsertContactForConversation(conversationRow, nextAiState, from);
+          const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
           const summary =
             buildAiSummary(nextAiState, matchedProperties) ||
             'Cliente buscando propiedad y requiere seguimiento humano.';
@@ -1315,6 +1454,17 @@ app.post('/webhook', async (req, res) => {
             priority: 'high',
             requestType: 'demand',
           });
+
+          if (nextAiState.direct_property_reference && matchedProperties.length > 0 && contactId) {
+            await maybeCreateDemandRequest({
+              conversationId,
+              conversationRow,
+              state: nextAiState,
+              contactId,
+              property: matchedProperties[0],
+            });
+          }
+
           nextAiState.handoff_ready = true;
           nextAiState.handoff_sent = true;
           nextAiState.awaiting_field = null;

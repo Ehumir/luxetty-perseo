@@ -235,18 +235,41 @@ function extractPhoneNumber(message) {
   return match ? match[1] : null;
 }
 
+function normalizeListingId(rawValue) {
+  if (!rawValue) return null;
+
+  const text = cleanSpaces(String(rawValue)).toUpperCase();
+
+  const full = text.match(/\bLUX[\s\-]?([A-Z])\s?([0-9]{4})\b/i);
+  if (full?.[1] && full?.[2]) {
+    return `LUX-${full[1]}${full[2]}`;
+  }
+
+  const short = text.match(/\b([A-Z])([0-9]{4})\b/i);
+  if (short?.[1] && short?.[2]) {
+    return `LUX-${short[1]}${short[2]}`;
+  }
+
+  return null;
+}
+
 function extractPropertyCode(message) {
   const raw = cleanSpaces(message || '');
+  if (!raw) return null;
+
+  const normalized = normalizeListingId(raw);
+  if (normalized) return normalized;
 
   const patterns = [
-    /\b(?:propiedad|id)\s*[:#-]?\s*(LUX-[A-Z]\d{4}|[A-Z]\d{4})\b/i,
-    /\b(LUX-[A-Z]\d{4}|[A-Z]\d{4})\b/i,
+    /\b(?:propiedad|id|codigo|código)\s*[:#-]?\s*(LUX[\s\-]?[A-Z]\s?[0-9]{4}|[A-Z][0-9]{4})\b/i,
+    /\b(LUX[\s\-]?[A-Z]\s?[0-9]{4}|[A-Z][0-9]{4})\b/i,
   ];
 
   for (const pattern of patterns) {
     const match = raw.match(pattern);
     if (match?.[1]) {
-      return cleanSpaces(match[1]).toUpperCase();
+      const parsed = normalizeListingId(match[1]);
+      if (parsed) return parsed;
     }
   }
 
@@ -558,6 +581,7 @@ module.exports = {
   extractPossibleName,
   detectOwnerRelation,
   extractPhoneNumber,
+  normalizeListingId,
   extractPropertyCode,
   detectDirectPropertyReference,
   detectVisitIntent,
