@@ -1222,6 +1222,23 @@ app.post('/webhook', async (req, res) => {
       nextAiState.lead_flow = 'demand';
     }
 
+    const isNewSearchWithoutDirectProperty =
+      !incomingSignals.property_code &&
+      (
+        incomingSignals.budget_max != null ||
+        !!incomingSignals.location_text ||
+        !!incomingSignals.location_any ||
+        !!incomingSignals.property_type ||
+        incomingSignals.bedrooms != null ||
+        incomingSignals.bathrooms != null
+      );
+
+    if (isNewSearchWithoutDirectProperty) {
+      nextAiState.direct_property_reference = false;
+      nextAiState.property_code = null;
+      nextAiState.direct_property_code = null;
+    }
+
     if (nextAiState.lead_flow === 'offer') {
       if (nextAiState.location_text) {
         nextAiState.geo_qualified = qualifiesOfferGeo(nextAiState.location_text);
