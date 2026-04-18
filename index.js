@@ -326,6 +326,48 @@ function rankDemandProperties(properties, state) {
     });
 }
 
+function classifyDemandResultQuality(properties = []) {
+  if (!Array.isArray(properties) || properties.length === 0) {
+    return {
+      resultQuality: 'none',
+      topMatchScore: 0,
+      visibleLimit: 0,
+    };
+  }
+
+  const topMatchScore = Number(properties[0]?.match_score || 0);
+
+  if (topMatchScore >= 80) {
+    return {
+      resultQuality: 'strong',
+      topMatchScore,
+      visibleLimit: 3,
+    };
+  }
+
+  if (topMatchScore >= 55) {
+    return {
+      resultQuality: 'medium',
+      topMatchScore,
+      visibleLimit: 3,
+    };
+  }
+
+  if (topMatchScore >= 35) {
+    return {
+      resultQuality: 'weak',
+      topMatchScore,
+      visibleLimit: 2,
+    };
+  }
+
+  return {
+    resultQuality: 'very_weak',
+    topMatchScore,
+    visibleLimit: 0,
+  };
+}
+
 async function saveConversationEvent(conversationId, type, payload = {}, createdBy = null) {
   try {
     if (!conversationId) return;
@@ -561,17 +603,31 @@ async function searchPropertiesWithFallbacks(state) {
 
     if (usable.length > 0) {
       const ranked = rankDemandProperties(usable, state);
+      const quality = classifyDemandResultQuality(ranked);
+
+      const visibleProperties =
+        quality.visibleLimit > 0
+          ? ranked.slice(0, Math.min(quality.visibleLimit, DEFAULT_PROPERTY_LIMIT))
+          : [];
 
       return {
-        properties: ranked.slice(0, DEFAULT_PROPERTY_LIMIT),
+        properties: visibleProperties,
+        rawProperties: ranked,
         attemptUsed: attempt.label,
+        resultQuality: quality.resultQuality,
+        topMatchScore: quality.topMatchScore,
+        rawResultCount: ranked.length,
       };
     }
   }
 
   return {
     properties: [],
+    rawProperties: [],
     attemptUsed: 'no_results',
+    resultQuality: 'none',
+    topMatchScore: 0,
+    rawResultCount: 0,
   };
 }
 
@@ -966,6 +1022,9 @@ app.post('/webhook', async (req, res) => {
 
     let matchedProperties = [];
     let attemptUsed = null;
+    let resultQuality = 'none';
+    let topMatchScore = 0;
+    let rawResultCount = 0;
 
     if (shouldRunPropertySearch(previousAiState, nextAiState)) {
       await saveConversationEvent(conversationId, 'search_started', {
@@ -982,8 +1041,13 @@ app.post('/webhook', async (req, res) => {
       const searchResult = await searchPropertiesWithFallbacks(nextAiState);
       matchedProperties = searchResult.properties;
       attemptUsed = searchResult.attemptUsed;
+      resultQuality = searchResult.resultQuality || 'none';
+      topMatchScore = Number(searchResult.topMatchScore || 0);
+      rawResultCount = Number(searchResult.rawResultCount || matchedProperties.length || 0);
 
       nextAiState.needs_fresh_search = false;
+      nextAiState.result_quality = resultQuality;
+      nextAiState.top_match_score = topMatchScore;
       nextAiState.last_search_filters = {
         operation_type: nextAiState.operation_type,
         location_text: nextAiState.location_text,
@@ -992,6 +1056,7 @@ app.post('/webhook', async (req, res) => {
         bedrooms: nextAiState.bedrooms,
         property_type: nextAiState.property_type,
         attempt_used: attemptUsed,
+        result_quality: resultQuality,
       };
       nextAiState.last_search_result_count = matchedProperties.length;
       nextAiState.last_shown_property_ids = matchedProperties.map((p) => p.id);
@@ -1002,7 +1067,9 @@ app.post('/webhook', async (req, res) => {
         {
           filters: nextAiState.last_search_filters,
           result_count: matchedProperties.length,
-          top_match_score: matchedProperties[0]?.match_score || 0,
+          raw_result_count: rawResultCount,
+          result_quality: resultQuality,
+          top_match_score: topMatchScore,
         }
       );
     }
@@ -1203,7 +1270,9 @@ ${locationCatalog.rawNames.join(', ')}
       await saveConversationEvent(conversationId, 'properties_suggested', {
         property_ids: matchedProperties.map((p) => p.id),
         count: matchedProperties.length,
-        top_match_score: matchedProperties[0]?.match_score || 0,
+        raw_result_count: rawResultCount,
+        result_quality: resultQuality,
+        top_match_score: topMatchScore,
       });
     }
 

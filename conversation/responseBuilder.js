@@ -91,7 +91,9 @@ function buildFinalHandoffReply(state) {
   return `Perfecto${name}. Ya dejé tu búsqueda registrada y un asesor de Luxetty te contactará ${channel} para ayudarte con opciones alineadas.`;
 }
 
-function getDemandMatchQuality(properties = []) {
+function getDemandMatchQuality(state, properties = []) {
+  if (state?.result_quality) return state.result_quality;
+
   if (!Array.isArray(properties) || properties.length === 0) {
     return 'none';
   }
@@ -100,13 +102,14 @@ function getDemandMatchQuality(properties = []) {
 
   if (topScore >= 80) return 'strong';
   if (topScore >= 55) return 'medium';
-  return 'weak';
+  if (topScore >= 35) return 'weak';
+  return 'very_weak';
 }
 
 function buildDemandReply(state, changeType, properties, attemptUsed) {
   const ack = getChangeAcknowledgement(changeType, state);
   const hasResults = Array.isArray(properties) && properties.length > 0;
-  const matchQuality = getDemandMatchQuality(properties);
+  const matchQuality = getDemandMatchQuality(state, properties);
 
   if (!state.operation_type) {
     return 'Con gusto te ayudo. ¿Buscas comprar o rentar?';
@@ -128,13 +131,21 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
     return buildDemandLowValueReply(state);
   }
 
+  if (matchQuality === 'very_weak') {
+    return `${ack}\nEncontré algunas opciones en el sistema, pero no veo algo realmente alineado con lo que buscas. Puedo ajustar la búsqueda o pasarte con un asesor para revisar alternativas mejores. ¿Qué prefieres?`;
+  }
+
   if (hasResults) {
     if (properties.length === 1) {
       if (matchQuality === 'strong') {
         return `${ack}\nEncontré una opción muy alineada con lo que buscas:\n\n${formatPropertyShort(properties[0])}\n\nSi quieres, te comparto otra opción o afinamos la búsqueda.`;
       }
 
-      return `${ack}\nEncontré una opción cercana a lo que buscas:\n\n${formatPropertyShort(properties[0])}\n\nSi quieres, ajusto un poco más la búsqueda o te comparto alternativas.`;
+      if (matchQuality === 'medium') {
+        return `${ack}\nEncontré una opción bastante cercana a lo que buscas:\n\n${formatPropertyShort(properties[0])}\n\nSi quieres, ajusto un poco más la búsqueda o te comparto otra alternativa.`;
+      }
+
+      return `${ack}\nEncontré una alternativa que podría servirte:\n\n${formatPropertyShort(properties[0])}\n\nSi quieres, afino la búsqueda para acercarnos más a lo que traes en mente.`;
     }
 
     if (matchQuality === 'strong') {
@@ -142,10 +153,12 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
     }
 
     if (matchQuality === 'medium') {
-      return `${ack}\nEncontré opciones cercanas a lo que buscas:\n\n${formatPropertyList(properties)}\n\nSi quieres, ajusto un poco más la búsqueda para acercarnos todavía más.`;
+      return `${ack}\nEncontré opciones bastante cercanas a lo que buscas:\n\n${formatPropertyList(properties)}\n\nSi quieres, ajusto un poco más la búsqueda para acercarnos todavía más.`;
     }
 
-    return `${ack}\nEncontré algunas alternativas que podrían servirte:\n\n${formatPropertyList(properties)}\n\nSi quieres, afino la búsqueda para mostrarte opciones más alineadas.`;
+    if (matchQuality === 'weak') {
+      return `${ack}\nEncontré algunas alternativas que podrían servirte, aunque no las veo como una coincidencia exacta:\n\n${formatPropertyList(properties)}\n\nSi quieres, ajusto la búsqueda para mostrarte opciones más alineadas o te paso con un asesor.`;
+    }
   }
 
   const noExact = `${ack}\nNo encontré una coincidencia exacta en este momento.`;
