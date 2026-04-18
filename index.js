@@ -368,6 +368,38 @@ function classifyDemandResultQuality(properties = []) {
   };
 }
 
+function shouldPrioritizeDemandHandoff(state, properties = []) {
+  const strongCommercialIntent =
+    !!state.wants_visit ||
+    !!state.shows_high_interest ||
+    !!state.asks_property_details;
+
+  const hasResults = Array.isArray(properties) && properties.length > 0;
+  const strongMatch = Number(state.top_match_score || 0) >= 80;
+  const mediumMatch = Number(state.top_match_score || 0) >= 55;
+
+  if (strongCommercialIntent && hasResults) return true;
+  if (state.wants_visit && mediumMatch) return true;
+  if (state.asks_property_details && hasResults) return true;
+  if (state.shows_high_interest && strongMatch) return true;
+
+  return false;
+}
+
+function getDemandFollowupPriority(state, properties = []) {
+  const hasResults = Array.isArray(properties) && properties.length > 0;
+  const topMatchScore = Number(state.top_match_score || 0);
+
+  if (state.wants_visit && hasResults) return 'high';
+  if (state.asks_property_details && hasResults) return 'high';
+  if (state.shows_high_interest && topMatchScore >= 80) return 'high';
+  if (state.wants_human && hasResults) return 'high';
+  if (!hasResults && state.location_text && state.budget_max && state.budget_currency) return 'high';
+  if (hasResults && topMatchScore >= 55) return 'medium';
+
+  return 'medium';
+}
+
 async function saveConversationEvent(conversationId, type, payload = {}, createdBy = null) {
   try {
     if (!conversationId) return;
@@ -996,6 +1028,18 @@ app.post('/webhook', async (req, res) => {
       nextAiState.contact_number_confirmed = true;
     }
 
+    if (incomingSignals.wants_visit) {
+      nextAiState.wants_visit = true;
+    }
+
+    if (incomingSignals.shows_high_interest) {
+      nextAiState.shows_high_interest = true;
+    }
+
+    if (incomingSignals.asks_property_details) {
+      nextAiState.asks_property_details = true;
+    }
+
     if (nextAiState.lead_flow === 'offer') {
       if (nextAiState.location_text) {
         nextAiState.geo_qualified = qualifiesOfferGeo(nextAiState.location_text);
@@ -1094,22 +1138,26 @@ app.post('/webhook', async (req, res) => {
         normalizedText.includes('contacte un asesor') ||
         normalizedText.includes('contacte un agente');
 
+      const commercialHandoffIntent =
+        shouldPrioritizeDemandHandoff(nextAiState, matchedProperties);
+
       if (
-        explicitHandoffIntent &&
+        (explicitHandoffIntent || commercialHandoffIntent) &&
         !nextAiState.full_name
       ) {
-        reply = 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
+        reply = nextAiState.wants_visit
+          ? 'Claro. Para ayudarte a coordinar una visita, ¿me compartes tu nombre completo?'
+          : 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
         nextAiState.awaiting_field = 'full_name';
       } else if (
-        explicitHandoffIntent &&
+        (explicitHandoffIntent || commercialHandoffIntent) &&
         nextAiState.full_name &&
-        !nextAiState.contact_number_confirmed &&
         !nextAiState.contact_preference
       ) {
         reply = 'Perfecto. ¿Prefieres que te contacten por WhatsApp o por llamada?';
         nextAiState.awaiting_field = 'contact_preference';
       } else if (
-        explicitHandoffIntent &&
+        (explicitHandoffIntent || commercialHandoffIntent) &&
         nextAiState.full_name &&
         nextAiState.contact_preference &&
         nextAiState.contact_number_confirmed == null
@@ -1119,7 +1167,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       const canCreateDemandHandoff =
-        shouldEscalateDemand(nextAiState, matchedProperties, text) &&
+        (shouldEscalateDemand(nextAiState, matchedProperties, text) || commercialHandoffIntent) &&
         !!nextAiState.full_name &&
         !!nextAiState.contact_preference &&
         nextAiState.contact_number_confirmed === true &&
@@ -1134,12 +1182,7 @@ app.post('/webhook', async (req, res) => {
           conversationId,
           state: nextAiState,
           summary,
-          priority:
-            matchedProperties.length === 0
-              ? 'high'
-              : nextAiState.wants_human
-              ? 'high'
-              : 'medium',
+          priority: getDemandFollowupPriority(nextAiState, matchedProperties),
           requestType: 'demand',
         });
         nextAiState.handoff_ready = true;
@@ -1147,7 +1190,13 @@ app.post('/webhook', async (req, res) => {
         nextAiState.awaiting_field = null;
         reply = buildFinalHandoffReply(nextAiState);
       } else {
-        if (!matchedProperties.length && nextAiState.full_name && nextAiState.contact_preference && nextAiState.contact_number_confirmed === true && !nextAiState.handoff_sent) {
+        if (
+          !matchedProperties.length &&
+          nextAiState.full_name &&
+          nextAiState.contact_preference &&
+          nextAiState.contact_number_confirmed === true &&
+          !nextAiState.handoff_sent
+        ) {
           await upsertContactForConversation(conversationRow, nextAiState, from);
           const summary =
             buildAiSummary(nextAiState, matchedProperties) ||
@@ -1168,10 +1217,16 @@ app.post('/webhook', async (req, res) => {
             if (
               matchedProperties.length > 0 &&
               !nextAiState.full_name &&
-              (normalizedText.includes('asesor') || normalizedText.includes('contacte'))
+              (normalizedText.includes('asesor') ||
+                normalizedText.includes('contacte') ||
+                nextAiState.wants_visit ||
+                nextAiState.shows_high_interest ||
+                nextAiState.asks_property_details)
             ) {
               nextAiState.awaiting_field = 'full_name';
-              reply = 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
+              reply = nextAiState.wants_visit
+                ? 'Claro. Para ayudarte a coordinar una visita, ¿me compartes tu nombre completo?'
+                : 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
             }
           }
         }

@@ -235,6 +235,183 @@ function extractPhoneNumber(message) {
   return match ? match[1] : null;
 }
 
+function detectVisitIntent(message) {
+  const text = normalizeText(message);
+
+  const phrases = [
+    'quiero verla',
+    'quiero verlo',
+    'quiero ver la propiedad',
+    'quiero ver el departamento',
+    'quiero ver la casa',
+    'quiero visitarla',
+    'quiero visitarlo',
+    'quiero agendar visita',
+    'agendar visita',
+    'agendar una visita',
+    'agendar cita',
+    'agendar una cita',
+    'hacer cita',
+    'quiero una cita',
+    'cuando la puedo ver',
+    'cuando lo puedo ver',
+    'cómo la puedo ver',
+    'como la puedo ver',
+    'como lo puedo ver',
+    'cómo lo puedo ver',
+    'me gustaria verla',
+    'me gustaría verla',
+    'me gustaria verlo',
+    'me gustaría verlo',
+    'la quiero ver',
+    'lo quiero ver',
+    'quiero ir a verla',
+    'quiero ir a verlo',
+  ];
+
+  return phrases.some((phrase) => text.includes(phrase));
+}
+
+function detectHighInterest(message) {
+  const text = normalizeText(message);
+
+  const phrases = [
+    'me interesa',
+    'si me interesa',
+    'sí me interesa',
+    'me gusto',
+    'me gustó',
+    'me encanto',
+    'me encantó',
+    'me agrada',
+    'me llama la atencion',
+    'me llama la atención',
+    'suena bien',
+    'se ve bien',
+    'se escucha bien',
+    'la quiero',
+    'lo quiero',
+    'me interesa esa',
+    'me interesa esa opcion',
+    'me interesa esa opción',
+    'me interesa esta',
+    'me interesa esta opcion',
+    'me interesa esta opción',
+  ];
+
+  return phrases.some((phrase) => text.includes(phrase));
+}
+
+function detectPropertyDetailsIntent(message) {
+  const text = normalizeText(message);
+
+  const phrases = [
+    'quiero mas informacion',
+    'quiero más información',
+    'mas informacion',
+    'más información',
+    'mas info',
+    'más info',
+    'dame mas info',
+    'dame más info',
+    'dame informacion',
+    'dame información',
+    'tienes mas info',
+    'tienes más info',
+    'mandame info',
+    'mándame info',
+    'mandame mas informacion',
+    'mándame más información',
+    'quiero detalles',
+    'dame detalles',
+  ];
+
+  return phrases.some((phrase) => text.includes(phrase));
+}
+
+function detectAvailabilityQuestion(message) {
+  const text = normalizeText(message);
+
+  const phrases = [
+    'sigue disponible',
+    'sigue en venta',
+    'sigue en renta',
+    'todavia disponible',
+    'todavía disponible',
+    'aun disponible',
+    'aún disponible',
+    'todavia esta disponible',
+    'todavía está disponible',
+    'aun esta disponible',
+    'aún está disponible',
+    'esta disponible',
+    'está disponible',
+  ];
+
+  return phrases.some((phrase) => text.includes(phrase));
+}
+
+function detectLocationDetailQuestion(message) {
+  const text = normalizeText(message);
+
+  const phrases = [
+    'donde esta',
+    'dónde está',
+    'donde queda',
+    'dónde queda',
+    'cual es la direccion',
+    'cuál es la dirección',
+    'direccion exacta',
+    'dirección exacta',
+    'en que colonia esta',
+    'en qué colonia está',
+    'que zona es',
+    'qué zona es',
+  ];
+
+  return phrases.some((phrase) => text.includes(phrase));
+}
+
+function detectPriceDetailQuestion(message) {
+  const text = normalizeText(message);
+
+  const phrases = [
+    'precio final',
+    'precio negociable',
+    'se puede negociar',
+    'es negociable',
+    'cuanto es lo menos',
+    'cuánto es lo menos',
+    'cuál es el ultimo precio',
+    'cual es el ultimo precio',
+    'último precio',
+    'ultimo precio',
+  ];
+
+  return phrases.some((phrase) => text.includes(phrase));
+}
+
+function detectCommercialSignals(message) {
+  const wantsVisit = detectVisitIntent(message);
+  const showsHighInterest = detectHighInterest(message);
+  const asksPropertyDetails =
+    detectPropertyDetailsIntent(message) ||
+    detectAvailabilityQuestion(message) ||
+    detectLocationDetailQuestion(message) ||
+    detectPriceDetailQuestion(message);
+
+  const wantsHumanByCommercialIntent =
+    wantsVisit ||
+    asksPropertyDetails;
+
+  return {
+    wants_visit: wantsVisit,
+    shows_high_interest: showsHighInterest,
+    asks_property_details: asksPropertyDetails,
+    wants_human_by_commercial_intent: wantsHumanByCommercialIntent,
+  };
+}
+
 function detectContextualSignals(message, prevState) {
   const text = normalizeText(message);
   const awaitingField = prevState?.awaiting_field || null;
@@ -288,6 +465,8 @@ function inferUserGoal(leadFlow) {
 function parseMessageSignals(message, prevState = getDefaultAiState()) {
   const intent = detectIntent(message, prevState);
   const contextual = detectContextualSignals(message, prevState);
+  const commercial = detectCommercialSignals(message);
+
   const propertyType = extractPropertyType(message);
   const locationText = extractLocation(message, prevState);
   const budgetMax = extractMaxPrice(message);
@@ -331,7 +510,10 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
     full_name: fullName,
     owner_relation: ownerRelation,
     better_phone: betterPhone,
-    wants_human: !!intent.wantsHuman,
+    wants_human: !!intent.wantsHuman || commercial.wants_human_by_commercial_intent,
+    wants_visit: commercial.wants_visit,
+    shows_high_interest: commercial.shows_high_interest,
+    asks_property_details: commercial.asks_property_details,
     user_goal: inferUserGoal(intent.leadType),
     confidence,
     matched_location_from_catalog: locationText || null,
@@ -350,6 +532,13 @@ module.exports = {
   extractPossibleName,
   detectOwnerRelation,
   extractPhoneNumber,
+  detectVisitIntent,
+  detectHighInterest,
+  detectPropertyDetailsIntent,
+  detectAvailabilityQuestion,
+  detectLocationDetailQuestion,
+  detectPriceDetailQuestion,
+  detectCommercialSignals,
   detectContextualSignals,
   parseMessageSignals,
   inferUserGoal,
