@@ -91,9 +91,22 @@ function buildFinalHandoffReply(state) {
   return `Perfecto${name}. Ya dejé tu búsqueda registrada y un asesor de Luxetty te contactará ${channel} para ayudarte con opciones alineadas.`;
 }
 
+function getDemandMatchQuality(properties = []) {
+  if (!Array.isArray(properties) || properties.length === 0) {
+    return 'none';
+  }
+
+  const topScore = Number(properties[0]?.match_score || 0);
+
+  if (topScore >= 80) return 'strong';
+  if (topScore >= 55) return 'medium';
+  return 'weak';
+}
+
 function buildDemandReply(state, changeType, properties, attemptUsed) {
   const ack = getChangeAcknowledgement(changeType, state);
   const hasResults = Array.isArray(properties) && properties.length > 0;
+  const matchQuality = getDemandMatchQuality(properties);
 
   if (!state.operation_type) {
     return 'Con gusto te ayudo. ¿Buscas comprar o rentar?';
@@ -117,16 +130,28 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
 
   if (hasResults) {
     if (properties.length === 1) {
-      return `${ack}\nEncontré una opción que puede hacer sentido para ti:\n\n${formatPropertyShort(properties[0])}\n\nSi quieres, te comparto otra opción o afinamos la búsqueda.`;
+      if (matchQuality === 'strong') {
+        return `${ack}\nEncontré una opción muy alineada con lo que buscas:\n\n${formatPropertyShort(properties[0])}\n\nSi quieres, te comparto otra opción o afinamos la búsqueda.`;
+      }
+
+      return `${ack}\nEncontré una opción cercana a lo que buscas:\n\n${formatPropertyShort(properties[0])}\n\nSi quieres, ajusto un poco más la búsqueda o te comparto alternativas.`;
     }
 
-    return `${ack}\nEstas opciones pueden hacer sentido para ti:\n\n${formatPropertyList(properties)}\n\nSi quieres, puedo afinar más la búsqueda o ayudarte a pasar con un asesor.`;
+    if (matchQuality === 'strong') {
+      return `${ack}\nEstas son las opciones más alineadas que encontré para ti:\n\n${formatPropertyList(properties)}\n\nSi quieres, puedo afinar más la búsqueda o ayudarte a pasar con un asesor.`;
+    }
+
+    if (matchQuality === 'medium') {
+      return `${ack}\nEncontré opciones cercanas a lo que buscas:\n\n${formatPropertyList(properties)}\n\nSi quieres, ajusto un poco más la búsqueda para acercarnos todavía más.`;
+    }
+
+    return `${ack}\nEncontré algunas alternativas que podrían servirte:\n\n${formatPropertyList(properties)}\n\nSi quieres, afino la búsqueda para mostrarte opciones más alineadas.`;
   }
 
   const noExact = `${ack}\nNo encontré una coincidencia exacta en este momento.`;
 
   if (attemptUsed === 'expanded_budget') {
-    return `${noExact}\nPuedo ampliar zona o presupuesto, o dejarte con un asesor para revisar alternativas reales. ¿Qué prefieres?`;
+    return `${noExact}\nYa amplié criterios para buscar alternativas, pero no vi algo realmente alineado. Puedo ampliar zona o presupuesto, o dejarte con un asesor. ¿Qué prefieres?`;
   }
 
   return `${noExact}\nPuedo ajustar la búsqueda o dejarte con un asesor para ayudarte mejor. ¿Qué prefieres?`;

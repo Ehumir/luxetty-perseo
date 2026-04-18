@@ -232,6 +232,100 @@ function applyDemandResultGuards(properties, state) {
   return rows;
 }
 
+function getDemandPropertyMatchScore(property, state) {
+  let score = 0;
+
+  if (state.location_text && !state.location_any) {
+    const normalizedDesiredLocation = normalizeText(state.location_text);
+    const zone = normalizeText(property.zone || '');
+    const neighborhood = normalizeText(property.neighborhood || '');
+    const city = normalizeText(property.city || '');
+    const municipality = normalizeText(property.municipality || '');
+    const address = normalizeText(property.formatted_address || '');
+
+    if (
+      zone === normalizedDesiredLocation ||
+      neighborhood === normalizedDesiredLocation ||
+      city === normalizedDesiredLocation ||
+      municipality === normalizedDesiredLocation
+    ) {
+      score += 45;
+    } else if (
+      zone.includes(normalizedDesiredLocation) ||
+      neighborhood.includes(normalizedDesiredLocation) ||
+      city.includes(normalizedDesiredLocation) ||
+      municipality.includes(normalizedDesiredLocation) ||
+      address.includes(normalizedDesiredLocation)
+    ) {
+      score += 28;
+    }
+  } else if (state.location_any) {
+    score += 8;
+  }
+
+  if (state.property_type) {
+    const desiredType = normalizeText(state.property_type);
+    const rawType = normalizeText(property.property_type || property.property_type_code || '');
+
+    if (!rawType) {
+      score += 3;
+    } else if (
+      (desiredType === 'house' && (rawType.includes('casa') || rawType.includes('house'))) ||
+      (desiredType === 'apartment' && (rawType.includes('depa') || rawType.includes('depart') || rawType.includes('apartment'))) ||
+      (desiredType === 'land' && (rawType.includes('terreno') || rawType.includes('land'))) ||
+      (desiredType === 'office' && (rawType.includes('oficina') || rawType.includes('office'))) ||
+      (desiredType === 'commercial' && (rawType.includes('local') || rawType.includes('commercial'))) ||
+      (desiredType === 'warehouse' && (rawType.includes('nave') || rawType.includes('warehouse')))
+    ) {
+      score += 20;
+    }
+  }
+
+  if (state.budget_currency && propertyMatchesCurrency(property, state.budget_currency)) {
+    score += 10;
+  }
+
+  if (state.budget_max != null && property.price != null) {
+    const desiredBudget = Number(state.budget_max);
+    const propertyPrice = Number(property.price);
+
+    if (desiredBudget > 0 && propertyPrice > 0) {
+      const diffRatio = Math.abs(propertyPrice - desiredBudget) / desiredBudget;
+
+      if (diffRatio <= 0.1) score += 20;
+      else if (diffRatio <= 0.2) score += 15;
+      else if (diffRatio <= 0.35) score += 10;
+      else if (diffRatio <= 0.5) score += 5;
+    }
+  }
+
+  if (state.bedrooms != null && property.bedrooms != null) {
+    const diff = Math.abs(Number(property.bedrooms) - Number(state.bedrooms));
+    if (diff === 0) score += 12;
+    else if (diff === 1) score += 6;
+  }
+
+  if (state.bathrooms != null && property.bathrooms != null) {
+    const diff = Math.abs(Number(property.bathrooms) - Number(state.bathrooms));
+    if (diff === 0) score += 6;
+    else if (diff === 1) score += 3;
+  }
+
+  return score;
+}
+
+function rankDemandProperties(properties, state) {
+  return [...(properties || [])]
+    .map((property) => ({
+      ...property,
+      match_score: getDemandPropertyMatchScore(property, state),
+    }))
+    .sort((a, b) => {
+      if (b.match_score !== a.match_score) return b.match_score - a.match_score;
+      return Number(a.price || 0) - Number(b.price || 0);
+    });
+}
+
 async function saveConversationEvent(conversationId, type, payload = {}, createdBy = null) {
   try {
     if (!conversationId) return;
@@ -466,8 +560,10 @@ async function searchPropertiesWithFallbacks(state) {
     const usable = fresh.length > 0 ? fresh : guarded;
 
     if (usable.length > 0) {
+      const ranked = rankDemandProperties(usable, state);
+
       return {
-        properties: usable.slice(0, DEFAULT_PROPERTY_LIMIT),
+        properties: ranked.slice(0, DEFAULT_PROPERTY_LIMIT),
         attemptUsed: attempt.label,
       };
     }
@@ -791,6 +887,7 @@ app.post('/webhook', async (req, res) => {
 
     const conversationRow = await getOrCreateConversation(from);
     const conversationId = conversationRow?.id || null;
+    const normalizedText = normalizeText(text);
 
     await saveConversationMessage({
       conversationId,
@@ -811,29 +908,33 @@ app.post('/webhook', async (req, res) => {
 
     const previousAiState = normalizeAiState(conversationRow?.ai_state);
     const incomingSignals = parseMessageSignals(text, previousAiState);
-  
-if (incomingSignals.location_text && !incomingSignals.location_any) {
-  const rawLoc = normalizeText(incomingSignals.location_text);
 
-  if (!['venta', 'renta', 'compra', 'comprar', 'rentar', 'vender'].includes(rawLoc)) {
-    const canonicalLocation = findCanonicalLocation(incomingSignals.location_text);
-    incomingSignals.location_text = canonicalLocation || incomingSignals.location_text;
-    incomingSignals.matched_location_from_catalog =
-      canonicalLocation || incomingSignals.location_text;
-  }
-}
-  
+    if (incomingSignals.location_text && !incomingSignals.location_any) {
+      const rawLoc = normalizeText(incomingSignals.location_text);
+
+      if (!['venta', 'renta', 'compra', 'comprar', 'rentar', 'vender'].includes(rawLoc)) {
+        const canonicalLocation = findCanonicalLocation(incomingSignals.location_text);
+        incomingSignals.location_text = canonicalLocation || incomingSignals.location_text;
+        incomingSignals.matched_location_from_catalog =
+          canonicalLocation || incomingSignals.location_text;
+      }
+    }
+
     const changeType = detectStateChange(previousAiState, incomingSignals);
     let nextAiState = buildNextState(previousAiState, incomingSignals, changeType);
 
-if (incomingSignals.location_any) {
-  nextAiState.location_text = null;
-  nextAiState.location_any = true;
-} else if (incomingSignals.location_text) {
-  nextAiState.location_text = incomingSignals.location_text;
-  nextAiState.location_any = false; 
-}
+    if (incomingSignals.location_any) {
+      nextAiState.location_text = null;
+      nextAiState.location_any = true;
+    } else if (incomingSignals.location_text) {
+      nextAiState.location_text = incomingSignals.location_text;
+      nextAiState.location_any = false;
+    }
 
+    if (incomingSignals.matched_location_from_catalog) {
+      nextAiState.matched_location_from_catalog =
+        incomingSignals.matched_location_from_catalog;
+    }
 
     if (incomingSignals.better_phone) {
       nextAiState.contact_number_confirmed = true;
@@ -901,6 +1002,7 @@ if (incomingSignals.location_any) {
         {
           filters: nextAiState.last_search_filters,
           result_count: matchedProperties.length,
+          top_match_score: matchedProperties[0]?.match_score || 0,
         }
       );
     }
@@ -922,8 +1024,8 @@ if (incomingSignals.location_any) {
 
       const explicitHandoffIntent =
         nextAiState.wants_human ||
-        normalizeText(text).includes('contacte un asesor') ||
-        normalizeText(text).includes('contacte un agente');
+        normalizedText.includes('contacte un asesor') ||
+        normalizedText.includes('contacte un agente');
 
       if (
         explicitHandoffIntent &&
@@ -999,7 +1101,7 @@ if (incomingSignals.location_any) {
             if (
               matchedProperties.length > 0 &&
               !nextAiState.full_name &&
-              (normalizeText(text).includes('asesor') || normalizeText(text).includes('contacte'))
+              (normalizedText.includes('asesor') || normalizedText.includes('contacte'))
             ) {
               nextAiState.awaiting_field = 'full_name';
               reply = 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
@@ -1101,6 +1203,7 @@ ${locationCatalog.rawNames.join(', ')}
       await saveConversationEvent(conversationId, 'properties_suggested', {
         property_ids: matchedProperties.map((p) => p.id),
         count: matchedProperties.length,
+        top_match_score: matchedProperties[0]?.match_score || 0,
       });
     }
 
