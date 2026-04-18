@@ -15,6 +15,7 @@ function buildAiSummary(state, properties = []) {
     parts.push(`Lead quiere ${state.operation_type === 'rent' ? 'poner en renta' : 'vender'} su propiedad.`);
   }
 
+  if (state.property_code) parts.push(`Referencia directa a propiedad: ${state.property_code}.`);
   if (state.property_type) parts.push(`Tipo: ${formatPropertyTypeLabel(state.property_type)}.`);
   if (state.location_text) parts.push(`Ubicación: ${state.location_text}.`);
   if (state.budget_max) parts.push(`Monto: ${formatMoney(state.budget_max, state.budget_currency || 'MXN')}.`);
@@ -25,6 +26,7 @@ function buildAiSummary(state, properties = []) {
   if (state.wants_visit) parts.push('Quiere agendar visita.');
   if (state.shows_high_interest) parts.push('Muestra alto interés.');
   if (state.asks_property_details) parts.push('Está pidiendo más detalles de la propiedad.');
+  if (state.direct_property_reference) parts.push('Entró por referencia directa de propiedad.');
 
   if (properties.length > 0) {
     parts.push(`Resultados actuales: ${properties.length}.`);
@@ -96,6 +98,10 @@ function buildFinalHandoffReply(state) {
     return `Perfecto${name}. Ya dejé tu solicitud para coordinar la visita y un asesor te contactará ${channel} para avanzar contigo.`;
   }
 
+  if (state.direct_property_reference && state.property_code) {
+    return `Perfecto${name}. Ya dejé registrada tu solicitud sobre la propiedad ${state.property_code} y un asesor de Luxetty te contactará ${channel} para ayudarte a avanzar.`;
+  }
+
   return `Perfecto${name}. Ya dejé tu búsqueda lista y un asesor de Luxetty te contactará ${channel} para ayudarte a avanzar con las mejores opciones.`;
 }
 
@@ -115,10 +121,27 @@ function getDemandMatchQuality(state, properties = []) {
 }
 
 function hasCommercialIntent(state) {
-  return !!state.wants_visit || !!state.shows_high_interest || !!state.asks_property_details;
+  return (
+    !!state.wants_visit ||
+    !!state.shows_high_interest ||
+    !!state.asks_property_details ||
+    !!state.direct_property_reference
+  );
 }
 
 function getDemandActionClosing(state, matchQuality) {
+  if (state.direct_property_reference && state.property_code) {
+    if (state.wants_visit) {
+      return `Si esta propiedad te hace sentido, te ayudo a coordinar la visita o avanzamos con un asesor.`;
+    }
+
+    if (state.asks_property_details) {
+      return `Si quieres, te conecto con un asesor para darte más detalle sobre la propiedad ${state.property_code} y ayudarte a avanzar.`;
+    }
+
+    return `Si esta propiedad te interesa, te conecto con un asesor para revisarla contigo y ayudarte a avanzar.`;
+  }
+
   if (state.wants_visit) {
     return 'Si esta propiedad te hace sentido, te ayudo a coordinar la visita o avanzamos con un asesor.';
   }
@@ -142,7 +165,40 @@ function getDemandActionClosing(state, matchQuality) {
   return 'Si quieres, ajustamos la búsqueda o vemos contigo opciones más alineadas.';
 }
 
+function buildDirectPropertyReply(state, changeType, properties = []) {
+  const ack = getChangeAcknowledgement(changeType, state);
+  const property = Array.isArray(properties) && properties.length > 0 ? properties[0] : null;
+
+  if (!property) {
+    return `No encontré una propiedad activa con el ID ${state.property_code}. Si quieres, dime qué tipo de propiedad buscas y te ayudo a encontrar opciones.`;
+  }
+
+  const codeLabel = state.property_code ? ` ${state.property_code}` : '';
+  const baseIntro =
+    changeType === 'radical_change' || changeType === 'restart_flow'
+      ? `${ack}\nYa ubiqué la propiedad${codeLabel}.`
+      : `Ya ubiqué la propiedad${codeLabel}.`;
+
+  if (state.wants_visit) {
+    return `${baseIntro}\n\n${formatPropertyShort(property)}\n\nSi te hace sentido, te ayudo a coordinar la visita o te conecto con un asesor para avanzar.`;
+  }
+
+  if (state.asks_property_details) {
+    return `${baseIntro}\n\n${formatPropertyShort(property)}\n\nSi quieres, te conecto con un asesor para darte más detalle y revisar esta opción contigo.`;
+  }
+
+  if (state.shows_high_interest) {
+    return `${baseIntro}\n\n${formatPropertyShort(property)}\n\nSe ve como una opción que vale la pena revisar. Si quieres, te conecto con un asesor para ayudarte a avanzar con esta propiedad.`;
+  }
+
+  return `${baseIntro}\n\n${formatPropertyShort(property)}\n\nSi quieres, te doy más detalle o te ayudo a coordinar una visita.`;
+}
+
 function buildDemandReply(state, changeType, properties, attemptUsed) {
+  if (state.direct_property_reference && state.property_code) {
+    return buildDirectPropertyReply(state, changeType, properties);
+  }
+
   const ack = getChangeAcknowledgement(changeType, state);
   const hasResults = Array.isArray(properties) && properties.length > 0;
   const matchQuality = getDemandMatchQuality(state, properties);
@@ -249,6 +305,7 @@ IMPORTANTE:
 - Máximo una pregunta.
 - Mantén tono premium, natural y comercial.
 - Si detectas interés, orienta a visita o asesor.
+- Si existe referencia directa a propiedad, responde como seguimiento de esa propiedad.
 - No suenes como bot.
 `,
       },
@@ -268,6 +325,7 @@ module.exports = {
   buildDemandLowValueReply,
   buildOfferRejectedReply,
   buildFinalHandoffReply,
+  buildDirectPropertyReply,
   buildDemandReply,
   buildOfferReply,
   buildFallbackOpenAIReply,

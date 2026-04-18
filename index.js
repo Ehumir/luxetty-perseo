@@ -372,7 +372,8 @@ function shouldPrioritizeDemandHandoff(state, properties = []) {
   const strongCommercialIntent =
     !!state.wants_visit ||
     !!state.shows_high_interest ||
-    !!state.asks_property_details;
+    !!state.asks_property_details ||
+    !!state.direct_property_reference;
 
   const hasResults = Array.isArray(properties) && properties.length > 0;
   const strongMatch = Number(state.top_match_score || 0) >= 80;
@@ -382,6 +383,7 @@ function shouldPrioritizeDemandHandoff(state, properties = []) {
   if (state.wants_visit && mediumMatch) return true;
   if (state.asks_property_details && hasResults) return true;
   if (state.shows_high_interest && strongMatch) return true;
+  if (state.direct_property_reference && hasResults) return true;
 
   return false;
 }
@@ -390,6 +392,7 @@ function getDemandFollowupPriority(state, properties = []) {
   const hasResults = Array.isArray(properties) && properties.length > 0;
   const topMatchScore = Number(state.top_match_score || 0);
 
+  if (state.direct_property_reference && hasResults) return 'high';
   if (state.wants_visit && hasResults) return 'high';
   if (state.asks_property_details && hasResults) return 'high';
   if (state.shows_high_interest && topMatchScore >= 80) return 'high';
@@ -565,6 +568,49 @@ async function searchProperties({
   } catch (err) {
     console.error('FATAL searchProperties:', err);
     return [];
+  }
+}
+
+async function getPropertyByCode(propertyCode) {
+  try {
+    if (!propertyCode) return null;
+
+    const normalizedCode = String(propertyCode).trim().toUpperCase();
+
+    let { data, error } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('property_code', normalizedCode)
+      .limit(1);
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data[0];
+    }
+
+    ({ data, error } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('code', normalizedCode)
+      .limit(1));
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data[0];
+    }
+
+    ({ data, error } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('public_id', normalizedCode)
+      .limit(1));
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data[0];
+    }
+
+    return null;
+  } catch (err) {
+    console.error('FATAL getPropertyByCode:', err);
+    return null;
   }
 }
 
@@ -872,7 +918,8 @@ function shouldEscalateDemand(state, properties, text) {
     normalized.includes('asesor') ||
     normalized.includes('agente') ||
     normalized.includes('llamen') ||
-    normalized.includes('marquen');
+    normalized.includes('marquen') ||
+    !!state.direct_property_reference;
 
   const enoughContextForHuman =
     !!state.location_text &&
@@ -1040,6 +1087,13 @@ app.post('/webhook', async (req, res) => {
       nextAiState.asks_property_details = true;
     }
 
+    if (incomingSignals.property_code) {
+      nextAiState.property_code = incomingSignals.property_code;
+      nextAiState.direct_property_reference = true;
+      nextAiState.direct_property_code = incomingSignals.property_code;
+      nextAiState.lead_flow = 'demand';
+    }
+
     if (nextAiState.lead_flow === 'offer') {
       if (nextAiState.location_text) {
         nextAiState.geo_qualified = qualifiesOfferGeo(nextAiState.location_text);
@@ -1070,7 +1124,58 @@ app.post('/webhook', async (req, res) => {
     let topMatchScore = 0;
     let rawResultCount = 0;
 
-    if (shouldRunPropertySearch(previousAiState, nextAiState)) {
+    if (nextAiState.direct_property_reference && nextAiState.property_code) {
+      await saveConversationEvent(conversationId, 'direct_property_lookup_started', {
+        property_code: nextAiState.property_code,
+      });
+
+      const directProperty = await getPropertyByCode(nextAiState.property_code);
+
+      if (directProperty) {
+        matchedProperties = [directProperty];
+        attemptUsed = 'direct_property_code';
+        resultQuality = 'strong';
+        topMatchScore = 100;
+        rawResultCount = 1;
+
+        nextAiState.needs_fresh_search = false;
+        nextAiState.result_quality = resultQuality;
+        nextAiState.top_match_score = topMatchScore;
+        nextAiState.last_search_filters = {
+          attempt_used: attemptUsed,
+          property_code: nextAiState.property_code,
+          result_quality: resultQuality,
+        };
+        nextAiState.last_search_result_count = 1;
+        nextAiState.last_shown_property_ids = [directProperty.id];
+
+        await saveConversationEvent(conversationId, 'direct_property_lookup_found', {
+          property_code: nextAiState.property_code,
+          property_id: directProperty.id,
+        });
+      } else {
+        matchedProperties = [];
+        attemptUsed = 'direct_property_code_not_found';
+        resultQuality = 'none';
+        topMatchScore = 0;
+        rawResultCount = 0;
+
+        nextAiState.needs_fresh_search = false;
+        nextAiState.result_quality = resultQuality;
+        nextAiState.top_match_score = topMatchScore;
+        nextAiState.last_search_filters = {
+          attempt_used: attemptUsed,
+          property_code: nextAiState.property_code,
+          result_quality: resultQuality,
+        };
+        nextAiState.last_search_result_count = 0;
+        nextAiState.last_shown_property_ids = [];
+
+        await saveConversationEvent(conversationId, 'direct_property_lookup_not_found', {
+          property_code: nextAiState.property_code,
+        });
+      }
+    } else if (shouldRunPropertySearch(previousAiState, nextAiState)) {
       await saveConversationEvent(conversationId, 'search_started', {
         filters: {
           operation_type: nextAiState.operation_type,
@@ -1122,7 +1227,7 @@ app.post('/webhook', async (req, res) => {
 
     let reply = null;
 
-    if (isGreetingOnly(text) && !previousAiState.lead_flow) {
+    if (isGreetingOnly(text) && !previousAiState.lead_flow && !incomingSignals.property_code) {
       reply =
         'Hola, soy el asistente de Luxetty 😊\nCon gusto te ayudo.\n¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
     } else if (nextAiState.handoff_sent && isClosureCheck(text)) {
@@ -1130,6 +1235,8 @@ app.post('/webhook', async (req, res) => {
         ? 'Gracias. Quedó registrado y un asesor de Luxetty te contactará por el canal que elegiste.'
         : 'Gracias. Quedó registrada tu búsqueda y un asesor de Luxetty te contactará para continuar.';
       nextAiState.closing_message_sent = true;
+    } else if (nextAiState.direct_property_reference && nextAiState.property_code && matchedProperties.length === 0) {
+      reply = `No encontré una propiedad activa con el ID ${nextAiState.property_code}. Si quieres, dime qué tipo de propiedad buscas y te ayudo a encontrar opciones.`;
     } else if (nextAiState.lead_flow === 'demand') {
       reply = buildDemandReply(nextAiState, changeType, matchedProperties, attemptUsed);
 
@@ -1217,11 +1324,14 @@ app.post('/webhook', async (req, res) => {
             if (
               matchedProperties.length > 0 &&
               !nextAiState.full_name &&
-              (normalizedText.includes('asesor') ||
+              (
+                normalizedText.includes('asesor') ||
                 normalizedText.includes('contacte') ||
                 nextAiState.wants_visit ||
                 nextAiState.shows_high_interest ||
-                nextAiState.asks_property_details)
+                nextAiState.asks_property_details ||
+                nextAiState.direct_property_reference
+              )
             ) {
               nextAiState.awaiting_field = 'full_name';
               reply = nextAiState.wants_visit
@@ -1328,6 +1438,8 @@ ${locationCatalog.rawNames.join(', ')}
         raw_result_count: rawResultCount,
         result_quality: resultQuality,
         top_match_score: topMatchScore,
+        direct_property_reference: !!nextAiState.direct_property_reference,
+        property_code: nextAiState.property_code || null,
       });
     }
 

@@ -235,6 +235,28 @@ function extractPhoneNumber(message) {
   return match ? match[1] : null;
 }
 
+function extractPropertyCode(message) {
+  const raw = cleanSpaces(message || '');
+
+  const patterns = [
+    /\b(?:propiedad|id)\s*[:#-]?\s*(LUX-[A-Z]\d{4}|[A-Z]\d{4})\b/i,
+    /\b(LUX-[A-Z]\d{4}|[A-Z]\d{4})\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (match?.[1]) {
+      return cleanSpaces(match[1]).toUpperCase();
+    }
+  }
+
+  return null;
+}
+
+function detectDirectPropertyReference(message) {
+  return !!extractPropertyCode(message);
+}
+
 function detectVisitIntent(message) {
   const text = normalizeText(message);
 
@@ -476,6 +498,7 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
   const contactPreference = detectContactPreference(message);
   const fullName = extractPossibleName(message, prevState);
   const ownerRelation = detectOwnerRelation(message);
+  const propertyCode = extractPropertyCode(message);
   const betterPhone =
     prevState?.awaiting_field === 'contact_number'
       ? extractPhoneNumber(message)
@@ -492,6 +515,7 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
     bedrooms,
     fullName,
     ownerRelation,
+    propertyCode,
   ].filter((v) => v !== null && v !== undefined).length;
 
   if (filledCount >= 5) confidence = 'high';
@@ -510,6 +534,8 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
     full_name: fullName,
     owner_relation: ownerRelation,
     better_phone: betterPhone,
+    property_code: propertyCode,
+    direct_property_reference: !!propertyCode,
     wants_human: !!intent.wantsHuman || commercial.wants_human_by_commercial_intent,
     wants_visit: commercial.wants_visit,
     shows_high_interest: commercial.shows_high_interest,
@@ -532,6 +558,8 @@ module.exports = {
   extractPossibleName,
   detectOwnerRelation,
   extractPhoneNumber,
+  extractPropertyCode,
+  detectDirectPropertyReference,
   detectVisitIntent,
   detectHighInterest,
   detectPropertyDetailsIntent,
