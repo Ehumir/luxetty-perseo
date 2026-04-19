@@ -1268,6 +1268,20 @@ app.post('/webhook', async (req, res) => {
       nextAiState.awaiting_field = previousAiState.awaiting_field;
     }
 
+    // ✅ Resolver awaiting_field cuando el usuario ya contestó
+    if (
+      previousAiState.awaiting_field &&
+      (
+        (previousAiState.awaiting_field === 'full_name' && !!incomingSignals.full_name) ||
+        (previousAiState.awaiting_field === 'contact_preference' && !!incomingSignals.contact_preference) ||
+        (previousAiState.awaiting_field === 'contact_number_confirmed' && incomingSignals.contact_number_confirmed !== null) ||
+        (previousAiState.awaiting_field === 'location_text' && (!!incomingSignals.location_text || !!incomingSignals.location_any)) ||
+        (previousAiState.awaiting_field === 'bedrooms' && (incomingSignals.bedrooms != null || !!incomingSignals.bedrooms_any))
+      )
+    ) {
+      nextAiState.awaiting_field = null;
+    }
+
     if (incomingSignals.location_any) {
       nextAiState.location_text = null;
       nextAiState.location_any = true;
@@ -1287,6 +1301,36 @@ app.post('/webhook', async (req, res) => {
 
     if (incomingSignals.full_name) {
       nextAiState.full_name = incomingSignals.full_name;
+    }
+
+    // ✅ No volver a pedir datos que ya existen en estado
+    if (nextAiState.full_name && nextAiState.awaiting_field === 'full_name') {
+      nextAiState.awaiting_field = null;
+    }
+
+    if (nextAiState.contact_preference && nextAiState.awaiting_field === 'contact_preference') {
+      nextAiState.awaiting_field = null;
+    }
+
+    if (
+      nextAiState.contact_number_confirmed !== null &&
+      nextAiState.awaiting_field === 'contact_number_confirmed'
+    ) {
+      nextAiState.awaiting_field = null;
+    }
+
+    if (
+      (nextAiState.location_text || nextAiState.location_any) &&
+      nextAiState.awaiting_field === 'location_text'
+    ) {
+      nextAiState.awaiting_field = null;
+    }
+
+    if (
+      (nextAiState.bedrooms != null || nextAiState.bedrooms_any) &&
+      nextAiState.awaiting_field === 'bedrooms'
+    ) {
+      nextAiState.awaiting_field = null;
     }
 
     if (
@@ -1496,6 +1540,18 @@ app.post('/webhook', async (req, res) => {
 
     let reply = null;
 
+    function shouldAskField(state, fieldName) {
+      if (!state) return false;
+
+      if (fieldName === 'full_name') return !state.full_name;
+      if (fieldName === 'contact_preference') return !state.contact_preference;
+      if (fieldName === 'contact_number_confirmed') return state.contact_number_confirmed == null;
+      if (fieldName === 'location_text') return !state.location_text && !state.location_any;
+      if (fieldName === 'bedrooms') return state.bedrooms == null && !state.bedrooms_any;
+
+      return true;
+    }
+
     if (isGreetingOnly(text) && !previousAiState.lead_flow && !incomingSignals.property_code) {
       reply =
         'Hola, soy el asistente de Luxetty 😊\nCon gusto te ayudo.\n¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
@@ -1517,7 +1573,7 @@ app.post('/webhook', async (req, res) => {
 
       if (
         (explicitHandoffIntent || commercialHandoffIntent) &&
-        !nextAiState.full_name
+        shouldAskField(nextAiState, 'full_name')
       ) {
         reply = nextAiState.wants_visit
           ? 'Claro. Para ayudarte a coordinar una visita, ¿me compartes tu nombre completo?'
@@ -1526,7 +1582,7 @@ app.post('/webhook', async (req, res) => {
       } else if (
         (explicitHandoffIntent || commercialHandoffIntent) &&
         nextAiState.full_name &&
-        !nextAiState.contact_preference
+        shouldAskField(nextAiState, 'contact_preference')
       ) {
         reply = 'Perfecto. ¿Prefieres que te contacten por WhatsApp o por llamada?';
         nextAiState.awaiting_field = 'contact_preference';
@@ -1534,7 +1590,7 @@ app.post('/webhook', async (req, res) => {
         (explicitHandoffIntent || commercialHandoffIntent) &&
         nextAiState.full_name &&
         nextAiState.contact_preference &&
-        nextAiState.contact_number_confirmed == null
+        shouldAskField(nextAiState, 'contact_number_confirmed')
       ) {
         reply = 'Perfecto. ¿Este es el mejor número para contactarte?';
         nextAiState.awaiting_field = 'contact_number_confirmed';
@@ -1612,7 +1668,7 @@ app.post('/webhook', async (req, res) => {
           if (nextAiState.awaiting_field == null) {
             if (
               matchedProperties.length > 0 &&
-              !nextAiState.full_name &&
+              shouldAskField(nextAiState, 'full_name') &&
               (
                 normalizedText.includes('asesor') ||
                 normalizedText.includes('contacte') ||
@@ -1696,6 +1752,35 @@ ${locationCatalog.rawNames.join(', ')}
     }
 
     reply = sanitizeReply(reply);
+
+    // ✅ Anti-loop semántico: evitar preguntas ya resueltas
+    if (
+      reply &&
+      nextAiState.full_name &&
+      /nombre completo/i.test(reply) &&
+      shouldAskField(nextAiState, 'contact_preference')
+    ) {
+      reply = 'Perfecto. ¿Prefieres que te contacten por WhatsApp o por llamada?';
+      nextAiState.awaiting_field = 'contact_preference';
+    }
+
+    if (
+      reply &&
+      nextAiState.contact_preference &&
+      /whatsapp o por llamada/i.test(reply) &&
+      shouldAskField(nextAiState, 'contact_number_confirmed')
+    ) {
+      reply = 'Perfecto. ¿Este es el mejor número para contactarte?';
+      nextAiState.awaiting_field = 'contact_number_confirmed';
+    }
+
+    if (
+      reply &&
+      nextAiState.contact_number_confirmed !== null &&
+      /mejor numero para contactarte|mejor número para contactarte/i.test(reply)
+    ) {
+      nextAiState.awaiting_field = null;
+    }
 
     // 🔒 Anti-loop: evitar repetir exactamente la misma respuesta
     const lastMessages = conversations.get(from) || [];
