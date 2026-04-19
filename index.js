@@ -584,6 +584,12 @@ function normalizeListingId(rawValue) {
 async function getPropertyByCode(propertyCode) {
   try {
     const normalizedListingId = normalizeListingId(propertyCode);
+
+    console.log('getPropertyByCode INPUT:', {
+      raw_property_code: propertyCode,
+      normalized_listing_id: normalizedListingId,
+    });
+
     if (!normalizedListingId) return null;
 
     const { data, error } = await supabase
@@ -612,7 +618,7 @@ async function getPropertyByCode(propertyCode) {
         visible_on_website,
         is_public
       `)
-      .eq('listing_id', normalizedListingId)
+      .eq('listing_id', normalizedListingId.trim())
       .is('archived_at', null)
       .eq('visible_on_website', true)
       .in('status', ['active', 'sold', 'rented'])
@@ -623,11 +629,16 @@ async function getPropertyByCode(propertyCode) {
       return null;
     }
 
-    if (Array.isArray(data) && data.length > 0) {
-      return data[0];
-    }
+    const property = Array.isArray(data) && data.length > 0 ? data[0] : null;
 
-    return null;
+    console.log('getPropertyByCode OUTPUT:', {
+      normalized_listing_id: normalizedListingId,
+      found: !!property,
+      property_id: property?.id || null,
+      listing_id: property?.listing_id || null,
+    });
+
+    return property;
   } catch (err) {
     console.error('FATAL getPropertyByCode:', err);
     return null;
@@ -1381,27 +1392,41 @@ app.post('/webhook', async (req, res) => {
     }
 
     if (signals.direct_property_reference && signals.property_code) {
-      const property = await getPropertyByCode(signals.property_code);
-      console.log('DIRECT PROPERTY LOOKUP RESULT:', {
+      const normalizedDirectCode = normalizeListingId(signals.property_code);
+
+      console.log('DIRECT PROPERTY ENTRY:', {
+        raw_text: text,
+        parsed_property_code: signals.property_code,
+        normalized_direct_code: normalizedDirectCode,
+      });
+
+      const property = normalizedDirectCode
+        ? await getPropertyByCode(normalizedDirectCode)
+        : null;
+
+      const directPropertyAssignedAgentId = getAssignedAgentProfileIdFromProperty(property);
+
+      console.log('DIRECT PROPERTY PRIORITY RESULT:', {
         requested_code: signals.property_code,
-        normalized_code: normalizeListingId(signals.property_code),
+        normalized_code: normalizedDirectCode,
         found: !!property,
         property_id: property?.id || null,
         listing_id: property?.listing_id || null,
       });
-      const directPropertyAssignedAgentId = getAssignedAgentProfileIdFromProperty(property);
 
       if (!property) {
         const directState = {
           ...previousAiState,
           ...signals,
           lead_flow: 'demand',
-          property_code: signals.property_code,
+          property_code: normalizedDirectCode || signals.property_code,
           direct_property_reference: true,
+          direct_property_code: normalizedDirectCode || signals.property_code,
           last_search_result_count: 0,
           last_shown_property_ids: [],
           result_quality: 'none',
           top_match_score: 0,
+          awaiting_field: null,
         };
 
         const notFoundReply =
@@ -1435,10 +1460,11 @@ app.post('/webhook', async (req, res) => {
         ...previousAiState,
         ...signals,
         lead_flow: 'demand',
-        property_code: signals.property_code,
+        property_code: normalizedDirectCode || signals.property_code,
         direct_property_reference: true,
-        assigned_agent_profile_id: directPropertyAssignedAgentId || previousAiState.assigned_agent_profile_id || null,
-        direct_property_code: signals.property_code,
+        assigned_agent_profile_id:
+          directPropertyAssignedAgentId || previousAiState.assigned_agent_profile_id || null,
+        direct_property_code: normalizedDirectCode || signals.property_code,
         last_search_result_count: 1,
         last_shown_property_ids: [property.id],
         result_quality: 'strong',
@@ -1667,11 +1693,24 @@ app.post('/webhook', async (req, res) => {
     let rawResultCount = 0;
 
     if (nextAiState.direct_property_reference && nextAiState.property_code) {
+      const normalizedLookupCode = normalizeListingId(nextAiState.property_code);
+
       await saveConversationEvent(conversationId, 'direct_property_lookup_started', {
         property_code: nextAiState.property_code,
+        normalized_property_code: normalizedLookupCode,
       });
 
-      const directProperty = await getPropertyByCode(nextAiState.property_code);
+      const directProperty = normalizedLookupCode
+        ? await getPropertyByCode(normalizedLookupCode)
+        : null;
+
+      console.log('DIRECT PROPERTY GENERAL RESULT:', {
+        requested_code: nextAiState.property_code,
+        normalized_code: normalizedLookupCode,
+        found: !!directProperty,
+        property_id: directProperty?.id || null,
+        listing_id: directProperty?.listing_id || null,
+      });
 
       if (directProperty && directProperty.id) {
         matchedProperties = [directProperty];
@@ -1685,14 +1724,16 @@ app.post('/webhook', async (req, res) => {
         nextAiState.top_match_score = topMatchScore;
         nextAiState.last_search_filters = {
           attempt_used: attemptUsed,
-          property_code: nextAiState.property_code,
+          property_code: normalizedLookupCode || nextAiState.property_code,
           result_quality: resultQuality,
         };
+        nextAiState.property_code = normalizedLookupCode || nextAiState.property_code;
+        nextAiState.direct_property_code = normalizedLookupCode || nextAiState.direct_property_code || nextAiState.property_code;
         nextAiState.last_search_result_count = 1;
         nextAiState.last_shown_property_ids = [directProperty.id];
 
         await saveConversationEvent(conversationId, 'direct_property_lookup_found', {
-          property_code: nextAiState.property_code,
+          property_code: normalizedLookupCode || nextAiState.property_code,
           property_id: directProperty.id,
         });
       } else {
@@ -1707,14 +1748,16 @@ app.post('/webhook', async (req, res) => {
         nextAiState.top_match_score = topMatchScore;
         nextAiState.last_search_filters = {
           attempt_used: attemptUsed,
-          property_code: nextAiState.property_code,
+          property_code: normalizedLookupCode || nextAiState.property_code,
           result_quality: resultQuality,
         };
+        nextAiState.property_code = normalizedLookupCode || nextAiState.property_code;
+        nextAiState.direct_property_code = normalizedLookupCode || nextAiState.direct_property_code || nextAiState.property_code;
         nextAiState.last_search_result_count = 0;
         nextAiState.last_shown_property_ids = [];
 
         await saveConversationEvent(conversationId, 'direct_property_lookup_not_found', {
-          property_code: nextAiState.property_code,
+          property_code: normalizedLookupCode || nextAiState.property_code,
         });
       }
     } else if (shouldRunPropertySearch(previousAiState, nextAiState)) {
