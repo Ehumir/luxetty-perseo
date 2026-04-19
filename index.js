@@ -1172,6 +1172,11 @@ app.post('/webhook', async (req, res) => {
     const changeType = detectStateChange(previousAiState, incomingSignals);
     let nextAiState = buildNextState(previousAiState, incomingSignals, changeType);
 
+    // 🔒 Anti-loop: evitar repetir preguntas si ya estamos esperando respuesta
+    if (previousAiState.awaiting_field && !incomingSignals[previousAiState.awaiting_field]) {
+      nextAiState.awaiting_field = previousAiState.awaiting_field;
+    }
+
     if (incomingSignals.location_any) {
       nextAiState.location_text = null;
       nextAiState.location_any = true;
@@ -1602,6 +1607,15 @@ ${locationCatalog.rawNames.join(', ')}
     }
 
     reply = sanitizeReply(reply);
+
+    // 🔒 Anti-loop: evitar repetir exactamente la misma respuesta
+    const lastMessages = conversations.get(from) || [];
+    const lastAssistantMessage = [...lastMessages].reverse().find(m => m.role === 'assistant');
+
+
+    if (lastAssistantMessage && lastAssistantMessage.content === reply) {
+      reply = 'Perfecto, continúo ayudándote. ¿Puedes darme un poco más de detalle para avanzar?';
+    }
 
     const updatedMessages = [
       ...(conversations.get(from) || []),

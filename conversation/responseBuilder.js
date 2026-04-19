@@ -273,6 +273,14 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
     return `${noExact}\nSi quieres, te conecto con un asesor para revisar opciones contigo y avanzar.`;
   }
 
+  // 🔒 Anti-loop: si no hay cambio real y no hay propiedades
+  if (
+    !changeType &&
+    (!properties || properties.length === 0)
+  ) {
+    return 'Para ayudarte mejor, dime zona, presupuesto aproximado y si buscas comprar o rentar.';
+  }
+
   return `${noExact}\nSi quieres, ajustamos la búsqueda o lo revisamos contigo para encontrar algo más alineado.`;
 }
 
