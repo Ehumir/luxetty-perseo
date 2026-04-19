@@ -242,6 +242,24 @@ async function createAgentFollowup(supabase, data) {
   return result;
 }
 
+function getPublicPropertyUrl(property) {
+  if (!property || typeof property !== 'object') return null;
+
+  if (property.canonical_url) {
+    return property.canonical_url;
+  }
+
+  if (property.slug) {
+    return `https://luxetty.com/propiedad/${property.slug}`;
+  }
+
+  if (property.listing_id) {
+    return `https://luxetty.com/propiedad/${property.listing_id}`;
+  }
+
+  return null;
+}
+
 module.exports = {
   normalizeWhatsApp,
   normalizeName,
@@ -254,5 +272,6 @@ module.exports = {
   nowIso,
   sanitizeReply,
   safeJsonStringify,
-  createAgentFollowup
+  createAgentFollowup,
+  getPublicPropertyUrl
 };
