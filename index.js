@@ -560,13 +560,23 @@ async function searchProperties({
 function normalizeListingId(rawValue) {
   if (!rawValue) return null;
 
-  const text = String(rawValue).trim().toUpperCase();
+  const text = String(rawValue)
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[–—−_./,#:;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-  const full = text.match(/\bLUX[\s\-]?([A-Z])\s?([0-9]{4})\b/i);
-  if (full) return `LUX-${full[1]}${full[2]}`;
+  const fullMatch = text.match(/\bLUX\s*([A-Z])\s*(\d{4})\b/);
+  if (fullMatch) {
+    return `LUX-${fullMatch[1]}${fullMatch[2]}`;
+  }
 
-  const short = text.match(/\b([A-Z])([0-9]{4})\b/i);
-  if (short) return `LUX-${short[1]}${short[2]}`;
+  const shortMatch = text.match(/\b([A-Z])\s*(\d{4})\b/);
+  if (shortMatch) {
+    return `LUX-${shortMatch[1]}${shortMatch[2]}`;
+  }
 
   return null;
 }
@@ -1362,8 +1372,23 @@ app.post('/webhook', async (req, res) => {
     const incomingSignals = parseMessageSignals(text, previousAiState);
     const signals = incomingSignals;
 
+    if (signals?.property_code || /LUX|[A-Z]\d{4}/i.test(text || '')) {
+      console.log('PROPERTY CODE DEBUG:', {
+        raw_text: text,
+        parsed_property_code: signals?.property_code || null,
+        normalized_property_code: normalizeListingId(signals?.property_code || text),
+      });
+    }
+
     if (signals.direct_property_reference && signals.property_code) {
       const property = await getPropertyByCode(signals.property_code);
+      console.log('DIRECT PROPERTY LOOKUP RESULT:', {
+        requested_code: signals.property_code,
+        normalized_code: normalizeListingId(signals.property_code),
+        found: !!property,
+        property_id: property?.id || null,
+        listing_id: property?.listing_id || null,
+      });
       const directPropertyAssignedAgentId = getAssignedAgentProfileIdFromProperty(property);
 
       if (!property) {
@@ -1380,7 +1405,7 @@ app.post('/webhook', async (req, res) => {
         };
 
         const notFoundReply =
-          'No encontré esa propiedad, pero con gusto te ayudo a buscar opciones similares. ¿Qué zona te interesa?';
+          'No encontré esa propiedad disponible en este momento. Si quieres, te muestro opciones similares. ¿Qué zona te interesa?';
 
         await saveConversationState(conversationId, directState);
 
@@ -1763,7 +1788,7 @@ app.post('/webhook', async (req, res) => {
       // 🚫 No responder para evitar duplicar cierre
       return res.sendStatus(200);
     } else if (nextAiState.direct_property_reference && nextAiState.property_code && matchedProperties.length === 0) {
-      reply = `No encontré una propiedad activa con el ID ${nextAiState.property_code}. Si quieres, dime qué tipo de propiedad buscas y te ayudo a encontrar opciones.`;
+      reply = `No encontré esa propiedad disponible en este momento. Si quieres, te ayudo a buscar opciones similares. ¿Qué zona te interesa?`;
     } else if (nextAiState.lead_flow === 'demand') {
       reply = buildDemandReply(nextAiState, changeType, matchedProperties, attemptUsed);
 
@@ -1782,12 +1807,7 @@ app.post('/webhook', async (req, res) => {
           nextAiState.asks_property_details ||
           nextAiState.direct_property_reference
         ) &&
-        (
-          matchedProperties.length > 0 ||
-          !!nextAiState.location_text ||
-          !!nextAiState.property_type ||
-          !!nextAiState.budget_max
-        );
+        matchedProperties.length > 0;
 
       if (
         (explicitHandoffIntent || commercialHandoffIntent || isHotDemandLead) &&

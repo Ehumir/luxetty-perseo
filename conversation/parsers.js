@@ -2,6 +2,30 @@ const { normalizeText, cleanSpaces } = require('../utils/text');
 const { detectIntent } = require('./intent');
 const { getDefaultAiState } = require('./aiState');
 
+function normalizePropertyCodeFromText(rawValue) {
+  if (!rawValue) return null;
+
+  const text = String(rawValue)
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[–—−_./,#:;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const fullMatch = text.match(/\bLUX\s*([A-Z])\s*(\d{4})\b/);
+  if (fullMatch) {
+    return `LUX-${fullMatch[1]}${fullMatch[2]}`;
+  }
+
+  const shortMatch = text.match(/\b([A-Z])\s*(\d{4})\b/);
+  if (shortMatch) {
+    return `LUX-${shortMatch[1]}${shortMatch[2]}`;
+  }
+
+  return null;
+}
+
 function extractPropertyType(message) {
   const text = normalizeText(message);
 
@@ -19,9 +43,7 @@ function extractPropertyType(message) {
 function extractLocation(message, prevState = null) {
   const text = normalizeText(message);
   const raw = cleanSpaces(message || '');
-  const hasPropertyCode =
-    /\bLUX[\s\-]?[A-Z]\s?[0-9]{4}\b/i.test(raw) ||
-    /\b[A-Z][0-9]{4}\b/i.test(raw);
+  const hasPropertyCode = !!normalizePropertyCodeFromText(raw);
 
   const looksLikeDirectPropertyIntent =
     text.includes('me interesa la propiedad') ||
@@ -79,9 +101,7 @@ function extractLocation(message, prevState = null) {
 function extractBudgetCurrency(message) {
   const text = normalizeText(message);
   const raw = cleanSpaces(message || '');
-  const hasPropertyCode =
-    /\bLUX[\s\-]?[A-Z]\s?[0-9]{4}\b/i.test(raw) ||
-    /\b[A-Z][0-9]{4}\b/i.test(raw);
+  const hasPropertyCode = !!normalizePropertyCodeFromText(raw);
 
   if (
     text.includes('usd') ||
@@ -117,9 +137,7 @@ function extractBudgetCurrency(message) {
 function extractMaxPrice(message) {
   const text = normalizeText(message);
   const raw = cleanSpaces(message || '');
-  const hasPropertyCode =
-    /\bLUX[\s\-]?[A-Z]\s?[0-9]{4}\b/i.test(raw) ||
-    /\b[A-Z][0-9]{4}\b/i.test(raw);
+  const hasPropertyCode = !!normalizePropertyCodeFromText(raw);
 
   if (hasPropertyCode) {
     return null;
@@ -283,28 +301,14 @@ function extractPhoneNumber(message) {
 }
 
 function normalizeListingId(rawValue) {
-  if (!rawValue) return null;
-
-  const text = cleanSpaces(String(rawValue)).toUpperCase();
-
-  const full = text.match(/\bLUX[\s\-]?([A-Z])\s?([0-9]{4})\b/i);
-  if (full?.[1] && full?.[2]) {
-    return `LUX-${full[1]}${full[2]}`;
-  }
-
-  const short = text.match(/\b([A-Z])([0-9]{4})\b/i);
-  if (short?.[1] && short?.[2]) {
-    return `LUX-${short[1]}${short[2]}`;
-  }
-
-  return null;
+  return normalizePropertyCodeFromText(rawValue);
 }
 
 function extractPropertyCode(message) {
   const raw = cleanSpaces(message || '');
   if (!raw) return null;
 
-  const normalized = normalizeListingId(raw);
+  const normalized = normalizePropertyCodeFromText(raw);
   if (normalized) return normalized;
 
   const patterns = [
@@ -315,7 +319,7 @@ function extractPropertyCode(message) {
   for (const pattern of patterns) {
     const match = raw.match(pattern);
     if (match?.[1]) {
-      const parsed = normalizeListingId(match[1]);
+      const parsed = normalizePropertyCodeFromText(match[1]);
       if (parsed) return parsed;
     }
   }
