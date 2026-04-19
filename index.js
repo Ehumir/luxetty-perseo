@@ -1200,18 +1200,35 @@ app.post('/webhook', async (req, res) => {
     ) {
       const { createAgentFollowup } = require('./utils/helpers');
 
-      await createAgentFollowup(supabase, {
-        conversation_id: conversationId,
-        lead_id: conversationRow?.lead_id || null,
-        request_type: nextAiState?.lead_flow === 'offer' ? 'offer' : 'demand',
-        summary: incomingSignals.wants_visit
-          ? 'Lead solicitó visita'
-          : incomingSignals.shows_high_interest
-          ? 'Lead mostró alto interés'
-          : 'Lead pidió atención humana',
-        priority: 'high',
-        assigned_to_agent_profile_id: conversationRow?.assigned_agent_profile_id || null
-      });
+      const requestType = nextAiState?.lead_flow === 'offer' ? 'offer' : 'demand';
+
+      // Verificar si ya existe followup activo
+      const { data: existingFollowup, error: followupError } = await supabase
+        .from('agent_followup_requests')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .eq('request_type', requestType)
+        .in('status', ['pending', 'assigned', 'contacted'])
+        .limit(1);
+
+      if (followupError) {
+        console.error('Error checking existing followup:', followupError);
+      }
+
+      if (!existingFollowup || existingFollowup.length === 0) {
+        await createAgentFollowup(supabase, {
+          conversation_id: conversationId,
+          lead_id: conversationRow?.lead_id || null,
+          request_type: requestType,
+          summary: incomingSignals.wants_visit
+            ? 'Lead solicitó visita'
+            : incomingSignals.shows_high_interest
+            ? 'Lead mostró alto interés'
+            : 'Lead pidió atención humana',
+          priority: 'high',
+          assigned_to_agent_profile_id: conversationRow?.assigned_agent_profile_id || null
+        });
+      }
     }
 
     if (incomingSignals.wants_visit) {
