@@ -1,133 +1,196 @@
 // utils/helpers.js
 
-function nowIso() {
-  return new Date().toISOString();
-}
+function normalizeWhatsApp(input) {
+  if (input == null) return null;
 
-function uniq(list = []) {
-  return [...new Set((list || []).filter((item) => item !== undefined && item !== null))];
-}
+  const raw = String(input).trim();
+  if (!raw) return null;
 
-function safeJsonStringify(value) {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch (error) {
-    return '{}';
-  }
-}
+  let digits = raw.replace(/\D/g, '');
 
-function sanitizeReply(text) {
-  if (!text) return '';
+  if (!digits) return null;
 
-  let cleaned = String(text)
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-
-  // Evitar respuestas exageradamente largas para WhatsApp
-  if (cleaned.length > 3500) {
-    cleaned = `${cleaned.slice(0, 3497)}...`;
+  // Caso MX: 10 dígitos → agregar 52
+  if (digits.length === 10) {
+    digits = `52${digits}`;
   }
 
-  return cleaned;
-}
-
-function formatPrice(price, currency = 'MXN') {
-  if (price == null || price === '') return null;
-
-  try {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency',
-      currency,
-      maximumFractionDigits: 0,
-    }).format(Number(price));
-  } catch (error) {
-    return `${currency} ${price}`;
-  }
-}
-
-function getPublicPropertyUrl(property) {
-  if (!property) return null;
-
-  if (
-    property.canonical_url &&
-    /^https:\/\/luxetty\.com/i.test(property.canonical_url)
-  ) {
-    return property.canonical_url;
-  }
-
-  if (
-    property.listing_url &&
-    /^https:\/\/luxetty\.com/i.test(property.listing_url)
-  ) {
-    return property.listing_url;
-  }
-
-  if (property.slug) {
-    return `https://luxetty.com/propiedad/${property.slug}`;
+  // Caso válido MX con lada
+  if (digits.length === 12 && digits.startsWith('52')) {
+    return `+${digits}`;
   }
 
   return null;
 }
 
-function formatPropertySummary(property) {
-  if (!property) return '';
+function normalizeName(input) {
+  if (input == null) return null;
 
-  const lines = [];
+  const cleaned = String(input).trim().replace(/\s+/g, ' ');
+  return cleaned || null;
+}
 
-  if (property.listing_id) {
-    lines.push(`ID: ${property.listing_id}`);
+function extractFirstName(fullName) {
+  const normalized = normalizeName(fullName);
+  if (!normalized) return null;
+
+  const parts = normalized.split(' ').filter(Boolean);
+  return parts.length ? parts[0] : null;
+}
+
+function isUuid(value) {
+  if (!value || typeof value !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function cleanObject(obj = {}) {
+  const cleaned = { ...obj };
+
+  Object.keys(cleaned).forEach((key) => {
+    if (cleaned[key] === undefined || cleaned[key] === null) {
+      delete cleaned[key];
+    }
+
+    if (typeof cleaned[key] === 'string' && cleaned[key].trim() === '') {
+      delete cleaned[key];
+    }
+  });
+
+  return cleaned;
+}
+
+async function findContactByWhatsApp(supabase, whatsapp) {
+  try {
+    const normalized = normalizeWhatsApp(whatsapp);
+    if (!normalized) {
+      return { ok: false, error: 'WhatsApp inválido' };
+    }
+
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('whatsapp', normalized)
+      .maybeSingle();
+
+    if (error) return { ok: false, error: error.message };
+
+    return {
+      ok: true,
+      found: !!data,
+      contact: data || null
+    };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+async function createContactFromConversation(supabase, payload = {}) {
+  try {
+    const fullName = normalizeName(payload.fullName);
+    const whatsapp = normalizeWhatsApp(payload.whatsapp);
+
+    if (!fullName) {
+      return { ok: false, error: 'Nombre requerido' };
+    }
+
+    if (!whatsapp) {
+      return { ok: false, error: 'WhatsApp requerido' };
+    }
+
+    const insertData = cleanObject({
+      full_name: fullName,
+      first_name: extractFirstName(fullName),
+      whatsapp: whatsapp,
+      notes_summary: normalizeName(payload.notesSummary) || undefined,
+      created_by: isUuid(payload.createdBy) ? payload.createdBy : undefined
+    });
+
+    const { data, error } = await supabase
+      .from('contacts')
+      .insert(insertData)
+      .select('*')
+      .single();
+
+    if (error) return { ok: false, error: error.message };
+
+    return { ok: true, contact: data };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+async function findOrCreateContact(supabase, payload = {}) {
+  try {
+    const whatsapp = normalizeWhatsApp(payload.whatsapp);
+    if (!whatsapp) {
+      return { ok: false, error: 'WhatsApp inválido' };
+    }
+
+    const found = await findContactByWhatsApp(supabase, whatsapp);
+    if (!found.ok) return found;
+
+    if (found.found) {
+      return {
+        ok: true,
+        created: false,
+        contact: found.contact
+      };
+    }
+
+    return await createContactFromConversation(supabase, payload);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+function safeParseBudget(value) {
+  if (value == null || value === '') return null;
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
   }
 
-  if (property.title) {
-    lines.push(property.title);
-  }
+  const cleaned = String(value).replace(/[^0-9]/g, '');
+  if (!cleaned) return null;
 
-  const locationParts = [
-    property.neighborhood,
-    property.zone,
-    property.city,
-  ].filter(Boolean);
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : null;
+}
 
-  if (locationParts.length) {
-    lines.push(locationParts.join(', '));
-  }
+function uniq(arr = []) {
+  return Array.from(new Set(arr));
+}
 
-  if (property.price != null) {
-    lines.push(formatPrice(property.price, property.currency_code || 'MXN'));
-  }
+function nowIso() {
+  return new Date().toISOString();
+}
 
-  const featureParts = [];
-  if (property.bedrooms != null && property.bedrooms !== 0) {
-    featureParts.push(`${property.bedrooms} rec`);
-  }
-  if (property.bathrooms != null && property.bathrooms !== 0) {
-    featureParts.push(`${property.bathrooms} baños`);
-  }
-  if (property.parking_spaces != null && property.parking_spaces !== 0) {
-    featureParts.push(`${property.parking_spaces} est.`);
-  }
+function sanitizeReply(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/\s+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
-  if (featureParts.length) {
-    lines.push(featureParts.join(' · '));
+function safeJsonStringify(obj) {
+  try {
+    return JSON.stringify(obj, null, 2);
+  } catch (e) {
+    return '{}';
   }
-
-  const publicUrl = getPublicPropertyUrl(property);
-  if (publicUrl) {
-    lines.push(publicUrl);
-  }
-
-  return lines.join('\n');
 }
 
 module.exports = {
-  nowIso,
+  normalizeWhatsApp,
+  normalizeName,
+  extractFirstName,
+  findContactByWhatsApp,
+  createContactFromConversation,
+  findOrCreateContact,
+  safeParseBudget,
   uniq,
-  safeJsonStringify,
+  nowIso,
   sanitizeReply,
-  formatPrice,
-  getPublicPropertyUrl,
-  formatPropertySummary,
+  safeJsonStringify
 };
