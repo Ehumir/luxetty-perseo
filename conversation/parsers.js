@@ -186,7 +186,20 @@ function extractBathrooms(message) {
 function detectContactPreference(message) {
   const text = normalizeText(message);
 
-  if (text.includes('whatsapp')) return 'whatsapp';
+  if (text === 'wa' || text === 'wp' || text === 'wpp') return 'whatsapp';
+  if (text === 'w.a.' || text === 'w.a') return 'whatsapp';
+  if (
+    text.includes('whatsapp') ||
+    text.includes('whats app') ||
+    text.includes('whats') ||
+    text.includes('por wa') ||
+    text.includes('por whatsapp') ||
+    text.includes('por whats') ||
+    text.includes('via whatsapp') ||
+    text.includes('vía whatsapp')
+  ) {
+    return 'whatsapp';
+  }
   if (text.includes('llamada') || text.includes('marquen') || text.includes('llamar')) return 'call';
   if (
     text.includes('no importa') ||

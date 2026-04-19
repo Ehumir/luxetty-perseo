@@ -1157,6 +1157,97 @@ app.post('/webhook', async (req, res) => {
 
     const previousAiState = normalizeAiState(conversationRow?.ai_state);
     const incomingSignals = parseMessageSignals(text, previousAiState);
+    const signals = incomingSignals;
+
+    if (signals.direct_property_reference && signals.property_code) {
+      const property = await getPropertyByCode(signals.property_code);
+
+      if (!property) {
+        const directState = {
+          ...previousAiState,
+          ...signals,
+          lead_flow: 'demand',
+          property_code: signals.property_code,
+          direct_property_reference: true,
+          last_search_result_count: 0,
+          last_shown_property_ids: [],
+          result_quality: 'none',
+          top_match_score: 0,
+        };
+
+        const notFoundReply =
+          'No encontré esa propiedad, pero con gusto te ayudo a buscar opciones similares. ¿Qué zona te interesa?';
+
+        await saveConversationState(conversationId, directState);
+
+        conversations.set(
+          from,
+          [
+            ...(conversations.get(from) || []),
+            { role: 'user', content: text },
+            { role: 'assistant', content: notFoundReply },
+          ].slice(-MAX_SHORT_MEMORY_MESSAGES)
+        );
+
+        await saveConversationMessage({
+          conversationId,
+          direction: 'outbound',
+          senderType: 'ai_agent',
+          messageType: 'text',
+          messageText: notFoundReply,
+          rawPayload: {},
+        });
+
+        await sendWhatsAppText(from, notFoundReply);
+        return res.sendStatus(200);
+      }
+
+      const directState = {
+        ...previousAiState,
+        ...signals,
+        lead_flow: 'demand',
+        property_code: signals.property_code,
+        direct_property_reference: true,
+        direct_property_code: signals.property_code,
+        last_search_result_count: 1,
+        last_shown_property_ids: [property.id],
+        result_quality: 'strong',
+        top_match_score: 100,
+        awaiting_field: null,
+      };
+
+      const directReply = sanitizeReply(
+        buildDemandReply(directState, null, [property], 'direct_property_code')
+      );
+
+      const outboundMessageRow = await saveConversationMessage({
+        conversationId,
+        direction: 'outbound',
+        senderType: 'ai_agent',
+        messageType: 'text',
+        messageText: directReply,
+        rawPayload: {},
+      });
+
+      if (outboundMessageRow?.id) {
+        await savePropertySuggestions(conversationId, outboundMessageRow.id, [property]);
+      }
+
+      await saveConversationState(conversationId, directState);
+      await maybeGenerateAiSummary(conversationId, directState, [property]);
+
+      conversations.set(
+        from,
+        [
+          ...(conversations.get(from) || []),
+          { role: 'user', content: text },
+          { role: 'assistant', content: directReply },
+        ].slice(-MAX_SHORT_MEMORY_MESSAGES)
+      );
+
+      await sendWhatsAppText(from, directReply);
+      return res.sendStatus(200);
+    }
 
     if (incomingSignals.location_text && !incomingSignals.location_any) {
       const rawLoc = normalizeText(incomingSignals.location_text);
