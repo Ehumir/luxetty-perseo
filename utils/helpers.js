@@ -119,25 +119,60 @@ async function createContactFromConversation(supabase, payload = {}) {
   }
 }
 
-async function findOrCreateContact(supabase, payload = {}) {
+async function findOrCreateContact(supabase, phone, fullName = null) {
   try {
-    const whatsapp = normalizeWhatsApp(payload.whatsapp);
-    if (!whatsapp) {
+    const normalizedPhone = normalizeWhatsApp(phone);
+    if (!normalizedPhone) {
       return { ok: false, error: 'WhatsApp inválido' };
     }
 
-    const found = await findContactByWhatsApp(supabase, whatsapp);
+    const found = await findContactByWhatsApp(supabase, normalizedPhone);
     if (!found.ok) return found;
 
     if (found.found) {
-      return {
-        ok: true,
-        created: false,
-        contact: found.contact
-      };
+      const contact = found.contact;
+      if (fullName && !contact.full_name) {
+        const updatedName = normalizeName(fullName);
+        if (updatedName) {
+          const { data, error } = await supabase
+            .from('contacts')
+            .update({
+              full_name: updatedName,
+              first_name: extractFirstName(updatedName)
+            })
+            .eq('id', contact.id)
+            .select('*')
+            .single();
+
+          if (error) {
+            return { ok: false, error: error.message };
+          }
+
+          return { ok: true, created: false, contact: data };
+        }
+      }
+
+      return { ok: true, created: false, contact };
     }
 
-    return await createContactFromConversation(supabase, payload);
+    const insertData = {
+      full_name: normalizeName(fullName),
+      first_name: extractFirstName(fullName),
+      phone: normalizedPhone,
+      whatsapp: normalizedPhone,
+    };
+
+    const { data, error } = await supabase
+      .from('contacts')
+      .insert(insertData)
+      .select('*')
+      .single();
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+
+    return { ok: true, created: true, contact: data };
   } catch (error) {
     return { ok: false, error: error.message };
   }
