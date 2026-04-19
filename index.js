@@ -1189,6 +1189,10 @@ app.post('/webhook', async (req, res) => {
       nextAiState.contact_number_confirmed = true;
     }
 
+    if (incomingSignals.full_name) {
+      nextAiState.full_name = incomingSignals.full_name;
+    }
+
     if (incomingSignals.wants_visit) {
       nextAiState.wants_visit = true;
     }

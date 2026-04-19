@@ -519,7 +519,7 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
   const bedrooms = extractBedrooms(message);
   const bathrooms = extractBathrooms(message);
   const contactPreference = detectContactPreference(message);
-  const fullName = extractPossibleName(message, prevState);
+  let fullName = extractPossibleName(message, prevState);
   const ownerRelation = detectOwnerRelation(message);
   const propertyCode = extractPropertyCode(message);
   const betterPhone =
@@ -543,6 +543,27 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
 
   if (filledCount >= 5) confidence = 'high';
   else if (filledCount >= 3) confidence = 'medium';
+
+  if (!fullName) {
+    const raw = cleanSpaces(message);
+    const namePatterns = [
+      /me llamo\s+([a-záéíóúñ\s]+)/i,
+      /soy\s+([a-záéíóúñ\s]+)/i,
+      /mi nombre es\s+([a-záéíóúñ\s]+)/i,
+    ];
+
+    for (const pattern of namePatterns) {
+      const match = raw.match(pattern);
+      if (match?.[1]) {
+        const captured = cleanSpaces(match[1]).replace(/[.,!?]+$/g, '');
+        fullName = captured
+          .split(/\s+/)
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ');
+        break;
+      }
+    }
+  }
 
   return {
     lead_flow: intent.leadType || null,
