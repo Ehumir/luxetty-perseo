@@ -41,6 +41,7 @@ const {
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const { uniq, nowIso, sanitizeReply, safeJsonStringify } = require('./utils/helpers');
+const { isGreetingOnly } = require('./utils/messageChecks');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -60,21 +61,6 @@ const locationCatalog = {
   rawNames: [],
   normalizedMap: new Map(),
 };
-
-function isGreetingOnly(text) {
-  const t = normalizeText(text);
-  const greetings = [
-    'hola',
-    'buenas',
-    'buenos dias',
-    'buenos días',
-    'buenas tardes',
-    'buenas noches',
-    'hello',
-    'hi',
-  ];
-  return greetings.includes(t);
-}
 
 function isClosureCheck(text) {
   const t = normalizeText(text);
