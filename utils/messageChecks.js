@@ -1,3 +1,5 @@
+const { normalizeText } = require('./text');
+
 function isGreetingOnly(text) {
   const t = normalizeText(text);
   const greetings = [
