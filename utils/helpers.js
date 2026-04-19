@@ -216,6 +216,32 @@ function safeJsonStringify(obj) {
   }
 }
 
+async function createAgentFollowup(supabase, data) {
+  const payload = {
+    conversation_id: data.conversation_id,
+    lead_id: data.lead_id || null,
+    request_type: data.request_type,
+    summary: data.summary,
+    priority: data.priority || 'medium',
+    status: 'pending',
+    assigned_to_agent_profile_id: data.assigned_to_agent_profile_id || null,
+    created_by_system: true
+  };
+
+  const { data: result, error } = await supabase
+    .from('agent_followup_requests')
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('createAgentFollowup error:', error);
+    return null;
+  }
+
+  return result;
+}
+
 module.exports = {
   normalizeWhatsApp,
   normalizeName,
@@ -227,5 +253,6 @@ module.exports = {
   uniq,
   nowIso,
   sanitizeReply,
-  safeJsonStringify
+  safeJsonStringify,
+  createAgentFollowup
 };

@@ -1193,6 +1193,27 @@ app.post('/webhook', async (req, res) => {
       nextAiState.full_name = incomingSignals.full_name;
     }
 
+    if (
+      incomingSignals.wants_human ||
+      incomingSignals.wants_visit ||
+      incomingSignals.shows_high_interest
+    ) {
+      const { createAgentFollowup } = require('./utils/helpers');
+
+      await createAgentFollowup(supabase, {
+        conversation_id: conversationId,
+        lead_id: conversationRow?.lead_id || null,
+        request_type: nextAiState?.lead_flow === 'offer' ? 'offer' : 'demand',
+        summary: incomingSignals.wants_visit
+          ? 'Lead solicitó visita'
+          : incomingSignals.shows_high_interest
+          ? 'Lead mostró alto interés'
+          : 'Lead pidió atención humana',
+        priority: 'high',
+        assigned_to_agent_profile_id: conversationRow?.assigned_agent_profile_id || null
+      });
+    }
+
     if (incomingSignals.wants_visit) {
       nextAiState.wants_visit = true;
     }
