@@ -568,12 +568,14 @@ function normalizeListingId(rawValue) {
     .replace(/\s+/g, ' ')
     .trim();
 
-  const fullMatch = text.match(/\bLUX\s*([A-Z])\s*(\d{4})\b/);
+  // Caso completo: LUX-A0462 incluso si está pegado a texto
+  const fullMatch = text.match(/LUX\s*([A-Z])\s*(\d{4})(?!\d)/);
   if (fullMatch) {
     return `LUX-${fullMatch[1]}${fullMatch[2]}`;
   }
 
-  const shortMatch = text.match(/\b([A-Z])\s*(\d{4})\b/);
+  // Caso corto: A0462 -> LUX-A0462
+  const shortMatch = text.match(/([A-Z])\s*(\d{4})(?!\d)/);
   if (shortMatch) {
     return `LUX-${shortMatch[1]}${shortMatch[2]}`;
   }
