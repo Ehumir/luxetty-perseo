@@ -599,9 +599,7 @@ async function getPropertyByCode(propertyCode) {
       .select(`
         id,
         listing_id,
-        assigned_agent_profile_id,
         agent_profile_id,
-        listing_agent_profile_id,
         title,
         slug,
         price,
@@ -649,13 +647,7 @@ async function getPropertyByCode(propertyCode) {
 
 function getAssignedAgentProfileIdFromProperty(property) {
   if (!property || typeof property !== 'object') return null;
-
-  return (
-    property.assigned_agent_profile_id ||
-    property.agent_profile_id ||
-    property.listing_agent_profile_id ||
-    null
-  );
+  return property.agent_profile_id || null;
 }
 
 async function searchPropertiesWithFallbacks(state) {
