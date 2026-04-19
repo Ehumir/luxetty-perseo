@@ -1309,7 +1309,7 @@ app.post('/webhook', async (req, res) => {
 
       const directProperty = await getPropertyByCode(nextAiState.property_code);
 
-      if (directProperty) {
+      if (directProperty && directProperty.id) {
         matchedProperties = [directProperty];
         attemptUsed = 'direct_property_code';
         resultQuality = 'strong';

@@ -18,7 +18,22 @@ function extractPropertyType(message) {
 
 function extractLocation(message, prevState = null) {
   const text = normalizeText(message);
-  const raw = cleanSpaces(message);
+  const raw = cleanSpaces(message || '');
+  const hasPropertyCode =
+    /\bLUX[\s\-]?[A-Z]\s?[0-9]{4}\b/i.test(raw) ||
+    /\b[A-Z][0-9]{4}\b/i.test(raw);
+
+  const looksLikeDirectPropertyIntent =
+    text.includes('me interesa la propiedad') ||
+    text.includes('me interesa esta propiedad') ||
+    text.includes('quiero esta propiedad') ||
+    text.includes('quiero la propiedad') ||
+    text.includes('me interesa el id') ||
+    text.includes('me interesa el codigo') ||
+    text.includes('me interesa el código') ||
+    text.includes(' id ') ||
+    text.includes(' codigo ') ||
+    text.includes(' código ');
 
   const knownPatterns = [
     /en\s+([a-záéíóúñ\s]+)$/i,
@@ -54,6 +69,7 @@ function extractLocation(message, prevState = null) {
   }
 
   if (prevState?.awaiting_field === 'location_text') {
+    if (hasPropertyCode || looksLikeDirectPropertyIntent) return null;
     return cleanSpaces(message);
   }
 
@@ -62,6 +78,10 @@ function extractLocation(message, prevState = null) {
 
 function extractBudgetCurrency(message) {
   const text = normalizeText(message);
+  const raw = cleanSpaces(message || '');
+  const hasPropertyCode =
+    /\bLUX[\s\-]?[A-Z]\s?[0-9]{4}\b/i.test(raw) ||
+    /\b[A-Z][0-9]{4}\b/i.test(raw);
 
   if (
     text.includes('usd') ||
@@ -73,9 +93,15 @@ function extractBudgetCurrency(message) {
     return 'USD';
   }
 
+  if (text.includes('mxn') || text.includes('pesos')) {
+    return 'MXN';
+  }
+
+  if (hasPropertyCode) {
+    return null;
+  }
+
   if (
-    text.includes('mxn') ||
-    text.includes('pesos') ||
     text.includes('millon') ||
     text.includes('millón') ||
     text.includes('millones') ||
@@ -90,6 +116,14 @@ function extractBudgetCurrency(message) {
 
 function extractMaxPrice(message) {
   const text = normalizeText(message);
+  const raw = cleanSpaces(message || '');
+  const hasPropertyCode =
+    /\bLUX[\s\-]?[A-Z]\s?[0-9]{4}\b/i.test(raw) ||
+    /\b[A-Z][0-9]{4}\b/i.test(raw);
+
+  if (hasPropertyCode) {
+    return null;
+  }
 
   const shorthand = [
     ['20 millones', 20000000],
