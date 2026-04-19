@@ -581,6 +581,9 @@ async function getPropertyByCode(propertyCode) {
       .select(`
         id,
         listing_id,
+        assigned_agent_profile_id,
+        agent_profile_id,
+        listing_agent_profile_id,
         title,
         slug,
         price,
@@ -619,6 +622,17 @@ async function getPropertyByCode(propertyCode) {
     console.error('FATAL getPropertyByCode:', err);
     return null;
   }
+}
+
+function getAssignedAgentProfileIdFromProperty(property) {
+  if (!property || typeof property !== 'object') return null;
+
+  return (
+    property.assigned_agent_profile_id ||
+    property.agent_profile_id ||
+    property.listing_agent_profile_id ||
+    null
+  );
 }
 
 async function searchPropertiesWithFallbacks(state) {
@@ -1024,6 +1038,180 @@ async function maybeCreateDemandRequest({
   }
 }
 
+async function maybeCreateGenericDemandRequest({
+  conversationId,
+  conversationRow,
+  state,
+  contactId,
+}) {
+  try {
+    if (!conversationId || !contactId) return null;
+
+    const { data: existing, error: existingError } = await supabase
+      .from('requests')
+      .select('id, contact_id, request_type, operation_type, stage_id')
+      .eq('conversation_id', conversationId)
+      .eq('request_type', 'demand')
+      .eq('contact_id', contactId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (existingError) {
+      console.error('Error checking existing generic demand request:', existingError);
+      return null;
+    }
+
+    if (existing && existing.length > 0) {
+      return existing[0];
+    }
+
+    const stageId = await getInitialRequestStageId('demand');
+
+    const titleParts = ['Demanda'];
+    if (state.operation_type === 'rent') titleParts.push('renta');
+    else titleParts.push('compra');
+
+    if (state.property_type) titleParts.push(state.property_type);
+    if (state.location_text) titleParts.push(`en ${state.location_text}`);
+
+    const title = titleParts.join(' ');
+
+    const notes =
+      buildAiSummary(state, []) ||
+      'Cliente buscando propiedad y requiere seguimiento comercial.';
+
+    const payload = {
+      request_type: 'demand',
+      operation_type: state.operation_type || 'sale',
+      status: 'open',
+      contact_id: contactId,
+      assigned_agent_profile_id: conversationRow?.assigned_agent_profile_id || null,
+      created_by: null,
+      source: 'ai_agent',
+      property_id: null,
+      conversation_id: conversationId,
+      stage_id: stageId,
+      title,
+      notes_summary: notes,
+      next_action: state.wants_visit ? 'Contactar para coordinar visita' : 'Contactar lead',
+      next_action_due_at: nowIso(),
+      is_active: true,
+    };
+
+    const { data: created, error: createError } = await supabase
+      .from('requests')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Error creating generic demand request:', createError);
+      return null;
+    }
+
+    await saveConversationEvent(conversationId, 'generic_demand_request_created', {
+      request_id: created.id,
+      operation_type: payload.operation_type,
+      location_text: state.location_text || null,
+      property_type: state.property_type || null,
+    });
+
+    return created;
+  } catch (err) {
+    console.error('FATAL maybeCreateGenericDemandRequest:', err);
+    return null;
+  }
+}
+
+async function maybeCreateOfferRequest({
+  conversationId,
+  conversationRow,
+  state,
+  contactId,
+}) {
+  try {
+    if (!conversationId || !contactId) return null;
+
+    const { data: existing, error: existingError } = await supabase
+      .from('requests')
+      .select('id, contact_id, request_type, operation_type, stage_id')
+      .eq('conversation_id', conversationId)
+      .eq('request_type', 'offer')
+      .eq('contact_id', contactId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (existingError) {
+      console.error('Error checking existing offer request:', existingError);
+      return null;
+    }
+
+    if (existing && existing.length > 0) {
+      return existing[0];
+    }
+
+    const stageId = await getInitialRequestStageId('offer');
+
+    const operationType = state.operation_type || 'sale';
+
+    const titleParts = ['Captación'];
+    if (operationType === 'rent') titleParts.push('renta');
+    else titleParts.push('venta');
+
+    if (state.property_type) titleParts.push(state.property_type);
+    if (state.location_text) titleParts.push(`en ${state.location_text}`);
+
+    const title = titleParts.join(' ');
+
+    const notes =
+      buildAiSummary(state, []) ||
+      'Cliente quiere vender o poner en renta una propiedad y requiere seguimiento comercial.';
+
+    const payload = {
+      request_type: 'offer',
+      operation_type: operationType,
+      status: 'open',
+      contact_id: contactId,
+      assigned_agent_profile_id: conversationRow?.assigned_agent_profile_id || null,
+      created_by: null,
+      source: 'ai_agent',
+      property_id: null,
+      conversation_id: conversationId,
+      stage_id: stageId,
+      title,
+      notes_summary: notes,
+      next_action: 'Contactar propietario',
+      next_action_due_at: nowIso(),
+      is_active: true,
+    };
+
+    const { data: created, error: createError } = await supabase
+      .from('requests')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Error creating offer request:', createError);
+      return null;
+    }
+
+    await saveConversationEvent(conversationId, 'offer_request_created', {
+      request_id: created.id,
+      operation_type: payload.operation_type,
+      location_text: state.location_text || null,
+      property_type: state.property_type || null,
+    });
+
+    return created;
+  } catch (err) {
+    console.error('FATAL maybeCreateOfferRequest:', err);
+    return null;
+  }
+}
+
 function shouldEscalateDemand(state, properties, text) {
   const normalized = normalizeText(text);
 
@@ -1033,15 +1221,30 @@ function shouldEscalateDemand(state, properties, text) {
     normalized.includes('agente') ||
     normalized.includes('llamen') ||
     normalized.includes('marquen') ||
+    normalized.includes('contactame') ||
+    normalized.includes('contáctame') ||
+    normalized.includes('quiero informes') ||
+    normalized.includes('quiero mas info') ||
+    normalized.includes('quiero más info') ||
+    !!state.direct_property_reference;
+
+  const commercialIntent =
+    !!state.wants_visit ||
+    !!state.shows_high_interest ||
+    !!state.asks_property_details ||
     !!state.direct_property_reference;
 
   const enoughContextForHuman =
-    !!state.location_text &&
-    !!state.budget_max &&
-    !!state.budget_currency &&
-    !!state.operation_type;
+    !!state.location_text ||
+    !!state.direct_property_reference ||
+    !!state.property_type ||
+    !!state.budget_max;
 
-  return explicitHuman || (properties.length === 0 && enoughContextForHuman);
+  if (explicitHuman) return true;
+  if (commercialIntent && enoughContextForHuman) return true;
+  if (properties.length === 0 && state.location_text && state.budget_max && state.budget_currency) return true;
+
+  return false;
 }
 
 function shouldEscalateOffer(state) {
@@ -1161,6 +1364,7 @@ app.post('/webhook', async (req, res) => {
 
     if (signals.direct_property_reference && signals.property_code) {
       const property = await getPropertyByCode(signals.property_code);
+      const directPropertyAssignedAgentId = getAssignedAgentProfileIdFromProperty(property);
 
       if (!property) {
         const directState = {
@@ -1208,6 +1412,7 @@ app.post('/webhook', async (req, res) => {
         lead_flow: 'demand',
         property_code: signals.property_code,
         direct_property_reference: true,
+        assigned_agent_profile_id: directPropertyAssignedAgentId || previousAiState.assigned_agent_profile_id || null,
         direct_property_code: signals.property_code,
         last_search_result_count: 1,
         last_shown_property_ids: [property.id],
@@ -1334,9 +1539,8 @@ app.post('/webhook', async (req, res) => {
     }
 
     if (
-      incomingSignals.wants_human ||
-      incomingSignals.wants_visit ||
-      incomingSignals.shows_high_interest
+      (incomingSignals.wants_human || incomingSignals.wants_visit || incomingSignals.shows_high_interest) &&
+      !previousAiState.direct_property_reference
     ) {
       const { createAgentFollowup } = require('./utils/helpers');
 
@@ -1571,8 +1775,22 @@ app.post('/webhook', async (req, res) => {
       const commercialHandoffIntent =
         shouldPrioritizeDemandHandoff(nextAiState, matchedProperties);
 
+      const isHotDemandLead =
+        (
+          nextAiState.wants_visit ||
+          nextAiState.shows_high_interest ||
+          nextAiState.asks_property_details ||
+          nextAiState.direct_property_reference
+        ) &&
+        (
+          matchedProperties.length > 0 ||
+          !!nextAiState.location_text ||
+          !!nextAiState.property_type ||
+          !!nextAiState.budget_max
+        );
+
       if (
-        (explicitHandoffIntent || commercialHandoffIntent) &&
+        (explicitHandoffIntent || commercialHandoffIntent || isHotDemandLead) &&
         shouldAskField(nextAiState, 'full_name')
       ) {
         reply = nextAiState.wants_visit
@@ -1580,14 +1798,14 @@ app.post('/webhook', async (req, res) => {
           : 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
         nextAiState.awaiting_field = 'full_name';
       } else if (
-        (explicitHandoffIntent || commercialHandoffIntent) &&
+        (explicitHandoffIntent || commercialHandoffIntent || isHotDemandLead) &&
         nextAiState.full_name &&
         shouldAskField(nextAiState, 'contact_preference')
       ) {
         reply = 'Perfecto. ¿Prefieres que te contacten por WhatsApp o por llamada?';
         nextAiState.awaiting_field = 'contact_preference';
       } else if (
-        (explicitHandoffIntent || commercialHandoffIntent) &&
+        (explicitHandoffIntent || commercialHandoffIntent || isHotDemandLead) &&
         nextAiState.full_name &&
         nextAiState.contact_preference &&
         shouldAskField(nextAiState, 'contact_number_confirmed')
@@ -1605,9 +1823,22 @@ app.post('/webhook', async (req, res) => {
 
       if (canCreateDemandHandoff) {
         const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+        const assignedAgentProfileId =
+          (matchedProperties.length > 0 ? getAssignedAgentProfileIdFromProperty(matchedProperties[0]) : null) ||
+          nextAiState.assigned_agent_profile_id ||
+          conversationRow?.assigned_agent_profile_id ||
+          null;
         const summary =
           buildAiSummary(nextAiState, matchedProperties) ||
           'Cliente buscando propiedad y requiere seguimiento humano.';
+
+        if (assignedAgentProfileId && conversationRow?.assigned_agent_profile_id !== assignedAgentProfileId) {
+          await updateConversationMeta(conversationId, {
+            assigned_agent_profile_id: assignedAgentProfileId,
+          });
+          nextAiState.assigned_agent_profile_id = assignedAgentProfileId;
+        }
+
         await maybeCreateFollowupRequest({
           conversationId,
           state: nextAiState,
@@ -1616,14 +1847,23 @@ app.post('/webhook', async (req, res) => {
           requestType: 'demand',
         });
 
-        if (nextAiState.direct_property_reference && matchedProperties.length > 0 && contactId) {
-          await maybeCreateDemandRequest({
-            conversationId,
-            conversationRow,
-            state: nextAiState,
-            contactId,
-            property: matchedProperties[0],
-          });
+        if (contactId) {
+          if (nextAiState.direct_property_reference && matchedProperties.length > 0) {
+            await maybeCreateDemandRequest({
+              conversationId,
+              conversationRow,
+              state: nextAiState,
+              contactId,
+              property: matchedProperties[0],
+            });
+          } else {
+            await maybeCreateGenericDemandRequest({
+              conversationId,
+              conversationRow,
+              state: nextAiState,
+              contactId,
+            });
+          }
         }
 
         nextAiState.handoff_ready = true;
@@ -1636,8 +1876,13 @@ app.post('/webhook', async (req, res) => {
           nextAiState.full_name &&
           nextAiState.contact_preference &&
           nextAiState.contact_number_confirmed === true &&
-          !nextAiState.handoff_sent
+          !nextAiState.handoff_sent &&
+          !canCreateDemandHandoff
         ) {
+          if (nextAiState.handoff_sent) {
+            return;
+          }
+
           const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
           const summary =
             buildAiSummary(nextAiState, matchedProperties) ||
@@ -1650,14 +1895,23 @@ app.post('/webhook', async (req, res) => {
             requestType: 'demand',
           });
 
-          if (nextAiState.direct_property_reference && matchedProperties.length > 0 && contactId) {
-            await maybeCreateDemandRequest({
-              conversationId,
-              conversationRow,
-              state: nextAiState,
-              contactId,
-              property: matchedProperties[0],
-            });
+          if (contactId) {
+            if (nextAiState.direct_property_reference && matchedProperties.length > 0) {
+              await maybeCreateDemandRequest({
+                conversationId,
+                conversationRow,
+                state: nextAiState,
+                contactId,
+                property: matchedProperties[0],
+              });
+            } else {
+              await maybeCreateGenericDemandRequest({
+                conversationId,
+                conversationRow,
+                state: nextAiState,
+                contactId,
+              });
+            }
           }
 
           nextAiState.handoff_ready = true;
@@ -1702,10 +1956,12 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (shouldEscalateOffer(nextAiState) && !nextAiState.handoff_sent) {
-        await upsertContactForConversation(conversationRow, nextAiState, from);
+        const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+
         const summary =
           buildAiSummary(nextAiState, matchedProperties) ||
           'Cliente quiere vender o poner en renta una propiedad.';
+
         await maybeCreateFollowupRequest({
           conversationId,
           state: nextAiState,
@@ -1713,6 +1969,16 @@ app.post('/webhook', async (req, res) => {
           priority: 'high',
           requestType: 'offer',
         });
+
+        if (contactId) {
+          await maybeCreateOfferRequest({
+            conversationId,
+            conversationRow,
+            state: nextAiState,
+            contactId,
+          });
+        }
+
         nextAiState.handoff_ready = true;
         nextAiState.handoff_sent = true;
         nextAiState.awaiting_field = null;
@@ -1787,7 +2053,11 @@ ${locationCatalog.rawNames.join(', ')}
     const lastAssistantMessage = [...lastMessages].reverse().find(m => m.role === 'assistant');
 
 
-    if (lastAssistantMessage && lastAssistantMessage.content === reply) {
+    if (
+      lastAssistantMessage &&
+      lastAssistantMessage.content === reply &&
+      nextAiState.lead_flow !== 'demand'
+    ) {
       reply = 'Perfecto, continúo ayudándote. ¿Puedes darme un poco más de detalle para avanzar?';
     }
 
