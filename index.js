@@ -1500,10 +1500,8 @@ app.post('/webhook', async (req, res) => {
       reply =
         'Hola, soy el asistente de Luxetty 😊\nCon gusto te ayudo.\n¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
     } else if (nextAiState.handoff_sent && isClosureCheck(text)) {
-      reply = nextAiState.lead_flow === 'offer'
-        ? 'Gracias. Quedó registrado y un asesor de Luxetty te contactará por el canal que elegiste.'
-        : 'Gracias. Quedó registrada tu búsqueda y un asesor de Luxetty te contactará para continuar.';
-      nextAiState.closing_message_sent = true;
+      // 🚫 No responder para evitar duplicar cierre
+      return res.sendStatus(200);
     } else if (nextAiState.direct_property_reference && nextAiState.property_code && matchedProperties.length === 0) {
       reply = `No encontré una propiedad activa con el ID ${nextAiState.property_code}. Si quieres, dime qué tipo de propiedad buscas y te ayudo a encontrar opciones.`;
     } else if (nextAiState.lead_flow === 'demand') {
