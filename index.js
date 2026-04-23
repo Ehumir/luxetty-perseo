@@ -22,6 +22,7 @@ const { SYSTEM_PROMPT } = require('./config/prompts');
 const { supabase } = require('./services/supabaseService');
 const { openai } = require('./services/openaiService');
 const { axios } = require('./services/whatsappService');
+const { createRequestIfNeeded, assignRequestViaEngine } = require('./services/requestAutomation');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
 const { parseMessageSignals } = require('./conversation/parsers');
@@ -401,6 +402,82 @@ async function saveConversationEvent(conversationId, type, payload = {}, created
     if (error) console.error('Error saving conversation event:', error);
   } catch (err) {
     console.error('FATAL saveConversationEvent:', err);
+  }
+}
+
+function shouldAssignRequestWithEngine(result) {
+  if (!result?.request || !result?.mode) return false;
+  if (result.created === true) return true;
+  return result.created === false && !result.request.assigned_agent_profile_id;
+}
+
+async function maybeAssignRequestWithEngine({
+  conversationId,
+  requestResult,
+  nextAiState,
+}) {
+  try {
+    if (!shouldAssignRequestWithEngine(requestResult)) return null;
+
+    await saveConversationEvent(conversationId, 'request_assignment_requested', {
+      request_id: requestResult.request.id,
+      assigned_agent_profile_id: null,
+      strategy: null,
+      reason: requestResult.reason || null,
+    });
+
+    const assignment = await assignRequestViaEngine({
+      supabase,
+      request: requestResult.request,
+      conversationId,
+    });
+
+    if (assignment?.outcome === 'assigned') {
+      nextAiState.assigned_agent_profile_id = assignment.assigned_agent_profile_id || null;
+
+      await saveConversationEvent(conversationId, 'request_assigned', {
+        request_id: requestResult.request.id,
+        assigned_agent_profile_id: assignment.assigned_agent_profile_id,
+        strategy: assignment.strategy,
+        reason: assignment.reason,
+        outcome: assignment.outcome,
+      });
+    } else if (assignment?.outcome === 'manual_review') {
+      await saveConversationEvent(conversationId, 'request_pending_manual_review', {
+        request_id: requestResult.request.id,
+        assigned_agent_profile_id: null,
+        strategy: assignment?.strategy || null,
+        reason: assignment?.reason || 'manual_review',
+        outcome: assignment.outcome,
+      });
+
+      console.warn('Assignment pending manual review:', assignment?.reason || 'manual_review');
+    } else if (assignment?.outcome === 'no_agent') {
+      await saveConversationEvent(conversationId, 'request_assignment_no_agent', {
+        request_id: requestResult.request.id,
+        assigned_agent_profile_id: null,
+        strategy: assignment?.strategy || null,
+        reason: assignment?.reason || 'no_agent_resolved',
+        outcome: assignment.outcome,
+      });
+
+      console.warn('Assignment failed: no agent available:', assignment?.reason || 'no_agent_resolved');
+    } else {
+      await saveConversationEvent(conversationId, 'request_assignment_failed', {
+        request_id: requestResult.request.id,
+        assigned_agent_profile_id: null,
+        strategy: assignment?.strategy || null,
+        reason: assignment?.reason || 'assignment_failed',
+        outcome: assignment?.outcome || 'rpc_error',
+      });
+
+      console.warn('Assignment failed:', assignment?.reason || 'assignment_failed');
+    }
+
+    return assignment;
+  } catch (err) {
+    console.warn('Assignment failed:', err?.message || err);
+    return null;
   }
 }
 
@@ -942,287 +1019,6 @@ async function upsertContactForConversation(conversationRow, state, phone) {
     return created.id;
   } catch (err) {
     console.error('FATAL upsertContactForConversation:', err);
-    return null;
-  }
-}
-
-async function getInitialRequestStageId(requestType = 'demand') {
-  try {
-    const { data, error } = await supabase
-      .from('request_stages')
-      .select('id, code, stage_order')
-      .eq('request_type', requestType)
-      .eq('code', 'new')
-      .limit(1);
-
-    if (error) {
-      console.error('Error getting initial request stage:', error);
-      return null;
-    }
-
-    return data?.[0]?.id || null;
-  } catch (err) {
-    console.error('FATAL getInitialRequestStageId:', err);
-    return null;
-  }
-}
-
-async function maybeCreateDemandRequest({
-  conversationId,
-  conversationRow,
-  state,
-  contactId,
-  property,
-}) {
-  try {
-    if (!conversationId || !contactId || !property?.id) return null;
-
-    const { data: existing, error: existingError } = await supabase
-      .from('requests')
-      .select('id, property_id, contact_id, request_type, operation_type, stage_id')
-      .eq('conversation_id', conversationId)
-      .eq('request_type', 'demand')
-      .eq('contact_id', contactId)
-      .eq('property_id', property.id)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (existingError) {
-      console.error('Error checking existing demand request:', existingError);
-      return null;
-    }
-
-    if (existing && existing.length > 0) {
-      return existing[0];
-    }
-
-    const stageId = await getInitialRequestStageId('demand');
-
-    const title =
-      property?.listing_id && property?.title
-        ? `Demanda directa ${property.listing_id} - ${property.title}`
-        : property?.listing_id
-        ? `Demanda directa ${property.listing_id}`
-        : 'Demanda directa sobre propiedad';
-
-    const notes =
-      buildAiSummary(state, property ? [property] : []) ||
-      'Cliente entró por referencia directa de propiedad y requiere seguimiento comercial.';
-
-    const payload = {
-      request_type: 'demand',
-      operation_type: property.operation_type || state.operation_type || 'sale',
-      status: 'open',
-      contact_id: contactId,
-      assigned_agent_profile_id: conversationRow?.assigned_agent_profile_id || null,
-      created_by: null,
-      source: 'ai_agent',
-      property_id: property.id,
-      conversation_id: conversationId,
-      stage_id: stageId,
-      title,
-      notes_summary: notes,
-      next_action: state.wants_visit ? 'Coordinar visita' : 'Contactar lead',
-      next_action_due_at: nowIso(),
-      is_active: true,
-    };
-
-    const { data: created, error: createError } = await supabase
-      .from('requests')
-      .insert(payload)
-      .select()
-      .single();
-
-    if (createError) {
-      console.error('Error creating demand request:', createError);
-      return null;
-    }
-
-    await saveConversationEvent(conversationId, 'demand_request_created', {
-      request_id: created.id,
-      property_id: property.id,
-      listing_id: property.listing_id || null,
-      operation_type: payload.operation_type,
-    });
-
-    return created;
-  } catch (err) {
-    console.error('FATAL maybeCreateDemandRequest:', err);
-    return null;
-  }
-}
-
-async function maybeCreateGenericDemandRequest({
-  conversationId,
-  conversationRow,
-  state,
-  contactId,
-}) {
-  try {
-    if (!conversationId || !contactId) return null;
-
-    const { data: existing, error: existingError } = await supabase
-      .from('requests')
-      .select('id, contact_id, request_type, operation_type, stage_id')
-      .eq('conversation_id', conversationId)
-      .eq('request_type', 'demand')
-      .eq('contact_id', contactId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (existingError) {
-      console.error('Error checking existing generic demand request:', existingError);
-      return null;
-    }
-
-    if (existing && existing.length > 0) {
-      return existing[0];
-    }
-
-    const stageId = await getInitialRequestStageId('demand');
-
-    const titleParts = ['Demanda'];
-    if (state.operation_type === 'rent') titleParts.push('renta');
-    else titleParts.push('compra');
-
-    if (state.property_type) titleParts.push(state.property_type);
-    if (state.location_text) titleParts.push(`en ${state.location_text}`);
-
-    const title = titleParts.join(' ');
-
-    const notes =
-      buildAiSummary(state, []) ||
-      'Cliente buscando propiedad y requiere seguimiento comercial.';
-
-    const payload = {
-      request_type: 'demand',
-      operation_type: state.operation_type || 'sale',
-      status: 'open',
-      contact_id: contactId,
-      assigned_agent_profile_id: conversationRow?.assigned_agent_profile_id || null,
-      created_by: null,
-      source: 'ai_agent',
-      property_id: null,
-      conversation_id: conversationId,
-      stage_id: stageId,
-      title,
-      notes_summary: notes,
-      next_action: state.wants_visit ? 'Contactar para coordinar visita' : 'Contactar lead',
-      next_action_due_at: nowIso(),
-      is_active: true,
-    };
-
-    const { data: created, error: createError } = await supabase
-      .from('requests')
-      .insert(payload)
-      .select()
-      .single();
-
-    if (createError) {
-      console.error('Error creating generic demand request:', createError);
-      return null;
-    }
-
-    await saveConversationEvent(conversationId, 'generic_demand_request_created', {
-      request_id: created.id,
-      operation_type: payload.operation_type,
-      location_text: state.location_text || null,
-      property_type: state.property_type || null,
-    });
-
-    return created;
-  } catch (err) {
-    console.error('FATAL maybeCreateGenericDemandRequest:', err);
-    return null;
-  }
-}
-
-async function maybeCreateOfferRequest({
-  conversationId,
-  conversationRow,
-  state,
-  contactId,
-}) {
-  try {
-    if (!conversationId || !contactId) return null;
-
-    const { data: existing, error: existingError } = await supabase
-      .from('requests')
-      .select('id, contact_id, request_type, operation_type, stage_id')
-      .eq('conversation_id', conversationId)
-      .eq('request_type', 'offer')
-      .eq('contact_id', contactId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    if (existingError) {
-      console.error('Error checking existing offer request:', existingError);
-      return null;
-    }
-
-    if (existing && existing.length > 0) {
-      return existing[0];
-    }
-
-    const stageId = await getInitialRequestStageId('offer');
-
-    const operationType = state.operation_type || 'sale';
-
-    const titleParts = ['Captación'];
-    if (operationType === 'rent') titleParts.push('renta');
-    else titleParts.push('venta');
-
-    if (state.property_type) titleParts.push(state.property_type);
-    if (state.location_text) titleParts.push(`en ${state.location_text}`);
-
-    const title = titleParts.join(' ');
-
-    const notes =
-      buildAiSummary(state, []) ||
-      'Cliente quiere vender o poner en renta una propiedad y requiere seguimiento comercial.';
-
-    const payload = {
-      request_type: 'offer',
-      operation_type: operationType,
-      status: 'open',
-      contact_id: contactId,
-      assigned_agent_profile_id: conversationRow?.assigned_agent_profile_id || null,
-      created_by: null,
-      source: 'ai_agent',
-      property_id: null,
-      conversation_id: conversationId,
-      stage_id: stageId,
-      title,
-      notes_summary: notes,
-      next_action: 'Contactar propietario',
-      next_action_due_at: nowIso(),
-      is_active: true,
-    };
-
-    const { data: created, error: createError } = await supabase
-      .from('requests')
-      .insert(payload)
-      .select()
-      .single();
-
-    if (createError) {
-      console.error('Error creating offer request:', createError);
-      return null;
-    }
-
-    await saveConversationEvent(conversationId, 'offer_request_created', {
-      request_id: created.id,
-      operation_type: payload.operation_type,
-      location_text: state.location_text || null,
-      property_type: state.property_type || null,
-    });
-
-    return created;
-  } catch (err) {
-    console.error('FATAL maybeCreateOfferRequest:', err);
     return null;
   }
 }
@@ -1880,21 +1676,9 @@ app.post('/webhook', async (req, res) => {
 
       if (canCreateDemandHandoff) {
         const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
-        const assignedAgentProfileId =
-          (matchedProperties.length > 0 ? getAssignedAgentProfileIdFromProperty(matchedProperties[0]) : null) ||
-          nextAiState.assigned_agent_profile_id ||
-          conversationRow?.assigned_agent_profile_id ||
-          null;
         const summary =
           buildAiSummary(nextAiState, matchedProperties) ||
           'Cliente buscando propiedad y requiere seguimiento humano.';
-
-        if (assignedAgentProfileId && conversationRow?.assigned_agent_profile_id !== assignedAgentProfileId) {
-          await updateConversationMeta(conversationId, {
-            assigned_agent_profile_id: assignedAgentProfileId,
-          });
-          nextAiState.assigned_agent_profile_id = assignedAgentProfileId;
-        }
 
         await maybeCreateFollowupRequest({
           conversationId,
@@ -1905,22 +1689,28 @@ app.post('/webhook', async (req, res) => {
         });
 
         if (contactId) {
-          if (nextAiState.direct_property_reference && matchedProperties.length > 0) {
-            await maybeCreateDemandRequest({
-              conversationId,
-              conversationRow,
-              state: nextAiState,
-              contactId,
-              property: matchedProperties[0],
-            });
-          } else {
-            await maybeCreateGenericDemandRequest({
-              conversationId,
-              conversationRow,
-              state: nextAiState,
-              contactId,
-            });
-          }
+          const requestResult = await createRequestIfNeeded({
+            supabase,
+            conversationId,
+            conversationRow,
+            state: nextAiState,
+            contactId,
+            property: nextAiState.direct_property_reference && matchedProperties.length > 0 ? matchedProperties[0] : null,
+            messageText: text,
+            assignedAgentProfileId: null,
+            saveConversationEvent,
+            buildSummary: () =>
+              buildAiSummary(
+                nextAiState,
+                nextAiState.direct_property_reference && matchedProperties.length > 0 ? [matchedProperties[0]] : []
+              ),
+          });
+
+          await maybeAssignRequestWithEngine({
+            conversationId,
+            requestResult,
+            nextAiState,
+          });
         }
 
         nextAiState.handoff_ready = true;
@@ -1953,22 +1743,28 @@ app.post('/webhook', async (req, res) => {
           });
 
           if (contactId) {
-            if (nextAiState.direct_property_reference && matchedProperties.length > 0) {
-              await maybeCreateDemandRequest({
-                conversationId,
-                conversationRow,
-                state: nextAiState,
-                contactId,
-                property: matchedProperties[0],
-              });
-            } else {
-              await maybeCreateGenericDemandRequest({
-                conversationId,
-                conversationRow,
-                state: nextAiState,
-                contactId,
-              });
-            }
+            const requestResult = await createRequestIfNeeded({
+              supabase,
+              conversationId,
+              conversationRow,
+              state: nextAiState,
+              contactId,
+              property: nextAiState.direct_property_reference && matchedProperties.length > 0 ? matchedProperties[0] : null,
+              messageText: text,
+              assignedAgentProfileId: null,
+              saveConversationEvent,
+              buildSummary: () =>
+                buildAiSummary(
+                  nextAiState,
+                  nextAiState.direct_property_reference && matchedProperties.length > 0 ? [matchedProperties[0]] : []
+                ),
+            });
+
+            await maybeAssignRequestWithEngine({
+              conversationId,
+              requestResult,
+              nextAiState,
+            });
           }
 
           nextAiState.handoff_ready = true;
@@ -2028,11 +1824,23 @@ app.post('/webhook', async (req, res) => {
         });
 
         if (contactId) {
-          await maybeCreateOfferRequest({
+          const requestResult = await createRequestIfNeeded({
+            supabase,
             conversationId,
             conversationRow,
             state: nextAiState,
             contactId,
+            property: null,
+            messageText: text,
+            assignedAgentProfileId: null,
+            saveConversationEvent,
+            buildSummary: () => buildAiSummary(nextAiState, []),
+          });
+
+          await maybeAssignRequestWithEngine({
+            conversationId,
+            requestResult,
+            nextAiState,
           });
         }
 
