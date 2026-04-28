@@ -641,7 +641,7 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
   }
 
   return {
-    lead_flow: intent.leadType || null,
+    lead_flow: intent.leadType || (propertyCode ? 'demand' : null),
     operation_type: intent.operationType || null,
     property_type: propertyType,
     location_text: locationText,
@@ -659,7 +659,7 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
     wants_visit: commercial.wants_visit,
     shows_high_interest: commercial.shows_high_interest,
     asks_property_details: commercial.asks_property_details,
-    user_goal: inferUserGoal(intent.leadType),
+    user_goal: inferUserGoal(intent.leadType || (propertyCode ? 'demand' : null)),
     confidence,
     matched_location_from_catalog: locationText || null,
     ...contextual,

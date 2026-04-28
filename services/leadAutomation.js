@@ -1,4 +1,4 @@
-const { nowIso } = require('../utils/helpers');
+const { nowIso, normalizePhoneNumber } = require('../utils/helpers');
 const { normalizeText } = require('../utils/text');
 
 function log(logger, label, payload = {}) {
@@ -26,6 +26,7 @@ async function saveConversationEvent(supabase, conversationId, type, payload = {
 }
 
 function resolveLeadType(aiState = {}) {
+  if (aiState.lead_type === 'supply' || aiState.lead_type === 'demand') return aiState.lead_type;
   if (aiState.lead_flow === 'offer') return 'supply';
   if (aiState.lead_flow === 'demand') return 'demand';
   if (aiState.direct_property_reference || aiState.property_code || aiState.direct_property_code) return 'demand';
@@ -35,6 +36,71 @@ function resolveLeadType(aiState = {}) {
   if (goal.includes('search')) return 'demand';
 
   return null;
+}
+
+function sameNullableValue(left, right) {
+  return (left || null) === (right || null);
+}
+
+function isLeadCompatible(lead, { contactId, leadType, operation, propertyId }) {
+  if (!lead) return false;
+  if (!sameNullableValue(lead.contact_id, contactId)) return false;
+  if (!sameNullableValue(lead.lead_type, leadType)) return false;
+  if (!sameNullableValue(lead.interested_in_operation, operation || null)) return false;
+  if (!sameNullableValue(lead.interested_property_id, propertyId || null)) return false;
+  if (lead.is_active === false || lead.is_archived === true) return false;
+  return true;
+}
+
+function buildResetAiStateAfterLeadCreated(aiState = {}, lead, assignment = {}) {
+  return {
+    lead_flow: null,
+    operation_type: null,
+    property_type: null,
+    location_text: null,
+    matched_location_from_catalog: null,
+    location_any: false,
+    budget_min: null,
+    budget_max: null,
+    budget_currency: null,
+    bedrooms: null,
+    bedrooms_any: false,
+    bathrooms: null,
+    must_have_features: [],
+    timeline_text: null,
+    urgency_level: null,
+    full_name: aiState.full_name || null,
+    owner_relation: null,
+    contact_preference: aiState.contact_preference || null,
+    contact_number_confirmed: aiState.contact_number_confirmed ?? null,
+    awaiting_field: null,
+    last_change_type: 'context_reset_after_lead_created',
+    intent_version: (aiState.intent_version || 1) + 1,
+    needs_fresh_search: false,
+    last_search_filters: null,
+    last_search_result_count: 0,
+    last_shown_property_ids: [],
+    wants_human: false,
+    user_goal: null,
+    confidence: 'low',
+    geo_qualified: null,
+    value_qualified: null,
+    capture_qualified: null,
+    handoff_ready: false,
+    handoff_sent: false,
+    closing_message_sent: false,
+    lead_id: lead.id,
+    assigned_agent_profile_id:
+      assignment.assignedAgentProfileId || lead.assigned_agent_profile_id || null,
+    last_completed_lead: {
+      lead_id: lead.id,
+      lead_type: lead.lead_type || null,
+      interested_in_operation: lead.interested_in_operation || null,
+      interested_property_id: lead.interested_property_id || null,
+      completed_at: nowIso(),
+    },
+    ai_context_reset_after_lead_created_at: nowIso(),
+  };
 }
 
 function resolveOperation(aiState = {}, property = null) {
@@ -154,6 +220,7 @@ async function findCompatibleLead(supabase, { contactId, leadType, operation, pr
     .limit(1);
 
   if (operation) query = query.eq('interested_in_operation', operation);
+  else query = query.is('interested_in_operation', null);
   if (propertyId) query = query.eq('interested_property_id', propertyId);
   else query = query.is('interested_property_id', null);
 
@@ -340,6 +407,12 @@ async function createOrReuseLeadFromConversation({
 
     const leadType = resolveLeadType(aiState);
     const operation = resolveOperation(aiState, property);
+    const expected = {
+      contactId,
+      leadType,
+      operation,
+      propertyId: propertyId || null,
+    };
 
     await saveConversationEvent(supabase, conversationId, 'lead_intent_detected', {
       lead_type: leadType,
@@ -348,19 +421,47 @@ async function createOrReuseLeadFromConversation({
       source: 'ai_agent',
     });
 
+    await saveConversationEvent(
+      supabase,
+      conversationId,
+      leadType === 'supply' ? 'lead_type_detected_supply' : 'lead_type_detected_demand',
+      {
+        lead_type: leadType,
+        interested_in_operation: operation,
+        interested_property_id: propertyId || null,
+        source: 'ai_agent',
+      }
+    );
+
     let lead = await findLeadByConversation(supabase, conversation?.lead_id || aiState?.lead_id || null);
     let wasCreated = false;
+    let intentChanged = false;
 
     if (lead) {
-      log(logger, 'LEAD_AUTOMATION_REUSE_BY_CONVERSATION', {
-        conversation_id: conversationId,
-        lead_id: lead.id,
-      });
-      await saveConversationEvent(supabase, conversationId, 'lead_reused', {
-        lead_id: lead.id,
-        reason: 'conversation_lead_id',
-        source: 'ai_agent',
-      });
+      if (isLeadCompatible(lead, expected)) {
+        log(logger, 'LEAD_AUTOMATION_REUSE_BY_CONVERSATION', {
+          conversation_id: conversationId,
+          lead_id: lead.id,
+        });
+        await saveConversationEvent(supabase, conversationId, 'lead_reused', {
+          lead_id: lead.id,
+          reason: 'conversation_lead_id',
+          source: 'ai_agent',
+        });
+      } else {
+        intentChanged = true;
+        await saveConversationEvent(supabase, conversationId, 'lead_intent_changed', {
+          previous_lead_id: lead.id,
+          previous_lead_type: lead.lead_type || null,
+          previous_interested_in_operation: lead.interested_in_operation || null,
+          previous_interested_property_id: lead.interested_property_id || null,
+          next_lead_type: leadType,
+          next_interested_in_operation: operation,
+          next_interested_property_id: propertyId || null,
+          source: 'ai_agent',
+        });
+        lead = null;
+      }
     }
 
     if (!lead) {
@@ -388,6 +489,7 @@ async function createOrReuseLeadFromConversation({
       const pipelineStageId = await getInitialPipelineStageId(supabase, leadType);
       const notesSummary = buildNotesSummary(aiState, property);
 
+      const normalizedConversationPhone = normalizePhoneNumber(conversation?.phone) || conversation?.phone || null;
       const payload = {
         contact_id: contactId,
         lead_type: leadType,
@@ -402,8 +504,8 @@ async function createOrReuseLeadFromConversation({
         status: 'new',
         is_active: true,
         is_archived: false,
-        phone: conversation?.phone || null,
-        whatsapp: conversation?.channel === 'whatsapp' ? conversation?.phone || null : null,
+        phone: normalizedConversationPhone,
+        whatsapp: conversation?.channel === 'whatsapp' ? normalizedConversationPhone : null,
         next_action: leadType === 'supply' ? 'Contactar propietario' : 'Contactar lead',
         next_action_due_at: nowIso(),
       };
@@ -426,6 +528,16 @@ async function createOrReuseLeadFromConversation({
         interested_property_id: propertyId || null,
         source: 'ai_agent',
       });
+
+      if (intentChanged) {
+        await saveConversationEvent(supabase, conversationId, 'new_lead_created_due_to_intent_change', {
+          lead_id: lead.id,
+          lead_type: leadType,
+          interested_in_operation: operation,
+          interested_property_id: propertyId || null,
+          source: 'ai_agent',
+        });
+      }
     }
 
     const { assignedAgentProfileId, assignmentResult } = await assignLead(
@@ -435,14 +547,29 @@ async function createOrReuseLeadFromConversation({
       logger
     );
 
-    const nextAiState = {
-      ...(aiState || {}),
-      lead_id: lead.id,
-      lead_type: lead.lead_type || leadType,
-      interested_in_operation: lead.interested_in_operation || operation,
-      interested_property_id: lead.interested_property_id || propertyId || null,
-      crm_lead_created_at: aiState?.crm_lead_created_at || nowIso(),
-    };
+    let nextAiState;
+
+    if (wasCreated) {
+      nextAiState = buildResetAiStateAfterLeadCreated(aiState, lead, {
+        assignedAgentProfileId,
+      });
+      await saveConversationEvent(supabase, conversationId, 'ai_context_reset_after_lead_created', {
+        lead_id: lead.id,
+        lead_type: lead.lead_type || leadType,
+        interested_in_operation: lead.interested_in_operation || operation,
+        interested_property_id: lead.interested_property_id || propertyId || null,
+        source: 'ai_agent',
+      });
+    } else {
+      nextAiState = {
+        ...(aiState || {}),
+        lead_id: lead.id,
+        lead_type: lead.lead_type || leadType,
+        interested_in_operation: lead.interested_in_operation || operation,
+        interested_property_id: lead.interested_property_id || propertyId || null,
+        crm_lead_created_at: aiState?.crm_lead_created_at || nowIso(),
+      };
+    }
 
     if (assignedAgentProfileId) {
       nextAiState.assigned_agent_profile_id = assignedAgentProfileId;

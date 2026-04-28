@@ -23,6 +23,7 @@ const { supabase } = require('./services/supabaseService');
 const { openai } = require('./services/openaiService');
 const { axios } = require('./services/whatsappService');
 const { createOrReuseLeadFromConversation } = require('./services/leadAutomation');
+const { runInactivityFollowups } = require('./services/followupAutomation');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
 const { parseMessageSignals } = require('./conversation/parsers');
@@ -41,7 +42,7 @@ const {
 } = require('./conversation/responseBuilder');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
-const { uniq, nowIso, sanitizeReply, safeJsonStringify } = require('./utils/helpers');
+const { uniq, nowIso, sanitizeReply, safeJsonStringify, normalizePhoneNumber } = require('./utils/helpers');
 const { isGreetingOnly } = require('./utils/messageChecks');
 
 const app = express();
@@ -835,11 +836,13 @@ async function searchPropertiesWithFallbacks(state) {
 
 async function getOrCreateConversation(phone) {
   try {
+    const normalizedPhone = normalizePhoneNumber(phone) || phone;
+    const phoneLookupValues = getPhoneLookupValues(normalizedPhone);
     const { data: existing, error: findError } = await supabase
       .from('conversations')
       .select('*')
       .eq('channel', 'whatsapp')
-      .eq('phone', phone)
+      .in('phone', phoneLookupValues)
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -849,6 +852,13 @@ async function getOrCreateConversation(phone) {
     }
 
     if (existing && existing.length > 0) {
+      if (existing[0].phone !== normalizedPhone) {
+        await supabase
+          .from('conversations')
+          .update({ phone: normalizedPhone, updated_at: nowIso() })
+          .eq('id', existing[0].id);
+        existing[0].phone = normalizedPhone;
+      }
       return existing[0];
     }
 
@@ -856,7 +866,7 @@ async function getOrCreateConversation(phone) {
       .from('conversations')
       .insert({
         channel: 'whatsapp',
-        phone,
+        phone: normalizedPhone,
         status: 'open',
         priority: 'medium',
         last_message_at: nowIso(),
@@ -963,10 +973,27 @@ async function maybeCreateFollowupRequest({
   }
 }
 
+function getPhoneLookupValues(phone) {
+  const normalized = normalizePhoneNumber(phone) || phone;
+  const values = new Set([normalized, String(phone || '').trim()].filter(Boolean));
+
+  if (normalized) {
+    values.add(`+${normalized}`);
+    if (normalized.startsWith('521') && normalized.length === 13) {
+      const legacyMx = `52${normalized.slice(3)}`;
+      values.add(legacyMx);
+      values.add(`+${legacyMx}`);
+    }
+  }
+
+  return Array.from(values).filter(Boolean);
+}
+
 async function upsertContactForConversation(conversationRow, state, phone) {
   try {
     if (!conversationRow?.id || !phone) return null;
 
+    const normalizedPhone = normalizePhoneNumber(phone) || phone;
     const contactName = state.full_name || null;
 
     let existingContact = null;
@@ -981,10 +1008,14 @@ async function upsertContactForConversation(conversationRow, state, phone) {
     }
 
     if (!existingContact) {
+      const lookupValues = getPhoneLookupValues(normalizedPhone);
+      const orFilter = lookupValues
+        .flatMap((value) => [`phone.eq.${value}`, `whatsapp.eq.${value}`])
+        .join(',');
       const { data } = await supabase
         .from('contacts')
         .select('*')
-        .or(`phone.eq.${phone},whatsapp.eq.${phone}`)
+        .or(orFilter)
         .limit(1);
       existingContact = data?.[0] || null;
     }
@@ -992,8 +1023,8 @@ async function upsertContactForConversation(conversationRow, state, phone) {
     if (existingContact) {
       const payload = {};
       if (contactName && !existingContact.full_name) payload.full_name = contactName;
-      if (!existingContact.phone) payload.phone = phone;
-      if (!existingContact.whatsapp) payload.whatsapp = phone;
+      if (!existingContact.phone) payload.phone = normalizedPhone;
+      if (!existingContact.whatsapp) payload.whatsapp = normalizedPhone;
 
       if (Object.keys(payload).length > 0) {
         await supabase.from('contacts').update(payload).eq('id', existingContact.id);
@@ -1012,8 +1043,8 @@ async function upsertContactForConversation(conversationRow, state, phone) {
       .from('contacts')
       .insert({
         full_name: contactName,
-        phone,
-        whatsapp: phone,
+        phone: normalizedPhone,
+        whatsapp: normalizedPhone,
       })
       .select()
       .single();
@@ -1113,6 +1144,29 @@ app.get('/', (req, res) => {
   return res.status(200).send('Luxetty Agent OK');
 });
 
+app.post('/jobs/inactivity-followups', async (req, res) => {
+  const expectedSecret = process.env.FOLLOWUP_JOB_SECRET || null;
+  const receivedSecret = req.headers['x-job-secret'] || req.body?.secret || null;
+
+  if (expectedSecret && receivedSecret !== expectedSecret) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  try {
+    const summary = await runInactivityFollowups({
+      supabase,
+      sendWhatsAppText,
+      limit: Number(process.env.FOLLOWUP_JOB_LIMIT || 50),
+      logger: console,
+    });
+
+    return res.status(200).json({ ok: true, summary });
+  } catch (err) {
+    console.error('FOLLOWUP_JOB_ERROR', err?.message || err);
+    return res.status(500).json({ ok: false, error: err?.message || 'followup_job_failed' });
+  }
+});
+
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -1138,7 +1192,8 @@ app.post('/webhook', async (req, res) => {
 
     if (!message) return res.sendStatus(200);
 
-    from = message.from;
+    const rawFrom = message.from;
+    from = normalizePhoneNumber(rawFrom) || rawFrom;
     const messageType = message.type;
     const metaMessageId = message.id || null;
 
@@ -1162,6 +1217,13 @@ app.post('/webhook', async (req, res) => {
     const conversationRow = await getOrCreateConversation(from);
     const conversationId = conversationRow?.id || null;
     const normalizedText = normalizeText(text);
+
+    if (rawFrom && from && rawFrom !== from) {
+      await saveConversationEvent(conversationId, 'contact_phone_normalized', {
+        raw_phone: rawFrom,
+        normalized_phone: from,
+      });
+    }
 
     await saveConversationMessage({
       conversationId,
@@ -1646,27 +1708,6 @@ app.post('/webhook', async (req, res) => {
 
     await maybeGenerateAiSummary(conversationId, nextAiState, matchedProperties);
 
-    if (
-      !isGreetingOnly(text) &&
-      (nextAiState.lead_flow === 'demand' || nextAiState.lead_flow === 'offer' || nextAiState.direct_property_reference)
-    ) {
-      const propertyForLead =
-        nextAiState.direct_property_reference && matchedProperties.length > 0
-          ? matchedProperties[0]
-          : null;
-      const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
-
-      if (contactId) {
-        await maybeCreateOrReuseLeadWithEngine({
-          conversationId,
-          conversationRow,
-          nextAiState,
-          contactId,
-          property: propertyForLead,
-        });
-      }
-    }
-
     let reply = null;
 
     function shouldAskField(state, fieldName) {
@@ -1755,16 +1796,6 @@ app.post('/webhook', async (req, res) => {
           requestType: 'demand',
         });
 
-        if (contactId) {
-          await maybeCreateOrReuseLeadWithEngine({
-            conversationId,
-            conversationRow,
-            nextAiState,
-            contactId,
-            property: nextAiState.direct_property_reference && matchedProperties.length > 0 ? matchedProperties[0] : null,
-          });
-        }
-
         nextAiState.handoff_ready = true;
         nextAiState.handoff_sent = true;
         nextAiState.awaiting_field = null;
@@ -1793,16 +1824,6 @@ app.post('/webhook', async (req, res) => {
             priority: 'high',
             requestType: 'demand',
           });
-
-          if (contactId) {
-            await maybeCreateOrReuseLeadWithEngine({
-              conversationId,
-              conversationRow,
-              nextAiState,
-              contactId,
-              property: nextAiState.direct_property_reference && matchedProperties.length > 0 ? matchedProperties[0] : null,
-            });
-          }
 
           nextAiState.handoff_ready = true;
           nextAiState.handoff_sent = true;
@@ -1859,16 +1880,6 @@ app.post('/webhook', async (req, res) => {
           priority: 'high',
           requestType: 'offer',
         });
-
-        if (contactId) {
-          await maybeCreateOrReuseLeadWithEngine({
-            conversationId,
-            conversationRow,
-            nextAiState,
-            contactId,
-            property: null,
-          });
-        }
 
         nextAiState.handoff_ready = true;
         nextAiState.handoff_sent = true;
@@ -1987,6 +1998,27 @@ ${locationCatalog.rawNames.join(', ')}
       });
     }
 
+    if (
+      !isGreetingOnly(text) &&
+      (nextAiState.lead_flow === 'demand' || nextAiState.lead_flow === 'offer' || nextAiState.direct_property_reference)
+    ) {
+      const propertyForLead =
+        nextAiState.direct_property_reference && matchedProperties.length > 0
+          ? matchedProperties[0]
+          : null;
+      const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+
+      if (contactId) {
+        await maybeCreateOrReuseLeadWithEngine({
+          conversationId,
+          conversationRow,
+          nextAiState,
+          contactId,
+          property: propertyForLead,
+        });
+      }
+    }
+
     await saveConversationState(conversationId, nextAiState);
     await maybeGenerateAiSummary(conversationId, nextAiState, matchedProperties);
     await sendWhatsAppText(from, reply);
@@ -2017,6 +2049,22 @@ ${locationCatalog.rawNames.join(', ')}
 refreshLocationCatalog(true).catch((err) => {
   console.error('Error on initial location catalog warmup:', err);
 });
+
+if (process.env.FOLLOWUP_AUTOMATION_ENABLED === 'true') {
+  const intervalMinutes = Math.max(5, Number(process.env.FOLLOWUP_INTERVAL_MINUTES || 15));
+  setInterval(() => {
+    runInactivityFollowups({
+      supabase,
+      sendWhatsAppText,
+      limit: Number(process.env.FOLLOWUP_JOB_LIMIT || 50),
+      logger: console,
+    }).catch((err) => {
+      console.error('FOLLOWUP_INTERVAL_ERROR', err?.message || err);
+    });
+  }, intervalMinutes * 60 * 1000);
+
+  console.log(`Follow-up automation enabled every ${intervalMinutes} minutes`);
+}
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor corriendo en puerto ${PORT} 🚀`);
