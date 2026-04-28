@@ -115,6 +115,26 @@ async function main() {
   if (!first.success || !first.wasCreated) throw new Error('Expected first call to create lead');
   if (!second.success || second.wasCreated) throw new Error('Expected second call to reuse lead');
   if (db.leads.length !== 1) throw new Error(`Expected 1 lead, got ${db.leads.length}`);
+  if (db.leads[0].phone !== '5218100000000') throw new Error(`Expected normalized 521 phone, got ${db.leads[0].phone}`);
+
+  const third = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_id: first.leadId,
+      lead_flow: 'offer',
+      operation_type: 'sale',
+      property_type: 'house',
+      location_text: 'Cumbres',
+    },
+    contactId: 'contact-1',
+    propertyId: null,
+    logger: console,
+  });
+
+  if (!third.success || !third.wasCreated) throw new Error('Expected intent change to create a new supply lead');
+  if (db.leads.length !== 2) throw new Error(`Expected 2 leads after intent change, got ${db.leads.length}`);
+  if (db.leads[1].lead_type !== 'supply') throw new Error(`Expected supply lead, got ${db.leads[1].lead_type}`);
 
   console.log('PASS IA.1 lead automation smoke');
 }

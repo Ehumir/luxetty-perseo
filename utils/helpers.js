@@ -1,6 +1,6 @@
 // utils/helpers.js
 
-function normalizeWhatsApp(input) {
+function normalizePhoneNumber(input) {
   if (input == null) return null;
 
   const raw = String(input).trim();
@@ -10,17 +10,26 @@ function normalizeWhatsApp(input) {
 
   if (!digits) return null;
 
-  // Caso MX: 10 dígitos → agregar 52
+  // Caso MX local: 10 dígitos → WhatsApp México con prefijo 521.
   if (digits.length === 10) {
-    digits = `52${digits}`;
+    return `521${digits}`;
   }
 
-  // Caso válido MX con lada
+  // Caso MX sin indicador WhatsApp: 52 + 10 dígitos → 521 + 10 dígitos.
   if (digits.length === 12 && digits.startsWith('52')) {
-    return `+${digits}`;
+    return `521${digits.slice(2)}`;
   }
 
-  return null;
+  // Caso MX WhatsApp ya normalizado.
+  if (digits.length === 13 && digits.startsWith('521')) {
+    return digits;
+  }
+
+  return digits.length >= 8 && digits.length <= 15 ? digits : null;
+}
+
+function normalizeWhatsApp(input) {
+  return normalizePhoneNumber(input);
 }
 
 function normalizeName(input) {
@@ -262,6 +271,7 @@ function getPublicPropertyUrl(property) {
 
 module.exports = {
   normalizeWhatsApp,
+  normalizePhoneNumber,
   normalizeName,
   extractFirstName,
   findContactByWhatsApp,
