@@ -58,17 +58,35 @@ function extractLocation(message, prevState = null) {
     text.includes(' código ');
 
   const knownPatterns = [
-    /en\s+([a-záéíóúñ\s]+)$/i,
-    /por\s+([a-záéíóúñ\s]+)$/i,
-    /zona\s+([a-záéíóúñ\s]+)$/i,
-    /colonia\s+([a-záéíóúñ\s]+)$/i,
-    /municipio\s+([a-záéíóúñ\s]+)$/i,
+    /\ben\s+([a-záéíóúñ\s]+)$/i,
+    /\bpor\s+([a-záéíóúñ\s]+)$/i,
+    /\bzona\s+([a-záéíóúñ\s]+)$/i,
+    /\bcolonia\s+([a-záéíóúñ\s]+)$/i,
+    /\bmunicipio\s+([a-záéíóúñ\s]+)$/i,
   ];
 
   for (const pattern of knownPatterns) {
     const match = raw.match(pattern);
     if (match?.[1]) {
-      return cleanSpaces(match[1]).replace(/[.,!?]+$/g, '');
+      const candidate = cleanSpaces(match[1]).replace(/[.,!?]+$/g, '');
+      const normalizedCandidate = normalizeText(candidate);
+      const invalidLocationValues = new Set([
+        'renta',
+        'venta',
+        'compra',
+        'comprar',
+        'rentar',
+        'vender',
+        'su pagina',
+        'su página',
+        'la pagina',
+        'la página',
+        'su sitio',
+        'internet',
+      ]);
+      if (!invalidLocationValues.has(normalizedCandidate)) {
+        return candidate;
+      }
     }
   }
 
@@ -141,6 +159,12 @@ function extractMaxPrice(message) {
 
   if (hasPropertyCode) {
     return null;
+  }
+
+  const decimalMillionsMatch = text.match(/\b(\d+(?:[\.,]\d+)?)\s*(millones?|millon|millón)\b/i);
+  if (decimalMillionsMatch?.[1]) {
+    const value = Number(decimalMillionsMatch[1].replace(',', '.'));
+    if (Number.isFinite(value)) return Math.round(value * 1000000);
   }
 
   const shorthand = [

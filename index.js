@@ -22,7 +22,7 @@ const { SYSTEM_PROMPT } = require('./config/prompts');
 const { supabase } = require('./services/supabaseService');
 const { openai } = require('./services/openaiService');
 const { axios } = require('./services/whatsappService');
-const { createRequestIfNeeded, assignRequestViaEngine } = require('./services/requestAutomation');
+const { createOrReuseLeadFromConversation } = require('./services/leadAutomation');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
 const { parseMessageSignals } = require('./conversation/parsers');
@@ -405,78 +405,35 @@ async function saveConversationEvent(conversationId, type, payload = {}, created
   }
 }
 
-function shouldAssignRequestWithEngine(result) {
-  if (!result?.request || !result?.mode) return false;
-  if (result.created === true) return true;
-  return result.created === false && !result.request.assigned_agent_profile_id;
-}
-
-async function maybeAssignRequestWithEngine({
+async function maybeCreateOrReuseLeadWithEngine({
   conversationId,
-  requestResult,
+  conversationRow,
   nextAiState,
+  contactId,
+  property = null,
 }) {
   try {
-    if (!shouldAssignRequestWithEngine(requestResult)) return null;
-
-    await saveConversationEvent(conversationId, 'request_assignment_requested', {
-      request_id: requestResult.request.id,
-      assigned_agent_profile_id: null,
-      strategy: null,
-      reason: requestResult.reason || null,
-    });
-
-    const assignment = await assignRequestViaEngine({
+    const result = await createOrReuseLeadFromConversation({
       supabase,
-      request: requestResult.request,
-      conversationId,
+      conversation: conversationRow,
+      aiState: nextAiState,
+      contactId,
+      propertyId: property?.id || null,
+      property,
+      logger: console,
     });
 
-    if (assignment?.outcome === 'assigned') {
-      nextAiState.assigned_agent_profile_id = assignment.assigned_agent_profile_id || null;
-
-      await saveConversationEvent(conversationId, 'request_assigned', {
-        request_id: requestResult.request.id,
-        assigned_agent_profile_id: assignment.assigned_agent_profile_id,
-        strategy: assignment.strategy,
-        reason: assignment.reason,
-        outcome: assignment.outcome,
-      });
-    } else if (assignment?.outcome === 'manual_review') {
-      await saveConversationEvent(conversationId, 'request_pending_manual_review', {
-        request_id: requestResult.request.id,
-        assigned_agent_profile_id: null,
-        strategy: assignment?.strategy || null,
-        reason: assignment?.reason || 'manual_review',
-        outcome: assignment.outcome,
-      });
-
-      console.warn('Assignment pending manual review:', assignment?.reason || 'manual_review');
-    } else if (assignment?.outcome === 'no_agent') {
-      await saveConversationEvent(conversationId, 'request_assignment_no_agent', {
-        request_id: requestResult.request.id,
-        assigned_agent_profile_id: null,
-        strategy: assignment?.strategy || null,
-        reason: assignment?.reason || 'no_agent_resolved',
-        outcome: assignment.outcome,
-      });
-
-      console.warn('Assignment failed: no agent available:', assignment?.reason || 'no_agent_resolved');
-    } else {
-      await saveConversationEvent(conversationId, 'request_assignment_failed', {
-        request_id: requestResult.request.id,
-        assigned_agent_profile_id: null,
-        strategy: assignment?.strategy || null,
-        reason: assignment?.reason || 'assignment_failed',
-        outcome: assignment?.outcome || 'rpc_error',
-      });
-
-      console.warn('Assignment failed:', assignment?.reason || 'assignment_failed');
+    if (result?.success && result.aiState) {
+      Object.assign(nextAiState, result.aiState);
     }
 
-    return assignment;
+    return result;
   } catch (err) {
-    console.warn('Assignment failed:', err?.message || err);
+    console.warn('Lead automation failed:', err?.message || err);
+    await saveConversationEvent(conversationId, 'lead_assignment_failed', {
+      reason: 'lead_automation_exception',
+      error: err?.message || String(err),
+    });
     return null;
   }
 }
@@ -722,6 +679,60 @@ async function getPropertyByCode(propertyCode) {
   }
 }
 
+function extractPropertySlugFromText(rawValue) {
+  if (!rawValue) return null;
+  const text = String(rawValue);
+  const match = text.match(/luxetty\.com\/propiedad\/([a-z0-9-]+)/i);
+  if (match?.[1]) return match[1].replace(/[/?#].*$/, '').trim();
+  return null;
+}
+
+async function getPropertyBySlug(slug) {
+  try {
+    if (!slug) return null;
+
+    const { data, error } = await supabase
+      .from('properties')
+      .select(`
+        id,
+        listing_id,
+        agent_profile_id,
+        title,
+        slug,
+        price,
+        currency_code,
+        neighborhood,
+        zone,
+        city,
+        bedrooms,
+        bathrooms,
+        parking_spaces,
+        main_image_url,
+        canonical_url,
+        operation_type,
+        status,
+        archived_at,
+        visible_on_website,
+        is_public
+      `)
+      .eq('slug', slug)
+      .is('archived_at', null)
+      .eq('visible_on_website', true)
+      .in('status', ['active', 'sold', 'rented'])
+      .limit(1);
+
+    if (error) {
+      console.error('Error buscando propiedad por slug:', error);
+      return null;
+    }
+
+    return Array.isArray(data) && data.length > 0 ? data[0] : null;
+  } catch (err) {
+    console.error('FATAL getPropertyBySlug:', err);
+    return null;
+  }
+}
+
 function getAssignedAgentProfileIdFromProperty(property) {
   if (!property || typeof property !== 'object') return null;
   return property.agent_profile_id || null;
@@ -932,7 +943,7 @@ async function maybeCreateFollowupRequest({
     }
 
     await saveConversationEvent(conversationId, 'followup_request_created', {
-      request_id: data.id,
+      followup_id: data.id,
       request_type: requestType,
       priority,
       summary,
@@ -1173,6 +1184,29 @@ app.post('/webhook', async (req, res) => {
     const incomingSignals = parseMessageSignals(text, previousAiState);
     const signals = incomingSignals;
 
+    if (!signals.property_code) {
+      const propertySlug = extractPropertySlugFromText(text);
+      if (propertySlug) {
+        const propertyFromSlug = await getPropertyBySlug(propertySlug);
+        if (propertyFromSlug?.listing_id) {
+          signals.property_code = propertyFromSlug.listing_id;
+          signals.direct_property_reference = true;
+          signals.lead_flow = 'demand';
+          signals.operation_type = propertyFromSlug.operation_type || signals.operation_type || null;
+          signals.user_goal = 'search_property';
+          await saveConversationEvent(conversationId, 'direct_property_slug_resolved', {
+            slug: propertySlug,
+            property_id: propertyFromSlug.id,
+            listing_id: propertyFromSlug.listing_id,
+          });
+        } else {
+          await saveConversationEvent(conversationId, 'direct_property_slug_not_found', {
+            slug: propertySlug,
+          });
+        }
+      }
+    }
+
     if (signals?.property_code || /LUX|[A-Z]\d{4}/i.test(text || '')) {
       console.log('PROPERTY CODE DEBUG:', {
         raw_text: text,
@@ -1250,6 +1284,7 @@ app.post('/webhook', async (req, res) => {
         ...previousAiState,
         ...signals,
         lead_flow: 'demand',
+        operation_type: property.operation_type || signals.operation_type || previousAiState.operation_type || null,
         property_code: normalizedDirectCode || signals.property_code,
         direct_property_reference: true,
         assigned_agent_profile_id:
@@ -1277,6 +1312,17 @@ app.post('/webhook', async (req, res) => {
 
       if (outboundMessageRow?.id) {
         await savePropertySuggestions(conversationId, outboundMessageRow.id, [property]);
+      }
+
+      const contactId = await upsertContactForConversation(conversationRow, directState, from);
+      if (contactId) {
+        await maybeCreateOrReuseLeadWithEngine({
+          conversationId,
+          conversationRow,
+          nextAiState: directState,
+          contactId,
+          property,
+        });
       }
 
       await saveConversationState(conversationId, directState);
@@ -1600,6 +1646,27 @@ app.post('/webhook', async (req, res) => {
 
     await maybeGenerateAiSummary(conversationId, nextAiState, matchedProperties);
 
+    if (
+      !isGreetingOnly(text) &&
+      (nextAiState.lead_flow === 'demand' || nextAiState.lead_flow === 'offer' || nextAiState.direct_property_reference)
+    ) {
+      const propertyForLead =
+        nextAiState.direct_property_reference && matchedProperties.length > 0
+          ? matchedProperties[0]
+          : null;
+      const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+
+      if (contactId) {
+        await maybeCreateOrReuseLeadWithEngine({
+          conversationId,
+          conversationRow,
+          nextAiState,
+          contactId,
+          property: propertyForLead,
+        });
+      }
+    }
+
     let reply = null;
 
     function shouldAskField(state, fieldName) {
@@ -1689,27 +1756,12 @@ app.post('/webhook', async (req, res) => {
         });
 
         if (contactId) {
-          const requestResult = await createRequestIfNeeded({
-            supabase,
+          await maybeCreateOrReuseLeadWithEngine({
             conversationId,
             conversationRow,
-            state: nextAiState,
+            nextAiState,
             contactId,
             property: nextAiState.direct_property_reference && matchedProperties.length > 0 ? matchedProperties[0] : null,
-            messageText: text,
-            assignedAgentProfileId: null,
-            saveConversationEvent,
-            buildSummary: () =>
-              buildAiSummary(
-                nextAiState,
-                nextAiState.direct_property_reference && matchedProperties.length > 0 ? [matchedProperties[0]] : []
-              ),
-          });
-
-          await maybeAssignRequestWithEngine({
-            conversationId,
-            requestResult,
-            nextAiState,
           });
         }
 
@@ -1743,27 +1795,12 @@ app.post('/webhook', async (req, res) => {
           });
 
           if (contactId) {
-            const requestResult = await createRequestIfNeeded({
-              supabase,
+            await maybeCreateOrReuseLeadWithEngine({
               conversationId,
               conversationRow,
-              state: nextAiState,
+              nextAiState,
               contactId,
               property: nextAiState.direct_property_reference && matchedProperties.length > 0 ? matchedProperties[0] : null,
-              messageText: text,
-              assignedAgentProfileId: null,
-              saveConversationEvent,
-              buildSummary: () =>
-                buildAiSummary(
-                  nextAiState,
-                  nextAiState.direct_property_reference && matchedProperties.length > 0 ? [matchedProperties[0]] : []
-                ),
-            });
-
-            await maybeAssignRequestWithEngine({
-              conversationId,
-              requestResult,
-              nextAiState,
             });
           }
 
@@ -1824,23 +1861,12 @@ app.post('/webhook', async (req, res) => {
         });
 
         if (contactId) {
-          const requestResult = await createRequestIfNeeded({
-            supabase,
+          await maybeCreateOrReuseLeadWithEngine({
             conversationId,
             conversationRow,
-            state: nextAiState,
+            nextAiState,
             contactId,
             property: null,
-            messageText: text,
-            assignedAgentProfileId: null,
-            saveConversationEvent,
-            buildSummary: () => buildAiSummary(nextAiState, []),
-          });
-
-          await maybeAssignRequestWithEngine({
-            conversationId,
-            requestResult,
-            nextAiState,
           });
         }
 
