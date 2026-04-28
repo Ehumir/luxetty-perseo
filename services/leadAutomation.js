@@ -38,6 +38,112 @@ function resolveLeadType(aiState = {}) {
   return null;
 }
 
+function clampLeadScore(score) {
+  return Math.max(0, Math.min(100, Number(score) || 0));
+}
+
+function getLeadTemperature(score) {
+  if (score <= 40) return 'cold';
+  if (score <= 70) return 'warm';
+  return 'hot';
+}
+
+function hasAmbiguousIntent(aiState = {}, intent = {}) {
+  const confidence = normalizeText(aiState.confidence || intent.confidence || '');
+  const leadType = intent.leadType || intent.lead_type || aiState.lead_type || resolveLeadType(aiState);
+
+  if (!leadType) return true;
+
+  if (
+    confidence === 'low' &&
+    !aiState.budget_max &&
+    !aiState.location_text &&
+    !aiState.property_code &&
+    !aiState.direct_property_code
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function calculateLeadScore({ aiState = {}, intent = {} } = {}) {
+  let score = 0;
+
+  if (aiState.budget_min != null || aiState.budget_max != null || intent.budget_min != null || intent.budget_max != null) {
+    score += 30;
+  }
+
+  if (aiState.location_text || aiState.matched_location_from_catalog || intent.location_text) {
+    score += 20;
+  }
+
+  if (
+    aiState.property_code ||
+    aiState.direct_property_code ||
+    aiState.direct_property_reference ||
+    intent.property_code ||
+    intent.direct_property_reference
+  ) {
+    score += 30;
+  }
+
+  if (
+    aiState.wants_visit ||
+    aiState.wants_human ||
+    aiState.asks_property_details ||
+    intent.wants_visit ||
+    intent.wants_human ||
+    intent.asks_property_details
+  ) {
+    score += 20;
+  }
+
+  if (hasAmbiguousIntent(aiState, intent)) {
+    score -= 20;
+  }
+
+  const leadScore = clampLeadScore(score);
+
+  return {
+    lead_score: leadScore,
+    lead_temperature: getLeadTemperature(leadScore),
+  };
+}
+
+function hasSupplyCompleteData(lead = {}) {
+  const preferredZones = Array.isArray(lead.preferred_zones) ? lead.preferred_zones : [];
+  const notes = normalizeText(lead.notes_summary || '');
+
+  return (
+    lead.lead_type === 'supply' &&
+    lead.budget_max != null &&
+    preferredZones.length > 0 &&
+    (
+      !!lead.property_type ||
+      notes.includes('tipo:')
+    )
+  );
+}
+
+function shouldTriggerHandoff(lead = {}) {
+  if (!lead || typeof lead !== 'object') return false;
+  if (lead.assigned_agent_profile_id) return false;
+
+  if (Number(lead.lead_score || 0) > 70) return true;
+  if (
+    lead.intent_type === 'property_interest' ||
+    lead.property_interest === true ||
+    !!lead.interested_property_id
+  ) {
+    return true;
+  }
+
+  if (hasSupplyCompleteData(lead)) return true;
+
+  return false;
+}
+
 function sameNullableValue(left, right) {
   return (left || null) === (right || null);
 }
@@ -257,6 +363,30 @@ async function insertLeadWithSourceFallback(supabase, payload) {
   return { data: null, error };
 }
 
+async function updateLeadScoring(supabase, leadId, scoring) {
+  if (!supabase || !leadId || !scoring) return null;
+
+  const { data, error } = await supabase
+    .from('leads')
+    .update({
+      lead_score: scoring.lead_score,
+      lead_temperature: scoring.lead_temperature,
+    })
+    .eq('id', leadId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('LEAD_AUTOMATION_SCORING_UPDATE_ERROR', {
+      lead_id: leadId,
+      error: error.message,
+    });
+    return null;
+  }
+
+  return data || null;
+}
+
 async function syncConversation(supabase, conversationId, payload) {
   if (!conversationId) return;
   const { error } = await supabase
@@ -407,6 +537,26 @@ async function createOrReuseLeadFromConversation({
 
     const leadType = resolveLeadType(aiState);
     const operation = resolveOperation(aiState, property);
+    const scoringIntent = {
+      leadType,
+      operationType: operation,
+      property_code: aiState?.property_code || aiState?.direct_property_code || null,
+      direct_property_reference: !!(aiState?.direct_property_reference || propertyId),
+      budget_min: aiState?.budget_min,
+      budget_max: aiState?.budget_max,
+      location_text: aiState?.location_text,
+      wants_visit: aiState?.wants_visit,
+      wants_human: aiState?.wants_human,
+      asks_property_details: aiState?.asks_property_details,
+      confidence: aiState?.confidence,
+    };
+    const leadScoring = calculateLeadScore({
+      aiState: {
+        ...(aiState || {}),
+        direct_property_reference: !!(aiState?.direct_property_reference || propertyId),
+      },
+      intent: scoringIntent,
+    });
     const expected = {
       contactId,
       leadType,
@@ -418,6 +568,8 @@ async function createOrReuseLeadFromConversation({
       lead_type: leadType,
       interested_in_operation: operation,
       interested_property_id: propertyId || null,
+      lead_score: leadScoring.lead_score,
+      lead_temperature: leadScoring.lead_temperature,
       source: 'ai_agent',
     });
 
@@ -500,6 +652,8 @@ async function createOrReuseLeadFromConversation({
         budget_min: aiState?.budget_min != null ? Number(aiState.budget_min) : null,
         budget_max: aiState?.budget_max != null ? Number(aiState.budget_max) : null,
         preferred_zones: aiState?.location_text ? [String(aiState.location_text)] : null,
+        lead_score: leadScoring.lead_score,
+        lead_temperature: leadScoring.lead_temperature,
         pipeline_stage_id: pipelineStageId,
         status: 'new',
         is_active: true,
@@ -526,6 +680,8 @@ async function createOrReuseLeadFromConversation({
         lead_type: leadType,
         interested_in_operation: operation,
         interested_property_id: propertyId || null,
+        lead_score: leadScoring.lead_score,
+        lead_temperature: leadScoring.lead_temperature,
         source: 'ai_agent',
       });
 
@@ -535,17 +691,55 @@ async function createOrReuseLeadFromConversation({
           lead_type: leadType,
           interested_in_operation: operation,
           interested_property_id: propertyId || null,
+          lead_score: leadScoring.lead_score,
+          lead_temperature: leadScoring.lead_temperature,
           source: 'ai_agent',
         });
       }
     }
 
-    const { assignedAgentProfileId, assignmentResult } = await assignLead(
-      supabase,
-      lead.id,
-      conversationId,
-      logger
-    );
+    if (!wasCreated) {
+      const scoredLead = await updateLeadScoring(supabase, lead.id, leadScoring);
+      if (scoredLead) lead = scoredLead;
+    }
+
+    const handoffCandidate = {
+      ...lead,
+      intent_type: aiState?.intent_type || aiState?.playbook_type || null,
+      property_type: aiState?.property_type || lead.property_type || null,
+      property_interest:
+        aiState?.intent_type === 'property_interest' ||
+        aiState?.playbook_type === 'property_interest' ||
+        !!aiState?.direct_property_reference ||
+        !!propertyId,
+      handoff_sent: !!aiState?.handoff_sent,
+    };
+    const shouldHandoff = shouldTriggerHandoff(handoffCandidate);
+
+    let assignedAgentProfileId = null;
+    let assignmentResult = null;
+    let handoffTriggered = false;
+
+    if (shouldHandoff) {
+      const assignment = await assignLead(
+        supabase,
+        lead.id,
+        conversationId,
+        logger
+      );
+      assignedAgentProfileId = assignment.assignedAgentProfileId;
+      assignmentResult = assignment.assignmentResult;
+      handoffTriggered = !!assignedAgentProfileId;
+    } else {
+      await saveConversationEvent(supabase, conversationId, 'lead_handoff_deferred', {
+        lead_id: lead.id,
+        lead_score: lead.lead_score ?? leadScoring.lead_score,
+        lead_temperature: lead.lead_temperature || leadScoring.lead_temperature,
+        intent_type: handoffCandidate.intent_type,
+        reason: 'lead_not_ready_for_handoff',
+        source: 'ai_agent',
+      });
+    }
 
     let nextAiState;
 
@@ -573,6 +767,8 @@ async function createOrReuseLeadFromConversation({
 
     if (assignedAgentProfileId) {
       nextAiState.assigned_agent_profile_id = assignedAgentProfileId;
+      nextAiState.handoff_ready = true;
+      nextAiState.handoff_sent = true;
     }
 
     await syncConversation(supabase, conversationId, {
@@ -589,6 +785,8 @@ async function createOrReuseLeadFromConversation({
       wasCreated,
       assignedAgentProfileId: assignedAgentProfileId || lead.assigned_agent_profile_id || null,
       assignmentResult,
+      shouldHandoff,
+      handoffTriggered,
       reason: wasCreated ? 'lead_created' : 'lead_reused',
       aiState: nextAiState,
     };
@@ -617,5 +815,7 @@ async function createOrReuseLeadFromConversation({
 }
 
 module.exports = {
+  calculateLeadScore,
+  shouldTriggerHandoff,
   createOrReuseLeadFromConversation,
 };
