@@ -35,7 +35,16 @@ function getDefaultAiState() {
     last_shown_property_ids: [],
 
     wants_human: false,
+    wants_visit: false,
+    shows_high_interest: false,
+    asks_property_details: false,
     user_goal: null,
+    intent_type: null,
+    intent_changed: false,
+    next_step: null,
+    playbook_type: null,
+    playbook: null,
+    playbook_step: null,
     confidence: 'low',
 
     geo_qualified: null,
@@ -55,7 +64,7 @@ function normalizeAiState(rawState) {
     return base;
   }
 
-  return {
+  const normalized = {
     ...base,
     ...rawState,
     must_have_features: Array.isArray(rawState.must_have_features)
@@ -64,7 +73,16 @@ function normalizeAiState(rawState) {
     last_shown_property_ids: Array.isArray(rawState.last_shown_property_ids)
       ? rawState.last_shown_property_ids
       : [],
+    playbook: Array.isArray(rawState.playbook)
+      ? rawState.playbook
+      : base.playbook,
   };
+
+  if (!normalized.intent_type && normalized.playbook_type) {
+    normalized.intent_type = normalized.playbook_type;
+  }
+
+  return normalized;
 }
 
 module.exports = {

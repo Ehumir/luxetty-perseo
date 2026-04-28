@@ -27,6 +27,12 @@ const { runInactivityFollowups } = require('./services/followupAutomation');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
 const { parseMessageSignals } = require('./conversation/parsers');
+const { getNextStep } = require('./conversation/nextStep');
+const {
+  getNextPlaybookStep,
+  getPlaybookAwaitingField,
+  buildPlaybookReply,
+} = require('./conversation/playbooks');
 const { detectStateChange, buildNextState } = require('./conversation/stateUpdater');
 const {
   qualifiesOfferGeo,
@@ -75,6 +81,90 @@ function isClosureCheck(text) {
     t === 'gracias' ||
     t === 'listo'
   );
+}
+
+function getNextStepCta(nextStep) {
+  if (nextStep === 'qualify_search') {
+    return '¿Prefieres que te muestre opciones o avanzar con un asesor?';
+  }
+
+  if (nextStep === 'push_visit') {
+    return '¿Quieres que coordinemos una visita o prefieres hablar con un asesor?';
+  }
+
+  if (nextStep === 'qualify_property') {
+    return '¿Me compartes los datos de la propiedad para revisarla contigo?';
+  }
+
+  return '¿Quieres que te ayude a buscar, vender o conectar con un asesor?';
+}
+
+function hasConversationAdvance(reply) {
+  const text = normalizeText(reply);
+  if (!text) return false;
+  if (/[?¿]\s*$/.test(String(reply).trim())) return true;
+
+  return (
+    text.includes('te contactara') ||
+    text.includes('te contactará') ||
+    text.includes('te conecto') ||
+    text.includes('te ayudo a coordinar') ||
+    text.includes('te ayudo a buscar') ||
+    text.includes('te muestro opciones') ||
+    text.includes('avanzamos con un asesor')
+  );
+}
+
+function enrichReplyWithNextStepCta(reply, nextStep) {
+  const base = cleanSpaces(reply || '');
+  if (!base) return getNextStepCta(nextStep);
+  if (hasConversationAdvance(base)) return base;
+  return `${base} ${getNextStepCta(nextStep)}`;
+}
+
+function buildIntelligentHandoffReply() {
+  return 'Esto ya vale la pena verlo con un asesor. Te voy a conectar con alguien de nuestro equipo para avanzar contigo.';
+}
+
+function applyPlaybookProgress(state, context = {}) {
+  const progress = getNextPlaybookStep(state, context);
+  state.playbook_type = progress.playbook_type;
+  state.playbook = progress.playbook;
+  state.playbook_step = progress.playbook_step;
+  return progress;
+}
+
+function getIntentFamily(intentType, leadFlow) {
+  if (intentType === 'supply' || leadFlow === 'offer') return 'supply';
+  if (intentType === 'demand' || intentType === 'property_interest' || leadFlow === 'demand') return 'demand';
+  return null;
+}
+
+function isCrossFamilyIntentChange(prevState = {}, nextState = {}) {
+  const prevFamily = getIntentFamily(prevState.intent_type, prevState.lead_flow);
+  const nextFamily = getIntentFamily(nextState.intent_type, nextState.lead_flow);
+  return !!prevFamily && !!nextFamily && prevFamily !== nextFamily;
+}
+
+function markIntentChangeHandled(prevState = {}, nextState = {}) {
+  if (!nextState.intent_changed) return false;
+
+  const crossFamilyChanged = isCrossFamilyIntentChange(prevState, nextState);
+
+  nextState.previous_intent_type = prevState.intent_type || null;
+  nextState.intent_changed_at = nowIso();
+  nextState.awaiting_field = null;
+  nextState.handoff_ready = false;
+  nextState.handoff_sent = false;
+  nextState.closing_message_sent = false;
+
+  if (crossFamilyChanged) {
+    nextState.last_shown_property_ids = [];
+    nextState.last_search_filters = null;
+    nextState.last_search_result_count = 0;
+  }
+
+  return crossFamilyChanged;
 }
 
 async function refreshLocationCatalog(force = false) {
@@ -1314,9 +1404,19 @@ app.post('/webhook', async (req, res) => {
           top_match_score: 0,
           awaiting_field: null,
         };
+        directState.next_step = getNextStep(
+          { leadType: 'demand', directPropertyReference: true },
+          directState
+        );
+        applyPlaybookProgress(directState, {
+          playbookType: 'property_interest',
+          matchedProperties: [],
+        });
 
-        const notFoundReply =
-          'No encontré esa propiedad disponible en este momento. Si quieres, te muestro opciones similares. ¿Qué zona te interesa?';
+        const notFoundReply = enrichReplyWithNextStepCta(
+          'No encontré esa propiedad disponible en este momento. Si quieres, te muestro opciones similares. ¿Qué zona te interesa?',
+          directState.next_step
+        );
 
         await saveConversationState(conversationId, directState);
 
@@ -1352,15 +1452,28 @@ app.post('/webhook', async (req, res) => {
         assigned_agent_profile_id:
           directPropertyAssignedAgentId || previousAiState.assigned_agent_profile_id || null,
         direct_property_code: normalizedDirectCode || signals.property_code,
+        intent_type: 'property_interest',
+        playbook_type: 'property_interest',
         last_search_result_count: 1,
         last_shown_property_ids: [property.id],
         result_quality: 'strong',
         top_match_score: 100,
         awaiting_field: null,
       };
+      directState.next_step = getNextStep(
+        { leadType: 'demand', directPropertyReference: true },
+        directState
+      );
+      applyPlaybookProgress(directState, {
+        playbookType: 'property_interest',
+        matchedProperties: [property],
+      });
 
-      const directReply = sanitizeReply(
-        buildDemandReply(directState, null, [property], 'direct_property_code')
+      let directReply = sanitizeReply(
+        enrichReplyWithNextStepCta(
+          buildDemandReply(directState, null, [property], 'direct_property_code'),
+          directState.next_step
+        )
       );
 
       const outboundMessageRow = await saveConversationMessage({
@@ -1378,13 +1491,32 @@ app.post('/webhook', async (req, res) => {
 
       const contactId = await upsertContactForConversation(conversationRow, directState, from);
       if (contactId) {
-        await maybeCreateOrReuseLeadWithEngine({
+        const leadAutomationResult = await maybeCreateOrReuseLeadWithEngine({
           conversationId,
           conversationRow,
           nextAiState: directState,
           contactId,
           property,
         });
+
+        if (leadAutomationResult?.handoffTriggered) {
+          directReply = buildIntelligentHandoffReply();
+          directState.handoff_ready = true;
+          directState.handoff_sent = true;
+
+          if (outboundMessageRow?.id) {
+            await supabase
+              .from('conversation_messages')
+              .update({ message_text: directReply })
+              .eq('id', outboundMessageRow.id);
+          }
+
+          await saveConversationEvent(conversationId, 'intelligent_handoff_message_sent', {
+            lead_id: leadAutomationResult.leadId || null,
+            assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
+            source: 'ai_agent',
+          });
+        }
       }
 
       await saveConversationState(conversationId, directState);
@@ -1430,6 +1562,8 @@ app.post('/webhook', async (req, res) => {
         (previousAiState.awaiting_field === 'contact_preference' && !!incomingSignals.contact_preference) ||
         (previousAiState.awaiting_field === 'contact_number_confirmed' && incomingSignals.contact_number_confirmed !== null) ||
         (previousAiState.awaiting_field === 'location_text' && (!!incomingSignals.location_text || !!incomingSignals.location_any)) ||
+        (previousAiState.awaiting_field === 'budget_max' && incomingSignals.budget_max != null) ||
+        (previousAiState.awaiting_field === 'property_type' && !!incomingSignals.property_type) ||
         (previousAiState.awaiting_field === 'bedrooms' && (incomingSignals.bedrooms != null || !!incomingSignals.bedrooms_any))
       )
     ) {
@@ -1476,6 +1610,20 @@ app.post('/webhook', async (req, res) => {
     if (
       (nextAiState.location_text || nextAiState.location_any) &&
       nextAiState.awaiting_field === 'location_text'
+    ) {
+      nextAiState.awaiting_field = null;
+    }
+
+    if (
+      nextAiState.budget_max != null &&
+      nextAiState.awaiting_field === 'budget_max'
+    ) {
+      nextAiState.awaiting_field = null;
+    }
+
+    if (
+      nextAiState.property_type &&
+      nextAiState.awaiting_field === 'property_type'
     ) {
       nextAiState.awaiting_field = null;
     }
@@ -1560,6 +1708,22 @@ app.post('/webhook', async (req, res) => {
       nextAiState.direct_property_code = null;
     }
 
+    const crossFamilyIntentChanged = markIntentChangeHandled(previousAiState, nextAiState);
+    if (crossFamilyIntentChanged) {
+      nextAiState.lead_id = null;
+      nextAiState.crm_lead_created_at = null;
+    }
+
+    nextAiState.next_step = getNextStep(
+      {
+        leadType: nextAiState.lead_flow,
+        operationType: nextAiState.operation_type,
+        propertyCode: nextAiState.property_code,
+        directPropertyReference: nextAiState.direct_property_reference,
+      },
+      nextAiState
+    );
+
     if (nextAiState.lead_flow === 'offer') {
       if (nextAiState.location_text) {
         nextAiState.geo_qualified = qualifiesOfferGeo(nextAiState.location_text);
@@ -1582,7 +1746,23 @@ app.post('/webhook', async (req, res) => {
       text,
       incoming_signals: incomingSignals,
       change_type: changeType,
+      intent_changed: !!incomingSignals.intent_changed,
+      previous_intent_type: previousAiState.intent_type || null,
+      next_intent_type: nextAiState.intent_type || null,
+      cross_family_intent_changed: crossFamilyIntentChanged,
     });
+
+    if (incomingSignals.intent_changed) {
+      await saveConversationEvent(conversationId, 'intent_changed', {
+        previous_intent_type: previousAiState.intent_type || null,
+        next_intent_type: nextAiState.intent_type || null,
+        previous_lead_flow: previousAiState.lead_flow || null,
+        next_lead_flow: nextAiState.lead_flow || null,
+        cross_family_intent_changed: crossFamilyIntentChanged,
+        previous_flow_closed: true,
+        source: 'ai_agent',
+      });
+    }
 
     let matchedProperties = [];
     let attemptUsed = null;
@@ -1706,6 +1886,7 @@ app.post('/webhook', async (req, res) => {
       );
     }
 
+    applyPlaybookProgress(nextAiState, { matchedProperties });
     await maybeGenerateAiSummary(conversationId, nextAiState, matchedProperties);
 
     let reply = null;
@@ -1717,9 +1898,18 @@ app.post('/webhook', async (req, res) => {
       if (fieldName === 'contact_preference') return !state.contact_preference;
       if (fieldName === 'contact_number_confirmed') return state.contact_number_confirmed == null;
       if (fieldName === 'location_text') return !state.location_text && !state.location_any;
+      if (fieldName === 'budget_max') return state.budget_max == null;
+      if (fieldName === 'property_type') return !state.property_type;
       if (fieldName === 'bedrooms') return state.bedrooms == null && !state.bedrooms_any;
 
       return true;
+    }
+
+    function shouldUsePlaybookReply(state, step) {
+      if (!step || state.handoff_sent) return false;
+      const fieldName = getPlaybookAwaitingField(step);
+      if (!fieldName) return state.awaiting_field == null;
+      return shouldAskField(state, fieldName);
     }
 
     if (isGreetingOnly(text) && !previousAiState.lead_flow && !incomingSignals.property_code) {
@@ -1730,6 +1920,15 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     } else if (nextAiState.direct_property_reference && nextAiState.property_code && matchedProperties.length === 0) {
       reply = `No encontré esa propiedad disponible en este momento. Si quieres, te ayudo a buscar opciones similares. ¿Qué zona te interesa?`;
+    } else if (shouldUsePlaybookReply(nextAiState, nextAiState.playbook_step)) {
+      const playbookReply = buildPlaybookReply(nextAiState.playbook_step, nextAiState);
+      if (playbookReply) {
+        const awaitingField = getPlaybookAwaitingField(nextAiState.playbook_step);
+        reply = playbookReply;
+        if (awaitingField && shouldAskField(nextAiState, awaitingField)) {
+          nextAiState.awaiting_field = awaitingField;
+        }
+      }
     } else if (nextAiState.lead_flow === 'demand') {
       reply = buildDemandReply(nextAiState, changeType, matchedProperties, attemptUsed);
 
@@ -1950,6 +2149,17 @@ ${locationCatalog.rawNames.join(', ')}
       nextAiState.awaiting_field = null;
     }
 
+    nextAiState.next_step = getNextStep(
+      {
+        leadType: nextAiState.lead_flow,
+        operationType: nextAiState.operation_type,
+        propertyCode: nextAiState.property_code,
+        directPropertyReference: nextAiState.direct_property_reference,
+      },
+      nextAiState
+    );
+    reply = sanitizeReply(enrichReplyWithNextStepCta(reply, nextAiState.next_step));
+
     // 🔒 Anti-loop: evitar repetir exactamente la misma respuesta
     const lastMessages = conversations.get(from) || [];
     const lastAssistantMessage = [...lastMessages].reverse().find(m => m.role === 'assistant');
@@ -1971,7 +2181,7 @@ ${locationCatalog.rawNames.join(', ')}
 
     conversations.set(from, updatedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
 
-    const outboundMessageRow = await saveConversationMessage({
+    let outboundMessageRow = await saveConversationMessage({
       conversationId,
       direction: 'outbound',
       senderType: 'ai_agent',
@@ -2009,13 +2219,41 @@ ${locationCatalog.rawNames.join(', ')}
       const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
 
       if (contactId) {
-        await maybeCreateOrReuseLeadWithEngine({
+        const leadAutomationResult = await maybeCreateOrReuseLeadWithEngine({
           conversationId,
           conversationRow,
           nextAiState,
           contactId,
           property: propertyForLead,
         });
+
+        if (
+          leadAutomationResult?.handoffTriggered &&
+          !lastAssistantMessage?.content?.includes('Esto ya vale la pena verlo con un asesor')
+        ) {
+          reply = buildIntelligentHandoffReply();
+          nextAiState.handoff_ready = true;
+          nextAiState.handoff_sent = true;
+
+          const refreshedMessages = [
+            ...(conversations.get(from) || []).slice(0, -1),
+            { role: 'assistant', content: reply },
+          ];
+          conversations.set(from, refreshedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
+
+          if (outboundMessageRow?.id) {
+            await supabase
+              .from('conversation_messages')
+              .update({ message_text: reply })
+              .eq('id', outboundMessageRow.id);
+          }
+
+          await saveConversationEvent(conversationId, 'intelligent_handoff_message_sent', {
+            lead_id: leadAutomationResult.leadId || null,
+            assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
+            source: 'ai_agent',
+          });
+        }
       }
     }
 

@@ -1,14 +1,28 @@
 const { normalizeAiState, getDefaultAiState } = require('./aiState');
 
+function getIntentFamily(intentType, leadFlow) {
+  if (intentType === 'supply' || leadFlow === 'offer') return 'supply';
+  if (intentType === 'demand' || intentType === 'property_interest' || leadFlow === 'demand') return 'demand';
+  return null;
+}
+
 function detectStateChange(prevState, signals) {
   const prev = normalizeAiState(prevState);
+  const prevIntentFamily = getIntentFamily(prev.intent_type, prev.lead_flow);
+  const nextIntentFamily = getIntentFamily(signals.intent_type, signals.lead_flow);
 
   const flowChanged =
     signals.lead_flow &&
     prev.lead_flow &&
     signals.lead_flow !== prev.lead_flow;
 
-  if (flowChanged) return 'restart_flow';
+  const intentFamilyChanged =
+    !!signals.intent_changed &&
+    !!prevIntentFamily &&
+    !!nextIntentFamily &&
+    prevIntentFamily !== nextIntentFamily;
+
+  if (flowChanged || intentFamilyChanged) return 'restart_flow';
 
   const operationChanged =
     signals.operation_type &&
@@ -69,12 +83,24 @@ function buildNextState(prevState, signals, changeType) {
       location_any: !!signals.location_any,
       bedrooms_any: !!signals.bedrooms_any,
       wants_human: !!signals.wants_human,
+      wants_visit: !!signals.wants_visit,
+      shows_high_interest: !!signals.shows_high_interest,
+      asks_property_details: !!signals.asks_property_details,
       user_goal: signals.user_goal || null,
+      intent_type: signals.intent_type || null,
+      intent_changed: !!signals.intent_changed,
+      next_step: signals.next_step || null,
+      playbook_type: signals.playbook_type || null,
+      playbook: signals.playbook || null,
+      playbook_step: null,
       confidence: signals.confidence || 'low',
-      full_name: signals.full_name || null,
+      full_name: signals.full_name || prev.full_name || null,
       owner_relation: signals.owner_relation || null,
-      contact_preference: signals.contact_preference || null,
-      contact_number_confirmed: signals.contact_number_confirmed,
+      contact_preference: signals.contact_preference || prev.contact_preference || null,
+      contact_number_confirmed:
+        signals.contact_number_confirmed !== null && signals.contact_number_confirmed !== undefined
+          ? signals.contact_number_confirmed
+          : prev.contact_number_confirmed,
       intent_version: (prev.intent_version || 1) + 1,
     };
   } else {
@@ -110,7 +136,16 @@ function buildNextState(prevState, signals, changeType) {
           ? signals.contact_number_confirmed
           : prev.contact_number_confirmed,
       wants_human: prev.wants_human || !!signals.wants_human,
+      wants_visit: prev.wants_visit || !!signals.wants_visit,
+      shows_high_interest: prev.shows_high_interest || !!signals.shows_high_interest,
+      asks_property_details: prev.asks_property_details || !!signals.asks_property_details,
       user_goal: signals.user_goal || prev.user_goal,
+      intent_type: signals.intent_type || prev.intent_type,
+      intent_changed: !!signals.intent_changed,
+      next_step: signals.next_step || prev.next_step,
+      playbook_type: signals.playbook_type || prev.playbook_type,
+      playbook: signals.playbook || prev.playbook,
+      playbook_step: prev.playbook_step || null,
       confidence: signals.confidence || prev.confidence,
       location_any: prev.location_any,
       bedrooms_any: prev.bedrooms_any,
@@ -134,6 +169,7 @@ function buildNextState(prevState, signals, changeType) {
       next.handoff_ready = false;
       next.handoff_sent = false;
       next.closing_message_sent = false;
+      next.playbook_step = null;
     }
   }
 

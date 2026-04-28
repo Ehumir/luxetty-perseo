@@ -1,5 +1,7 @@
 const { normalizeText } = require('../utils/text');
 const { normalizeAiState } = require('./aiState');
+const { getNextStep } = require('./nextStep');
+const { getPlaybookForIntent } = require('./playbooks');
 
 function detectIntent(message, prevState = null) {
   const text = normalizeText(message);
@@ -109,6 +111,19 @@ function detectIntent(message, prevState = null) {
     text.includes('contáctenme') ||
     text.includes('contactarme');
 
+  const propertyInterest =
+    text.includes('me interesa esta propiedad') ||
+    text.includes('me interesa esa propiedad') ||
+    text.includes('me interesa la propiedad') ||
+    text.includes('vi la propiedad') ||
+    text.includes('vi una propiedad') ||
+    text.includes('vi la casa') ||
+    text.includes('quiero verla') ||
+    text.includes('quiero verlo') ||
+    text.includes('agendar visita') ||
+    text.includes('agendar una visita') ||
+    text.includes('quiero una cita');
+
   const hasPriceExpressions =
     text.includes('millones') ||
     text.includes('millon') ||
@@ -164,7 +179,19 @@ function detectIntent(message, prevState = null) {
   if (!operationType && text.includes('renta')) operationType = 'rent';
   if (!operationType && text.includes('venta')) operationType = 'sale';
 
-  return { leadType, operationType, wantsHuman };
+  const intentName =
+    propertyInterest
+      ? 'property_interest'
+      : leadType === 'offer'
+      ? 'supply'
+      : leadType || null;
+
+  const intent = { type: intentName, intent: intentName, leadType, operationType, wantsHuman };
+  intent.intent_changed = !!(prev.intent_type && intent.type && prev.intent_type !== intent.type);
+  intent.next_step = getNextStep(intent, prev);
+  intent.playbook = getPlaybookForIntent(intent);
+
+  return intent;
 }
 
 module.exports = {
