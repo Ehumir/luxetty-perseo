@@ -8,10 +8,17 @@ function detectIntent(message, prevState = null) {
   const wantsOfferRent =
     text.includes('poner en renta') ||
     text.includes('quiero poner en renta') ||
+    text.includes('quiero rentar mi casa') ||
+    text.includes('quiero rentar mi propiedad') ||
+    text.includes('quiero rentar mi depa') ||
+    text.includes('quiero rentar mi departamento') ||
     text.includes('rentar mi propiedad') ||
     text.includes('rento mi propiedad') ||
     text.includes('renta mi casa') ||
-    text.includes('renta mi propiedad');
+    text.includes('renta mi propiedad') ||
+    text.includes('tengo una propiedad para renta') ||
+    text.includes('tengo propiedad para renta') ||
+    text.includes('busco inquilino');
 
   const wantsSell =
     text.includes('quiero vender') ||
@@ -25,6 +32,14 @@ function detectIntent(message, prevState = null) {
   const wantsRent =
     text.includes('quiero rentar') ||
     text.includes('busco renta') ||
+    text.includes('busco casa en renta') ||
+    text.includes('busco depa en renta') ||
+    text.includes('busco departamento en renta') ||
+    text.includes('casa en renta') ||
+    text.includes('depa en renta') ||
+    text.includes('departamento en renta') ||
+    text.includes('tienen depas en renta') ||
+    text.includes('tienen departamentos en renta') ||
     text.includes('quiero una renta') ||
     text.includes('rentar') ||
     text.includes('alquilar') ||
@@ -39,6 +54,12 @@ function detectIntent(message, prevState = null) {
     text.includes('busco depa') ||
     text.includes('busco departamento') ||
     text.includes('busco terreno') ||
+    text.includes('tienes casas') ||
+    text.includes('tienen casas') ||
+    text.includes('tienes departamentos') ||
+    text.includes('tienen departamentos') ||
+    text.includes('tienes depas') ||
+    text.includes('tienen depas') ||
     text.includes('comprar') ||
     text.includes('compra') ||
     text.includes('busco una propiedad');
@@ -54,6 +75,11 @@ function detectIntent(message, prevState = null) {
     text.includes('manejas') ||
     text.includes('opciones') ||
     text.includes('disponibles') ||
+    text.includes('me interesa esta propiedad') ||
+    text.includes('me interesa esa propiedad') ||
+    text.includes('vi la propiedad') ||
+    text.includes('vi una propiedad') ||
+    text.includes('vi la casa') ||
     text.includes('en cumbres') ||
     text.includes('en san pedro') ||
     text.includes('en monterrey') ||
@@ -85,6 +111,8 @@ function detectIntent(message, prevState = null) {
 
   const hasPriceExpressions =
     text.includes('millones') ||
+    text.includes('millon') ||
+    text.includes('millón') ||
     text.endsWith('m') ||
     text.includes('$') ||
     /\b\d{4,8}\b/.test(text);
@@ -111,6 +139,17 @@ function detectIntent(message, prevState = null) {
   }
 
   if (!leadType && implicitDemand) {
+    leadType = 'demand';
+  }
+
+  if (!leadType && hasPriceExpressions && (
+    text.includes('casa') ||
+    text.includes('casas') ||
+    text.includes('depa') ||
+    text.includes('departamento') ||
+    text.includes('terreno') ||
+    text.includes('propiedad')
+  )) {
     leadType = 'demand';
   }
 
