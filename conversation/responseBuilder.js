@@ -196,33 +196,106 @@ function getDemandActionClosing(state, matchQuality) {
   return 'Si quieres, ajustamos la búsqueda o vemos contigo opciones más alineadas.';
 }
 
+function getPropertyVisibleCode(property = {}, state = {}) {
+  return (
+    property.listing_id ||
+    property.public_code ||
+    state.property_code ||
+    state.direct_property_code ||
+    'esta propiedad'
+  );
+}
+
+function getPropertyLocationLabel(property = {}) {
+  return (
+    property.neighborhood ||
+    property.zone ||
+    property.municipality ||
+    property.city ||
+    null
+  );
+}
+
+function getPropertySlugUrl(property = {}) {
+  const slug = typeof property.slug === 'string' ? property.slug.trim() : '';
+  if (!slug || /\s/.test(slug)) return null;
+
+  const cleanSlug = slug
+    .replace(/^https?:\/\/(?:www\.)?luxetty\.com\/propiedad\//i, '')
+    .replace(/^\/?propiedad\//i, '')
+    .replace(/^\/+|\/+$/g, '');
+
+  if (!cleanSlug || /\s/.test(cleanSlug)) return null;
+  return `https://luxetty.com/propiedad/${cleanSlug}`;
+}
+
+function hasValidPropertyPrice(property = {}) {
+  const price = Number(property.price);
+  return Number.isFinite(price) && price > 0;
+}
+
+function buildPropertyInterestReply(property, state = {}) {
+  const code = getPropertyVisibleCode(property, state);
+  const location = getPropertyLocationLabel(property);
+  const url = getPropertySlugUrl(property);
+  const locationText = location ? ` en ${location}` : '';
+
+  if (!url) {
+    const detailText = hasValidPropertyPrice(property)
+      ? ` está en ${formatMoney(property.price, property.currency_code || 'MXN')}`
+      : ', te puedo compartir los detalles disponibles';
+
+    return `Hola 👋
+Sí, claro. La propiedad ${code}${locationText}${detailText}, pero necesito que un asesor revise la información pública antes de compartirte el enlace.
+
+¿Te gustaría que un asesor la revise contigo?`;
+  }
+
+  const keyDetail = hasValidPropertyPrice(property)
+    ? `está en ${formatMoney(property.price, property.currency_code || 'MXN')}`
+    : 'te puedo compartir los detalles disponibles';
+
+  return `Hola 👋
+Sí, claro. La propiedad ${code}${locationText} ${keyDetail}.
+
+Te dejo aquí fotos y detalles 👉 ${url}
+
+¿Te gustaría agendar una visita o que un asesor te apoye con más detalles de esta propiedad?`;
+}
+
+function buildPropertyPriceReply(property, state = {}) {
+  const code = getPropertyVisibleCode(property, state);
+
+  if (!hasValidPropertyPrice(property)) {
+    return `De momento no tengo un precio público confirmado para la propiedad ${code}. Te puedo compartir los detalles disponibles o revisarlo con un asesor.
+
+¿Quieres que lo revisemos contigo?`;
+  }
+
+  return `La propiedad ${code} está en ${formatMoney(property.price, property.currency_code || 'MXN')}.
+
+¿Quieres verla esta semana?`;
+}
+
 function buildDirectPropertyReply(state, changeType, properties = []) {
-  const ack = getChangeAcknowledgement(changeType, state);
   const property = Array.isArray(properties) && properties.length > 0 ? properties[0] : null;
 
   if (!property) {
     return `No encontré una propiedad activa con el ID ${state.property_code}. Si quieres, dime qué tipo de propiedad buscas y te ayudo a encontrar opciones.`;
   }
 
-  const codeLabel = state.property_code ? ` ${state.property_code}` : '';
-  const baseIntro =
-    changeType === 'radical_change' || changeType === 'restart_flow'
-      ? `${ack}\nYa ubiqué la propiedad con ID${codeLabel}.`
-      : `Ya ubiqué la propiedad con ID${codeLabel}.`;
+  const template = getPropertySlugUrl(property)
+    ? 'property_interest_microcommitment'
+    : 'property_interest_missing_slug_human_attention';
 
-  if (state.wants_visit) {
-    return `${baseIntro}\n\n${formatPropertyShort(property)}\n\nSi te hace sentido, te ayudo a coordinar la visita o te conecto con un asesor para avanzar.`;
-  }
+  console.log('PROPERTY INTEREST REPLY TEMPLATE:', {
+    property_id: property?.id || null,
+    property_code: getPropertyVisibleCode(property, state),
+    slug_present: !!getPropertySlugUrl(property),
+    template,
+  });
 
-  if (state.asks_property_details) {
-    return `${baseIntro}\n\n${formatPropertyShort(property)}\n\nSi quieres, te conecto con un asesor para darte más detalle y revisar esta opción contigo.`;
-  }
-
-  if (state.shows_high_interest) {
-    return `${baseIntro}\n\n${formatPropertyShort(property)}\n\nSe ve como una opción que vale la pena revisar. Si quieres, te conecto con un asesor para ayudarte a avanzar con esta propiedad.`;
-  }
-
-  return `${baseIntro}\n\n${formatPropertyShort(property)}\n\nSi quieres, te doy más detalle o te ayudo a coordinar una visita.`;
+  return buildPropertyInterestReply(property, state);
 }
 
 function buildDemandReply(state, changeType, properties, attemptUsed) {
@@ -365,6 +438,8 @@ module.exports = {
   buildDemandLowValueReply,
   buildOfferRejectedReply,
   buildFinalHandoffReply,
+  buildPropertyInterestReply,
+  buildPropertyPriceReply,
   buildDirectPropertyReply,
   buildDemandReply,
   buildOfferReply,
