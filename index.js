@@ -45,6 +45,7 @@ const {
   buildOfferReply,
   buildFallbackOpenAIReply,
   buildFinalHandoffReply,
+  buildPropertyPriceReply,
 } = require('./conversation/responseBuilder');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
@@ -124,6 +125,23 @@ function enrichReplyWithNextStepCta(reply, nextStep) {
 
 function buildIntelligentHandoffReply() {
   return 'Esto ya vale la pena verlo con un asesor. Te voy a conectar con alguien de nuestro equipo para avanzar contigo.';
+}
+
+function hasValidPropertySlug(property) {
+  const slug = typeof property?.slug === 'string' ? property.slug.trim() : '';
+  return !!slug && !/\s/.test(slug);
+}
+
+function isDirectPriceQuestion(text) {
+  const normalized = normalizeText(text);
+  return (
+    normalized === 'precio' ||
+    normalized.includes('precio') ||
+    normalized.includes('cuanto cuesta') ||
+    normalized.includes('cuánto cuesta') ||
+    normalized.includes('cuanto vale') ||
+    normalized.includes('cuánto vale')
+  );
 }
 
 function applyPlaybookProgress(state, context = {}) {
@@ -1460,6 +1478,18 @@ app.post('/webhook', async (req, res) => {
         top_match_score: 100,
         awaiting_field: null,
       };
+      const directPropertyHasSlug = hasValidPropertySlug(property);
+      if (!directPropertyHasSlug) {
+        directState.wants_human = true;
+        directState.handoff_ready = true;
+        await saveConversationEvent(conversationId, 'direct_property_missing_public_slug', {
+          property_id: property.id,
+          listing_id: property.listing_id || null,
+          requested_code: signals.property_code,
+          requires_human_attention: true,
+        });
+      }
+
       directState.next_step = getNextStep(
         { leadType: 'demand', directPropertyReference: true },
         directState
@@ -1500,21 +1530,13 @@ app.post('/webhook', async (req, res) => {
         });
 
         if (leadAutomationResult?.handoffTriggered) {
-          directReply = buildIntelligentHandoffReply();
           directState.handoff_ready = true;
-          directState.handoff_sent = true;
 
-          if (outboundMessageRow?.id) {
-            await supabase
-              .from('conversation_messages')
-              .update({ message_text: directReply })
-              .eq('id', outboundMessageRow.id);
-          }
-
-          await saveConversationEvent(conversationId, 'intelligent_handoff_message_sent', {
+          await saveConversationEvent(conversationId, 'intelligent_handoff_ready', {
             lead_id: leadAutomationResult.leadId || null,
             assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
             source: 'ai_agent',
+            message_preserved: 'property_interest_microcommitment',
           });
         }
       }
@@ -1810,6 +1832,17 @@ app.post('/webhook', async (req, res) => {
         nextAiState.last_search_result_count = 1;
         nextAiState.last_shown_property_ids = [directProperty.id];
 
+        if (!hasValidPropertySlug(directProperty)) {
+          nextAiState.wants_human = true;
+          nextAiState.handoff_ready = true;
+          await saveConversationEvent(conversationId, 'direct_property_missing_public_slug', {
+            property_id: directProperty.id,
+            listing_id: directProperty.listing_id || null,
+            property_code: normalizedLookupCode || nextAiState.property_code,
+            requires_human_attention: true,
+          });
+        }
+
         await saveConversationEvent(conversationId, 'direct_property_lookup_found', {
           property_code: normalizedLookupCode || nextAiState.property_code,
           property_id: directProperty.id,
@@ -1930,12 +1963,21 @@ app.post('/webhook', async (req, res) => {
         }
       }
     } else if (nextAiState.lead_flow === 'demand') {
-      reply = buildDemandReply(nextAiState, changeType, matchedProperties, attemptUsed);
-
       const explicitHandoffIntent =
         nextAiState.wants_human ||
         normalizedText.includes('contacte un asesor') ||
         normalizedText.includes('contacte un agente');
+
+      const shouldAnswerDirectPrice =
+        nextAiState.direct_property_reference &&
+        matchedProperties.length > 0 &&
+        isDirectPriceQuestion(text) &&
+        !nextAiState.wants_visit &&
+        !explicitHandoffIntent;
+
+      reply = shouldAnswerDirectPrice
+        ? buildPropertyPriceReply(matchedProperties[0], nextAiState)
+        : buildDemandReply(nextAiState, changeType, matchedProperties, attemptUsed);
 
       const commercialHandoffIntent =
         shouldPrioritizeDemandHandoff(nextAiState, matchedProperties);
@@ -1950,6 +1992,7 @@ app.post('/webhook', async (req, res) => {
         matchedProperties.length > 0;
 
       if (
+        !shouldAnswerDirectPrice &&
         (explicitHandoffIntent || commercialHandoffIntent || isHotDemandLead) &&
         shouldAskField(nextAiState, 'full_name')
       ) {
@@ -1958,6 +2001,7 @@ app.post('/webhook', async (req, res) => {
           : 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
         nextAiState.awaiting_field = 'full_name';
       } else if (
+        !shouldAnswerDirectPrice &&
         (explicitHandoffIntent || commercialHandoffIntent || isHotDemandLead) &&
         nextAiState.full_name &&
         shouldAskField(nextAiState, 'contact_preference')
@@ -1965,6 +2009,7 @@ app.post('/webhook', async (req, res) => {
         reply = 'Perfecto. ¿Prefieres que te contacten por WhatsApp o por llamada?';
         nextAiState.awaiting_field = 'contact_preference';
       } else if (
+        !shouldAnswerDirectPrice &&
         (explicitHandoffIntent || commercialHandoffIntent || isHotDemandLead) &&
         nextAiState.full_name &&
         nextAiState.contact_preference &&
@@ -1975,6 +2020,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       const canCreateDemandHandoff =
+        !shouldAnswerDirectPrice &&
         (shouldEscalateDemand(nextAiState, matchedProperties, text) || commercialHandoffIntent) &&
         !!nextAiState.full_name &&
         !!nextAiState.contact_preference &&
