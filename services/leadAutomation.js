@@ -272,6 +272,110 @@ function buildNotesSummary(aiState = {}, property = null) {
   return parts.filter(Boolean).join(' ').slice(0, 1500);
 }
 
+function summarizeRelevantMessageSignals(aiState = {}) {
+  const signals = [];
+  if (aiState.wants_visit) signals.push('quiere_visita');
+  if (aiState.asks_property_details) signals.push('pide_detalles_propiedad');
+  if (aiState.wants_human) signals.push('pidio_asesor_humano');
+  if (aiState.shows_high_interest) signals.push('mostro_alto_interes');
+  if (aiState.location_text) signals.push(`zona:${aiState.location_text}`);
+  if (aiState.budget_max != null) signals.push(`presupuesto_max:${aiState.budget_max}`);
+  if (aiState.property_type) signals.push(`tipo:${aiState.property_type}`);
+  return signals;
+}
+
+function buildDetailedNotesSummary({ aiState = {}, conversation = {}, property = null, contactOwnerAssigned = false }) {
+  const parts = [];
+  const operation = resolveOperation(aiState, property);
+  const leadType = resolveLeadType(aiState);
+  const referral = aiState?.whatsapp_referral || aiState?.referral || aiState?.last_referral || null;
+
+  parts.push(`Origen conversacion: ${conversation?.channel || 'unknown'} (conversation_id: ${conversation?.id || 'n/a'}).`);
+  parts.push(`Telefono/WhatsApp: ${conversation?.phone || 'n/a'}.`);
+
+  if (leadType || operation) {
+    parts.push(`Intencion detectada: ${leadType || 'n/a'}${operation ? `/${operation}` : ''}.`);
+  }
+
+  if (property?.id || property?.listing_id || aiState?.interested_property_id || aiState?.property_code || aiState?.direct_property_code) {
+    parts.push(
+      `Propiedad interesada: ${property?.listing_id || aiState?.property_code || aiState?.direct_property_code || 'n/a'} (property_id: ${property?.id || aiState?.interested_property_id || 'n/a'}).`
+    );
+  }
+
+  if (referral && typeof referral === 'object') {
+    parts.push(`Referral: ${JSON.stringify(referral)}.`);
+  }
+
+  const relevantSignals = summarizeRelevantMessageSignals(aiState);
+  if (relevantSignals.length > 0) {
+    parts.push(`Resumen mensajes relevantes: ${relevantSignals.join(', ')}.`);
+  }
+
+  if (contactOwnerAssigned) {
+    parts.push('Motivo de asignacion: contacto ya registrado con agente asignado.');
+  }
+
+  const baseSummary = buildNotesSummary(aiState, property);
+  if (baseSummary) parts.push(`Resumen caso: ${baseSummary}`);
+
+  return parts.filter(Boolean).join(' ').slice(0, 1500);
+}
+
+function mergeLeadNotes(existingNotes, newNotes) {
+  const previous = String(existingNotes || '').trim();
+  const incoming = String(newNotes || '').trim();
+
+  if (!incoming) return previous || null;
+  if (!previous) return incoming;
+  if (previous.includes(incoming)) return previous;
+
+  return `${previous}\n\n---\n${incoming}`.slice(0, 1500);
+}
+
+function resolveContactAssignedAgentField(contact = {}) {
+  if (!contact || typeof contact !== 'object') return { field: null, assignedAgentProfileId: null };
+
+  const candidates = [
+    'assigned_agent_profile_id',
+    'agent_profile_id',
+    'owner_profile_id',
+    'assigned_to',
+  ];
+
+  for (const field of candidates) {
+    const value = contact[field];
+    if (value != null && String(value).trim() !== '') {
+      return {
+        field,
+        assignedAgentProfileId: String(value).trim(),
+      };
+    }
+  }
+
+  return { field: null, assignedAgentProfileId: null };
+}
+
+async function findContactById(supabase, contactId) {
+  if (!supabase || !contactId) return null;
+
+  const { data, error } = await supabase
+    .from('contacts')
+    .select('*')
+    .eq('id', contactId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('LEAD_AUTOMATION_CONTACT_LOOKUP_ERROR', {
+      contact_id: contactId,
+      error: error.message,
+    });
+    return null;
+  }
+
+  return data || null;
+}
+
 async function getInitialPipelineStageId(supabase, leadType) {
   if (!supabase || !leadType) return null;
 
@@ -459,6 +563,89 @@ async function assignLead(supabase, leadId, conversationId, logger) {
   return { assignedAgentProfileId, assignmentResult: data };
 }
 
+async function assignLeadToContactOwner({
+  supabase,
+  lead,
+  conversationId,
+  assignedAgentProfileId,
+  assignmentField,
+  notesSummary,
+  logger,
+}) {
+  if (!supabase || !lead?.id || !assignedAgentProfileId) {
+    return {
+      assignedAgentProfileId: null,
+      assignmentResult: { success: false, reason: 'missing_contact_owner_assignment_data' },
+      lead: lead || null,
+    };
+  }
+
+  const updatePayload = {
+    assigned_agent_profile_id: assignedAgentProfileId,
+    notes_summary: mergeLeadNotes(lead.notes_summary, notesSummary),
+  };
+
+  if (Object.prototype.hasOwnProperty.call(lead, 'assignment_source')) {
+    updatePayload.assignment_source = 'contact_owner';
+  }
+
+  const { data, error } = await supabase
+    .from('leads')
+    .update(updatePayload)
+    .eq('id', lead.id)
+    .select()
+    .single();
+
+  if (error) {
+    logWarn(logger, 'LEAD_AUTOMATION_CONTACT_OWNER_ASSIGNMENT_FAILED', {
+      lead_id: lead.id,
+      assigned_agent_profile_id: assignedAgentProfileId,
+      error: error.message,
+    });
+    await saveConversationEvent(supabase, conversationId, 'lead_assignment_failed', {
+      lead_id: lead.id,
+      reason: 'contact_owner_assignment_update_failed',
+      error: error.message,
+      source: 'contact_owner',
+    });
+
+    return {
+      assignedAgentProfileId: null,
+      assignmentResult: {
+        success: false,
+        reason: 'contact_owner_assignment_update_failed',
+        error: error.message,
+      },
+      lead,
+    };
+  }
+
+  await saveConversationEvent(supabase, conversationId, 'lead_assigned', {
+    lead_id: lead.id,
+    assigned_agent_profile_id: assignedAgentProfileId,
+    assignment_source: 'contact_owner',
+    contact_assignment_field: assignmentField,
+    source: 'ai_agent',
+  });
+
+  log(logger, 'LEAD_AUTOMATION_ASSIGNED_CONTACT_OWNER', {
+    lead_id: lead.id,
+    assigned_agent_profile_id: assignedAgentProfileId,
+    contact_assignment_field: assignmentField,
+  });
+
+  return {
+    assignedAgentProfileId: assignedAgentProfileId,
+    assignmentResult: {
+      success: true,
+      reason: 'contact_owner',
+      assignment_source: 'contact_owner',
+      contact_assignment_field: assignmentField,
+    },
+    lead: data || lead,
+  };
+}
+
 async function createOrReuseLeadFromConversation({
   supabase,
   conversation,
@@ -537,6 +724,9 @@ async function createOrReuseLeadFromConversation({
 
     const leadType = resolveLeadType(aiState);
     const operation = resolveOperation(aiState, property);
+    const contact = await findContactById(supabase, contactId);
+    const contactOwner = resolveContactAssignedAgentField(contact || {});
+    const hasContactOwnerAssignedAgent = !!contactOwner.assignedAgentProfileId;
     const scoringIntent = {
       leadType,
       operationType: operation,
@@ -563,6 +753,13 @@ async function createOrReuseLeadFromConversation({
       operation,
       propertyId: propertyId || null,
     };
+
+    const detailedNotesSummary = buildDetailedNotesSummary({
+      aiState,
+      conversation,
+      property,
+      contactOwnerAssigned: hasContactOwnerAssignedAgent,
+    });
 
     await saveConversationEvent(supabase, conversationId, 'lead_intent_detected', {
       lead_type: leadType,
@@ -639,7 +836,6 @@ async function createOrReuseLeadFromConversation({
 
     if (!lead) {
       const pipelineStageId = await getInitialPipelineStageId(supabase, leadType);
-      const notesSummary = buildNotesSummary(aiState, property);
 
       const normalizedConversationPhone = normalizePhoneNumber(conversation?.phone) || conversation?.phone || null;
       const payload = {
@@ -648,7 +844,7 @@ async function createOrReuseLeadFromConversation({
         source: 'whatsapp',
         interested_property_id: propertyId || null,
         interested_in_operation: operation,
-        notes_summary: notesSummary || null,
+        notes_summary: detailedNotesSummary || null,
         budget_min: aiState?.budget_min != null ? Number(aiState.budget_min) : null,
         budget_max: aiState?.budget_max != null ? Number(aiState.budget_max) : null,
         preferred_zones: aiState?.location_text ? [String(aiState.location_text)] : null,
@@ -699,8 +895,29 @@ async function createOrReuseLeadFromConversation({
     }
 
     if (!wasCreated) {
-      const scoredLead = await updateLeadScoring(supabase, lead.id, leadScoring);
-      if (scoredLead) lead = scoredLead;
+      const leadUpdatePayload = {
+        lead_score: leadScoring.lead_score,
+        lead_temperature: leadScoring.lead_temperature,
+        notes_summary: mergeLeadNotes(lead.notes_summary, detailedNotesSummary),
+      };
+
+      const { data: refreshedLead, error: leadUpdateError } = await supabase
+        .from('leads')
+        .update(leadUpdatePayload)
+        .eq('id', lead.id)
+        .select()
+        .single();
+
+      if (leadUpdateError) {
+        console.error('LEAD_AUTOMATION_LEAD_UPDATE_ERROR', {
+          lead_id: lead.id,
+          error: leadUpdateError.message,
+        });
+        const scoredLead = await updateLeadScoring(supabase, lead.id, leadScoring);
+        if (scoredLead) lead = scoredLead;
+      } else if (refreshedLead) {
+        lead = refreshedLead;
+      }
     }
 
     const handoffCandidate = {
@@ -720,7 +937,32 @@ async function createOrReuseLeadFromConversation({
     let assignmentResult = null;
     let handoffTriggered = false;
 
-    if (shouldHandoff) {
+    if (hasContactOwnerAssignedAgent) {
+      const ownerAssignment = await assignLeadToContactOwner({
+        supabase,
+        lead,
+        conversationId,
+        assignedAgentProfileId: contactOwner.assignedAgentProfileId,
+        assignmentField: contactOwner.field,
+        notesSummary: detailedNotesSummary,
+        logger,
+      });
+
+      assignedAgentProfileId = ownerAssignment.assignedAgentProfileId;
+      assignmentResult = ownerAssignment.assignmentResult;
+      handoffTriggered = !!assignedAgentProfileId;
+      if (ownerAssignment.lead) {
+        lead = ownerAssignment.lead;
+      }
+
+      await saveConversationEvent(supabase, conversationId, 'lead_assignment_contact_owner_bypassed_engine', {
+        lead_id: lead.id,
+        assigned_agent_profile_id: assignedAgentProfileId,
+        contact_assignment_field: contactOwner.field,
+        reason: 'contact_already_has_assigned_agent',
+        source: 'ai_agent',
+      });
+    } else if (shouldHandoff) {
       const assignment = await assignLead(
         supabase,
         lead.id,
@@ -814,8 +1056,180 @@ async function createOrReuseLeadFromConversation({
   }
 }
 
+/**
+ * Construye un resumen detallado de notas para un lead de pauta abandonada.
+ */
+function buildPautaAbandonedNotes({ aiState, conversation, referral, lastInbound }) {
+  const parts = [];
+
+  parts.push('Origen: pauta/referral de WhatsApp.');
+
+  if (referral && typeof referral === 'object') {
+    if (referral.headline) parts.push(`Anuncio: "${referral.headline}".`);
+    if (referral.ad_name) parts.push(`Nombre del anuncio: ${referral.ad_name}.`);
+    if (referral.campaign_name) parts.push(`Campaña: ${referral.campaign_name}.`);
+    if (referral.source_url) parts.push(`URL fuente: ${referral.source_url}.`);
+    if (referral.ad_id) parts.push(`Ad ID: ${referral.ad_id}.`);
+    if (referral.campaign_id) parts.push(`Campaign ID: ${referral.campaign_id}.`);
+    if (referral.ctwa_clid) parts.push(`CTWA CLID: ${referral.ctwa_clid}.`);
+    if (referral.source_type) parts.push(`Tipo de fuente: ${referral.source_type}.`);
+  }
+
+  parts.push(`Conversación ID: ${conversation?.id || 'n/a'}.`);
+  parts.push(`Teléfono: ${conversation?.phone || 'n/a'}.`);
+
+  const intentLabel = aiState?.intent_type || aiState?.lead_flow || null;
+  if (intentLabel) parts.push(`Intención detectada: ${intentLabel}.`);
+
+  const propertyMentioned = aiState?.property_code || aiState?.direct_property_code || null;
+  if (propertyMentioned) parts.push(`Propiedad mencionada: ${propertyMentioned}.`);
+
+  if (lastInbound?.message_text) {
+    parts.push(`Último mensaje recibido: "${String(lastInbound.message_text).slice(0, 200)}".`);
+  }
+
+  if (lastInbound?.created_at) {
+    parts.push(`Fecha/hora del último inbound: ${lastInbound.created_at}.`);
+  }
+
+  parts.push('Motivo de asignación: pauta abandonada después de follow-ups de inactividad.');
+
+  return parts.filter(Boolean).join(' ').slice(0, 1500);
+}
+
+/**
+ * Crea un lead en public.leads asignado al Agente Especial cuando una conversación
+ * proveniente de pauta es cerrada por inactividad.
+ *
+ * Reglas:
+ * - Si ya existe lead vinculado a la conversación: no crea duplicado, solo registra evento.
+ * - Si el contacto ya tiene agente asignado: respeta ese agente, no usa Agente Especial.
+ * - Si no se encontró el Agente Especial: aborta con evento de error.
+ */
+async function createPautaAbandonedLead({
+  supabase,
+  conversation,
+  aiState,
+  messages = [],
+  specialAgentProfileId,
+  logger = console,
+}) {
+  const conversationId = conversation?.id || null;
+
+  try {
+    // 1. Evitar duplicado: verificar si ya existe lead vinculado
+    const existingLeadId = conversation?.lead_id || aiState?.lead_id || null;
+    if (existingLeadId) {
+      const existingLead = await findLeadByConversation(supabase, existingLeadId);
+      if (existingLead?.id) {
+        await saveConversationEvent(supabase, conversationId, 'pauta_lead_skipped_already_exists', {
+          lead_id: existingLead.id,
+          reason: 'lead_already_exists_in_conversation',
+          source: 'inactivity_followup_job',
+        });
+        return { created: false, reason: 'lead_already_exists', leadId: existingLead.id };
+      }
+    }
+
+    // 2. Respetar agente del contacto si ya tiene uno asignado
+    const contactId = conversation?.contact_id || null;
+    let contact = null;
+    if (contactId) {
+      contact = await findContactById(supabase, contactId);
+    }
+    const contactOwner = resolveContactAssignedAgentField(contact || {});
+    if (contactOwner.assignedAgentProfileId) {
+      await saveConversationEvent(supabase, conversationId, 'pauta_lead_skipped_contact_has_agent', {
+        contact_id: contactId,
+        assigned_agent_profile_id: contactOwner.assignedAgentProfileId,
+        reason: 'contact_already_has_assigned_agent',
+        source: 'inactivity_followup_job',
+      });
+      return { created: false, reason: 'contact_has_assigned_agent' };
+    }
+
+    // 3. Verificar que el Agente Especial fue encontrado
+    if (!specialAgentProfileId) {
+      await saveConversationEvent(supabase, conversationId, 'pauta_lead_skipped_no_special_agent', {
+        reason: 'special_agent_not_found',
+        source: 'inactivity_followup_job',
+      });
+      return { created: false, reason: 'special_agent_not_found' };
+    }
+
+    // 4. Construir notas con toda la información disponible
+    const referral = aiState?.whatsapp_referral || null;
+    const lastInbound = [...(messages || [])].reverse().find((m) => m.direction === 'inbound') || null;
+    const notes = buildPautaAbandonedNotes({ aiState, conversation, referral, lastInbound });
+
+    // 5. Determinar tipo de lead y operación
+    const leadType = resolveLeadType(aiState) || 'demand';
+    const operation = resolveOperation(aiState, null);
+
+    // 6. Obtener pipeline stage inicial
+    const pipelineStageId = await getInitialPipelineStageId(supabase, leadType);
+
+    // 7. Crear lead con Agente Especial asignado
+    const normalizedPhone = normalizePhoneNumber(conversation?.phone) || conversation?.phone || null;
+    const payload = {
+      contact_id: contactId || null,
+      lead_type: leadType,
+      source: 'whatsapp',
+      interested_in_operation: operation,
+      notes_summary: notes,
+      assigned_agent_profile_id: specialAgentProfileId,
+      pipeline_stage_id: pipelineStageId,
+      status: 'new',
+      is_active: true,
+      is_archived: false,
+      phone: normalizedPhone,
+      whatsapp: normalizedPhone,
+      next_action: 'Seguimiento pauta abandonada',
+      next_action_due_at: nowIso(),
+    };
+
+    const { data, error } = await insertLeadWithSourceFallback(supabase, payload);
+    if (error || !data) {
+      throw new Error(error?.message || 'pauta_lead_insert_failed');
+    }
+
+    // 8. Vincular lead a la conversación
+    await syncConversation(supabase, conversationId, { lead_id: data.id });
+
+    // 9. Registrar evento
+    await saveConversationEvent(supabase, conversationId, 'pauta_abandoned_lead_created', {
+      lead_id: data.id,
+      assigned_agent_profile_id: specialAgentProfileId,
+      lead_type: leadType,
+      has_referral: !!referral,
+      source: 'inactivity_followup_job',
+    });
+
+    log(logger, 'PAUTA_ABANDONED_LEAD_CREATED', {
+      conversation_id: conversationId,
+      lead_id: data.id,
+      assigned_agent_profile_id: specialAgentProfileId,
+      lead_type: leadType,
+    });
+
+    return { created: true, leadId: data.id, lead: data };
+  } catch (err) {
+    logWarn(logger, 'PAUTA_ABANDONED_LEAD_ERROR', {
+      conversation_id: conversationId,
+      error: err?.message || String(err),
+    });
+    await saveConversationEvent(supabase, conversationId, 'pauta_abandoned_lead_failed', {
+      error: err?.message || String(err),
+      reason: 'lead_creation_error',
+      source: 'inactivity_followup_job',
+    });
+    return { created: false, reason: 'error', error: err?.message };
+  }
+}
+
 module.exports = {
   calculateLeadScore,
   shouldTriggerHandoff,
   createOrReuseLeadFromConversation,
+  createPautaAbandonedLead,
 };

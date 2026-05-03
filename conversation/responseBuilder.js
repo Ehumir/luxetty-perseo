@@ -71,47 +71,47 @@ function buildAiSummary(state, properties = []) {
 function getChangeAcknowledgement(changeType, state) {
   if (changeType === 'restart_flow') {
     if (state.lead_flow === 'offer' && state.operation_type === 'sale') {
-      return 'Perfecto, ahora te apoyo con la venta.';
+      return 'Entendido, avanzamos con la venta.';
     }
     if (state.lead_flow === 'offer' && state.operation_type === 'rent') {
-      return 'Perfecto, ahora te apoyo con ponerla en renta.';
+      return 'Entendido, avanzamos con ponerla en renta.';
     }
     if (state.lead_flow === 'demand' && state.operation_type === 'sale') {
-      return 'Perfecto, ahora te apoyo con la búsqueda de compra.';
+      return 'Entendido, avanzamos con la búsqueda de compra.';
     }
     if (state.lead_flow === 'demand' && state.operation_type === 'rent') {
-      return 'Perfecto, ahora te apoyo con la búsqueda de renta.';
+      return 'Entendido, avanzamos con la búsqueda de renta.';
     }
   }
 
   if (changeType === 'radical_change') {
-    if (state.location_any) return 'Perfecto, amplio la búsqueda.';
-    if (state.location_text) return `Perfecto, actualizo la búsqueda a ${state.location_text}.`;
-    return 'Perfecto, actualizo la búsqueda.';
+    if (state.location_any) return 'Entendido, amplío la búsqueda.';
+    if (state.location_text) return `Entendido, actualizo la búsqueda a ${state.location_text}.`;
+    return 'Entendido, actualizo la búsqueda.';
   }
 
-  if (changeType === 'minor_update') return 'Perfecto, lo actualizo.';
-  return 'Perfecto.';
+  if (changeType === 'minor_update') return 'Con gusto, lo actualizo.';
+  return 'Entendido.';
 }
 
 function buildDemandLowValueReply(state) {
   if (state.operation_type === 'sale') {
-    return 'Por el momento estamos enfocados en opciones de compra desde $3,000,000 MXN. Si quieres, te ayudo a ajustar la búsqueda o te puedo conectar con un asesor para ver alternativas.';
+    return 'Por el momento nos especializamos en propiedades en compra desde $3,000,000 MXN. Si deseas, podemos ajustar la búsqueda o un asesor de Luxetty puede orientarte sobre alternativas.';
   }
 
-  return 'Por el momento estamos enfocados en opciones de renta desde $10,000 MXN. Si quieres, te ayudo a ajustar la búsqueda o vemos alternativas contigo.';
+  return 'Por el momento nos especializamos en propiedades en renta desde $10,000 MXN. Si deseas, podemos ajustar el rango o un asesor de Luxetty puede orientarte.';
 }
 
 function buildOfferRejectedReply(state) {
   if (state.geo_qualified === false) {
-    return 'Por el momento estamos enfocados en ciertas zonas de alto valor en Monterrey y alrededores. Si quieres, te puedo orientar brevemente o revisar otras opciones contigo.';
+    return 'Por el momento nos especializamos en zonas de alto valor en Monterrey y área metropolitana. Si deseas, puedo canalizar tu caso con un asesor de Luxetty para más orientación.';
   }
 
   if (state.value_qualified === false) {
-    return 'Por el momento estamos enfocados en propiedades de mayor valor en ciertas zonas, pero con gusto puedo orientarte brevemente si lo necesitas.';
+    return 'Por el momento nos especializamos en propiedades de mayor valor. Con gusto puedo canalizarte con un asesor de Luxetty si deseas más información.';
   }
 
-  return 'Déjame revisar mejor tu caso para orientarte correctamente.';
+  return 'Para darte una respuesta precisa, puedo canalizar tu caso con un asesor de Luxetty que lo revise contigo.';
 }
 
 function buildFinalHandoffReply(state) {
@@ -163,37 +163,37 @@ function hasCommercialIntent(state) {
 function getDemandActionClosing(state, matchQuality) {
   if (state.direct_property_reference && state.property_code) {
     if (state.wants_visit) {
-      return 'Si esta propiedad te hace sentido, te ayudo a coordinar la visita o avanzamos con un asesor.';
+      return '¿Deseas coordinar una visita o que un asesor de Luxetty te contacte?';
     }
 
     if (state.asks_property_details) {
-      return `Si quieres, te conecto con un asesor para darte más detalle sobre la propiedad con ID ${state.property_code} y ayudarte a avanzar.`;
+      return `¿Deseas que un asesor de Luxetty te dé más detalle sobre la propiedad con ID ${state.property_code}?`;
     }
 
-    return 'Si esta propiedad te interesa, te conecto con un asesor para revisarla contigo y ayudarte a avanzar.';
+    return '¿Deseas que un asesor de Luxetty la revise contigo y te oriente para avanzar?';
   }
 
   if (state.wants_visit) {
-    return 'Si esta propiedad te hace sentido, te ayudo a coordinar la visita o avanzamos con un asesor.';
+    return '¿Deseas coordinar una visita o que un asesor de Luxetty te contacte?';
   }
 
   if (state.asks_property_details) {
-    return 'Si quieres, te conecto con un asesor para darte más detalle y ayudarte a avanzar con esta opción.';
+    return '¿Deseas que un asesor de Luxetty te dé más detalle sobre esta opción?';
   }
 
   if (state.shows_high_interest) {
-    return 'Si esta opción te hace sentido, te conecto con un asesor para revisarla contigo y ayudarte a avanzar.';
+    return '¿Deseas que un asesor de Luxetty la revise contigo y te oriente para avanzar?';
   }
 
   if (matchQuality === 'strong') {
-    return 'Esta es una muy buena opción. Si te hace sentido, te ayudo a coordinar visita o a avanzar con un asesor.';
+    return 'Es una muy buena opción. ¿Deseas coordinar una visita o que un asesor de Luxetty te contacte?';
   }
 
   if (matchQuality === 'medium') {
-    return 'Puede ser una buena opción para ti. Si quieres, la revisamos contigo y vemos si vale la pena avanzar.';
+    return 'Puede ser una buena opción. ¿Deseas que un asesor de Luxetty la revise contigo?';
   }
 
-  return 'Si quieres, ajustamos la búsqueda o vemos contigo opciones más alineadas.';
+  return '¿Deseas ajustar la búsqueda o que un asesor de Luxetty te oriente?';
 }
 
 function getPropertyVisibleCode(property = {}, state = {}) {
@@ -309,7 +309,7 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
   const commercialIntent = hasCommercialIntent(state);
 
   if (!state.operation_type) {
-    return 'Con gusto te ayudo. ¿Buscas comprar o rentar?';
+    return 'Para orientarte mejor, ¿buscas comprar o rentar una propiedad?';
   }
 
   if (!state.location_text && !state.location_any) {
@@ -329,7 +329,7 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
   }
 
   if (matchQuality === 'very_weak') {
-    return `${ack}\nNo veo algo realmente alineado con lo que buscas. Si quieres, ajustamos la búsqueda o lo revisamos contigo con un asesor.`;
+    return `${ack}\nNo encontré opciones que coincidan exactamente con lo que buscas. ¿Deseas ajustar los criterios o que un asesor de Luxetty te oriente?`;
   }
 
   if (hasResults) {
@@ -343,7 +343,7 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
   const noExact = `${ack}\nNo encontré una coincidencia exacta en este momento.`;
 
   if (commercialIntent) {
-    return `${noExact}\nSi quieres, te conecto con un asesor para revisar opciones contigo y avanzar.`;
+    return `${noExact}\n¿Deseas que un asesor de Luxetty revise opciones contigo y te oriente para avanzar?`;
   }
 
   // 🔒 Anti-loop: si no hay cambio real y no hay propiedades
@@ -351,10 +351,10 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
     !changeType &&
     (!properties || properties.length === 0)
   ) {
-    return 'Para ayudarte mejor, dime zona, presupuesto aproximado y si buscas comprar o rentar.';
+    return '¿Me compartes la zona, presupuesto aproximado y si buscas comprar o rentar?';
   }
 
-  return `${noExact}\nSi quieres, ajustamos la búsqueda o lo revisamos contigo para encontrar algo más alineado.`;
+  return `${noExact}\n¿Deseas ajustar la búsqueda o que un asesor de Luxetty te oriente hacia opciones más alineadas?`;
 }
 
 function buildOfferReply(state, changeType) {
@@ -396,7 +396,7 @@ function buildOfferReply(state, changeType) {
     return `${ack}\n¿Este es el mejor número para contactarte?`;
   }
 
-  return 'Perfecto, ya tengo todo listo. Te conecto con un asesor para continuar.';
+  return 'Todo listo. Un asesor de Luxetty te contactará para revisar los detalles contigo.';
 }
 
 async function buildFallbackOpenAIReply(text, state, changeType) {
@@ -428,7 +428,7 @@ IMPORTANTE:
 
   return (
     response.choices?.[0]?.message?.content?.trim() ||
-    'Con gusto te ayudo. ¿Buscas comprar, rentar, vender o poner en renta una propiedad?'
+    '¿En qué puedo orientarte? ¿Buscas comprar, rentar, vender o poner en renta una propiedad?'
   );
 }
 
