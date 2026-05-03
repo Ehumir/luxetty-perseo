@@ -1,24 +1,26 @@
 const { getDefaultAiState, normalizeAiState } = require('../conversation/aiState');
 const { nowIso } = require('../utils/helpers');
+const { lookupSpecialAgentProfileId } = require('../utils/helpers');
+const { createPautaAbandonedLead } = require('./leadAutomation');
 
 const FOLLOWUP_STEPS = [
   {
     key: '1h',
     eventType: 'followup_1h_sent',
     minAgeMs: 60 * 60 * 1000,
-    message: '¿Quieres que te ayude a avanzar con esto?',
+    message: '¿Deseas continuar con tu búsqueda o puedo orientarte con algo más?',
   },
   {
     key: '6h',
     eventType: 'followup_6h_sent',
     minAgeMs: 6 * 60 * 60 * 1000,
-    message: 'Puedo conectarte con un asesor cuando gustes para revisar esta solicitud.',
+    message: 'Puedo canalizar tu caso con un asesor de Luxetty cuando gustes para darle seguimiento.',
   },
   {
     key: '20h',
     eventType: 'followup_20h_sent',
     minAgeMs: 20 * 60 * 60 * 1000,
-    message: '¿Seguimos con esto o prefieres retomarlo después?',
+    message: '¿Deseas retomar tu búsqueda o prefieres dejarlo para más adelante?',
   },
 ];
 
@@ -30,8 +32,18 @@ const CLOSE_STEP = {
     'Fue un gusto atenderte. Cierro esta conversación por ahora, pero cuando quieras retomarla solo escríbeme y con gusto te ayudo.',
 };
 
+  const WHATSAPP_FREE_TEXT_WINDOW_MS = 24 * 60 * 60 * 1000;
+  const FOLLOWUP_BLOCKED_OUTSIDE_24H_EVENT = 'followup_blocked_outside_24h_window';
+
 function isClosedStatus(status) {
   return ['closed', 'inactive', 'resolved', 'archived'].includes(String(status || '').toLowerCase());
+}
+
+function isPautaConversation(aiState) {
+  if (!aiState || typeof aiState !== 'object') return false;
+  const referral = aiState.whatsapp_referral;
+  if (!referral || typeof referral !== 'object') return false;
+  return Object.keys(referral).length > 0;
 }
 
 function isHumanOutbound(message) {
@@ -83,20 +95,66 @@ async function loadConversationEvents(supabase, conversationId) {
   const eventTypes = [
     ...FOLLOWUP_STEPS.map((step) => step.eventType),
     CLOSE_STEP.eventType,
+    FOLLOWUP_BLOCKED_OUTSIDE_24H_EVENT,
   ];
 
   const { data, error } = await supabase
     .from('conversation_events')
-    .select('type, created_at')
+    .select('type, created_at, payload')
     .eq('conversation_id', conversationId)
     .in('type', eventTypes);
 
   if (error) {
     console.error('FOLLOWUP_EVENTS_ERROR', { conversation_id: conversationId, error: error.message });
-    return new Set();
+    return {
+      sentEventTypes: new Set(),
+      blockedSteps: new Set(),
+    };
   }
 
-  return new Set((data || []).map((event) => event.type));
+  const sentEventTypes = new Set();
+  const blockedSteps = new Set();
+
+  for (const event of data || []) {
+    if (event?.type === FOLLOWUP_BLOCKED_OUTSIDE_24H_EVENT) {
+      const step = event?.payload?.step || null;
+      if (step) blockedSteps.add(step);
+      continue;
+    }
+    sentEventTypes.add(event.type);
+  }
+
+  return {
+    sentEventTypes,
+    blockedSteps,
+  };
+}
+
+function normalizeEventState(eventState) {
+  if (eventState instanceof Set) {
+    return {
+      sentEventTypes: eventState,
+      blockedSteps: new Set(),
+    };
+  }
+
+  if (!eventState || typeof eventState !== 'object') {
+    return {
+      sentEventTypes: new Set(),
+      blockedSteps: new Set(),
+    };
+  }
+
+  return {
+    sentEventTypes:
+      eventState.sentEventTypes instanceof Set ? eventState.sentEventTypes : new Set(),
+    blockedSteps:
+      eventState.blockedSteps instanceof Set ? eventState.blockedSteps : new Set(),
+  };
+}
+
+function isInsideWhatsAppFreeTextWindow(ageMs) {
+  return Number.isFinite(ageMs) && ageMs < WHATSAPP_FREE_TEXT_WINDOW_MS;
 }
 
 async function saveOutboundFollowupMessage(supabase, conversationId, messageText, stepKey) {
@@ -126,6 +184,10 @@ async function saveOutboundFollowupMessage(supabase, conversationId, messageText
 function getNextDueAction({ messages, sentEvents, now }) {
   if (!messages.length) return null;
 
+  const eventState = normalizeEventState(sentEvents);
+  const sentEventTypes = eventState.sentEventTypes;
+  const blockedSteps = eventState.blockedSteps;
+
   const lastMessage = messages[messages.length - 1];
   const lastInbound = [...messages].reverse().find((message) => message.direction === 'inbound');
   const lastOutbound = [...messages].reverse().find((message) => message.direction === 'outbound');
@@ -140,12 +202,20 @@ function getNextDueAction({ messages, sentEvents, now }) {
   const ageMs = now.getTime() - lastInboundAt;
   if (ageMs < FOLLOWUP_STEPS[0].minAgeMs) return null;
 
-  if (ageMs >= CLOSE_STEP.minAgeMs && !sentEvents.has(CLOSE_STEP.eventType)) {
+  if (
+    ageMs >= CLOSE_STEP.minAgeMs &&
+    !sentEventTypes.has(CLOSE_STEP.eventType) &&
+    !blockedSteps.has(CLOSE_STEP.key)
+  ) {
     return { kind: 'close', step: CLOSE_STEP, ageMs };
   }
 
   for (const step of FOLLOWUP_STEPS) {
-    if (ageMs >= step.minAgeMs && !sentEvents.has(step.eventType)) {
+    if (
+      ageMs >= step.minAgeMs &&
+      !sentEventTypes.has(step.eventType) &&
+      !blockedSteps.has(step.key)
+    ) {
       return { kind: 'followup', step, ageMs };
     }
   }
@@ -153,9 +223,29 @@ function getNextDueAction({ messages, sentEvents, now }) {
   return null;
 }
 
-async function sendFollowup({ supabase, sendWhatsAppText, conversation, action }) {
+async function sendFollowup({ supabase, sendWhatsAppText, conversation, action, eventState = null }) {
   const phone = conversation.phone;
   const { step } = action;
+  const normalizedEventState = normalizeEventState(eventState);
+
+  if (normalizedEventState.blockedSteps.has(step.key)) {
+    return { sent: false, reason: 'already_blocked_outside_24h_window', blockedOutside24h: true };
+  }
+
+  if (!isInsideWhatsAppFreeTextWindow(action.ageMs)) {
+    await saveConversationEvent(supabase, conversation.id, FOLLOWUP_BLOCKED_OUTSIDE_24H_EVENT, {
+      reason: 'outside_24h_window',
+      step: step.key,
+      age_ms: action.ageMs,
+      source: 'inactivity_followup_job',
+    });
+
+    return {
+      sent: false,
+      reason: 'followup_blocked_outside_24h_window',
+      blockedOutside24h: true,
+    };
+  }
 
   if (!phone) {
     await saveConversationEvent(supabase, conversation.id, `${step.eventType}_skipped`, {
@@ -176,9 +266,26 @@ async function sendFollowup({ supabase, sendWhatsAppText, conversation, action }
   return { sent: true, reason: step.eventType };
 }
 
-async function closeConversation({ supabase, sendWhatsAppText, conversation, action }) {
-  const sendResult = await sendFollowup({ supabase, sendWhatsAppText, conversation, action });
-  if (!sendResult.sent) return sendResult;
+async function closeConversation({ supabase, sendWhatsAppText, conversation, action, eventState = null }) {
+  const sendResult = await sendFollowup({
+    supabase,
+    sendWhatsAppText,
+    conversation,
+    action,
+    eventState,
+  });
+
+  if (!sendResult.sent && !sendResult.blockedOutside24h) return sendResult;
+
+  if (!sendResult.sent && sendResult.blockedOutside24h) {
+    await saveConversationEvent(supabase, conversation.id, CLOSE_STEP.eventType, {
+      step: CLOSE_STEP.key,
+      age_ms: action.ageMs,
+      source: 'inactivity_followup_job',
+      free_text_message_sent: false,
+      reason: 'outside_24h_window',
+    });
+  }
 
   const nextAiState = resetAiStateForClosedConversation(conversation.ai_state);
   const { error } = await supabase
@@ -198,10 +305,15 @@ async function closeConversation({ supabase, sendWhatsAppText, conversation, act
       conversation_id: conversation.id,
       error: error.message,
     });
-    return { sent: true, closed: false, reason: 'conversation_close_failed' };
+    return { sent: !!sendResult.sent, closed: false, reason: 'conversation_close_failed' };
   }
 
-  return { sent: true, closed: true, reason: CLOSE_STEP.eventType };
+  return {
+    sent: !!sendResult.sent,
+    closed: true,
+    reason: sendResult.sent ? CLOSE_STEP.eventType : 'closed_without_free_text_outside_24h_window',
+    blockedOutside24h: !!sendResult.blockedOutside24h,
+  };
 }
 
 async function runInactivityFollowups({
@@ -217,7 +329,7 @@ async function runInactivityFollowups({
 
   const { data: conversations, error } = await supabase
     .from('conversations')
-    .select('id, phone, status, channel, ai_state, assigned_agent_profile_id, last_message_at, updated_at')
+    .select('id, phone, status, channel, ai_state, assigned_agent_profile_id, contact_id, lead_id, last_message_at, updated_at')
     .eq('channel', 'whatsapp')
     .in('status', ['open', 'pending', 'escalated'])
     .order('last_message_at', { ascending: true })
@@ -245,22 +357,59 @@ async function runInactivityFollowups({
       }
 
       const messages = await loadConversationMessages(supabase, conversation.id);
-      const sentEvents = await loadConversationEvents(supabase, conversation.id);
-      const action = getNextDueAction({ messages, sentEvents, now });
+      const eventState = await loadConversationEvents(supabase, conversation.id);
+      const action = getNextDueAction({ messages, sentEvents: eventState, now });
 
       if (!action) {
         summary.skipped += 1;
+        logger.info?.('FOLLOWUP_AUTOMATION_SKIPPED', {
+          conversation_id: conversation.id,
+          reason: 'no_due_action',
+        });
         continue;
       }
 
       const result =
         action.kind === 'close'
-          ? await closeConversation({ supabase, sendWhatsAppText, conversation, action })
-          : await sendFollowup({ supabase, sendWhatsAppText, conversation, action });
+          ? await closeConversation({ supabase, sendWhatsAppText, conversation, action, eventState })
+          : await sendFollowup({ supabase, sendWhatsAppText, conversation, action, eventState });
 
-      if (result.closed) summary.closed += 1;
+      if (result.closed) {
+        summary.closed += 1;
+
+        // Pauta abandonada: crear lead para Agente Especial si aplica
+        const aiState = normalizeAiState(conversation.ai_state);
+        if (isPautaConversation(aiState)) {
+          try {
+            const specialAgentProfileId = await lookupSpecialAgentProfileId(supabase);
+            await createPautaAbandonedLead({
+              supabase,
+              conversation,
+              aiState,
+              messages,
+              specialAgentProfileId,
+              logger,
+            });
+          } catch (pautaErr) {
+            logger.warn?.('PAUTA_LEAD_CREATION_FAILED', {
+              conversation_id: conversation.id,
+              error: pautaErr?.message || String(pautaErr),
+            });
+          }
+        }
+      }
       if (result.sent) summary.sent += 1;
       if (!result.sent) summary.skipped += 1;
+
+      logger.info?.('FOLLOWUP_AUTOMATION_RESULT', {
+        conversation_id: conversation.id,
+        action_kind: action.kind,
+        step: action.step?.key,
+        sent: !!result.sent,
+        closed: !!result.closed,
+        blocked_outside_24h_window: !!result.blockedOutside24h,
+        reason: result.reason,
+      });
     } catch (err) {
       summary.errors += 1;
       logger.warn('FOLLOWUP_AUTOMATION_ERROR', {
@@ -276,6 +425,10 @@ async function runInactivityFollowups({
 module.exports = {
   FOLLOWUP_STEPS,
   CLOSE_STEP,
+  WHATSAPP_FREE_TEXT_WINDOW_MS,
+  FOLLOWUP_BLOCKED_OUTSIDE_24H_EVENT,
+  isInsideWhatsAppFreeTextWindow,
+  isPautaConversation,
   getNextDueAction,
   resetAiStateForClosedConversation,
   runInactivityFollowups,

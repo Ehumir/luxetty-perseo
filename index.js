@@ -24,6 +24,7 @@ const { openai } = require('./services/openaiService');
 const { axios } = require('./services/whatsappService');
 const { createOrReuseLeadFromConversation } = require('./services/leadAutomation');
 const { runInactivityFollowups } = require('./services/followupAutomation');
+const { persistConversationReferral } = require('./services/referralService');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
 const { parseMessageSignals } = require('./conversation/parsers');
@@ -49,7 +50,15 @@ const {
 } = require('./conversation/responseBuilder');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
-const { uniq, nowIso, sanitizeReply, safeJsonStringify, normalizePhoneNumber } = require('./utils/helpers');
+const {
+  uniq,
+  nowIso,
+  sanitizeReply,
+  safeJsonStringify,
+  normalizePhoneNumber,
+  extractWhatsAppReferral,
+  normalizeOutboundMessages,
+} = require('./utils/helpers');
 const { isGreetingOnly } = require('./utils/messageChecks');
 
 const app = express();
@@ -86,18 +95,18 @@ function isClosureCheck(text) {
 
 function getNextStepCta(nextStep) {
   if (nextStep === 'qualify_search') {
-    return '¿Prefieres que te muestre opciones o avanzar con un asesor?';
+    return '¿Prefieres ver opciones disponibles o que un asesor de Luxetty te contacte?';
   }
 
   if (nextStep === 'push_visit') {
-    return '¿Quieres que coordinemos una visita o prefieres hablar con un asesor?';
+    return '¿Deseas coordinar una visita o prefieres que un asesor de Luxetty te contacte?';
   }
 
   if (nextStep === 'qualify_property') {
     return '¿Me compartes los datos de la propiedad para revisarla contigo?';
   }
 
-  return '¿Quieres que te ayude a buscar, vender o conectar con un asesor?';
+  return '¿En qué puedo orientarte? ¿Buscas comprar, rentar, vender o necesitas hablar con un asesor?';
 }
 
 function hasConversationAdvance(reply) {
@@ -109,6 +118,8 @@ function hasConversationAdvance(reply) {
     text.includes('te contactara') ||
     text.includes('te contactará') ||
     text.includes('te conecto') ||
+    text.includes('asesor de luxetty') ||
+    text.includes('puedo canalizar') ||
     text.includes('te ayudo a coordinar') ||
     text.includes('te ayudo a buscar') ||
     text.includes('te muestro opciones') ||
@@ -124,7 +135,7 @@ function enrichReplyWithNextStepCta(reply, nextStep) {
 }
 
 function buildIntelligentHandoffReply() {
-  return 'Esto ya vale la pena verlo con un asesor. Te voy a conectar con alguien de nuestro equipo para avanzar contigo.';
+  return 'Para darte una atención más precisa, puedo canalizar tu caso con un asesor de Luxetty que te apoye directamente.';
 }
 
 function hasValidPropertySlug(property) {
@@ -632,6 +643,29 @@ async function saveConversationMessage({
   }
 }
 
+async function inboundMessageAlreadyProcessed(metaMessageId) {
+  try {
+    if (!metaMessageId) return false;
+
+    const { data, error } = await supabase
+      .from('conversation_messages')
+      .select('id')
+      .eq('direction', 'inbound')
+      .eq('meta_message_id', metaMessageId)
+      .limit(1);
+
+    if (error) {
+      console.error('Error checking inbound duplicate:', error);
+      return false;
+    }
+
+    return Array.isArray(data) && data.length > 0;
+  } catch (err) {
+    console.error('FATAL inboundMessageAlreadyProcessed:', err);
+    return false;
+  }
+}
+
 async function savePropertySuggestions(conversationId, conversationMessageId, properties) {
   try {
     if (!conversationId || !conversationMessageId || !properties?.length) return;
@@ -1013,6 +1047,33 @@ async function sendWhatsAppText(to, body) {
   );
 }
 
+async function sendWhatsAppMessages(to, messages) {
+  const outbound = normalizeOutboundMessages(messages);
+  for (const body of outbound) {
+    await sendWhatsAppText(to, body);
+  }
+  return outbound;
+}
+
+async function saveOutboundMessages({ conversationId, messages, rawPayload = {} }) {
+  const outbound = normalizeOutboundMessages(messages);
+  const rows = [];
+
+  for (const messageText of outbound) {
+    const row = await saveConversationMessage({
+      conversationId,
+      direction: 'outbound',
+      senderType: 'ai_agent',
+      messageType: 'text',
+      messageText,
+      rawPayload,
+    });
+    if (row?.id) rows.push(row);
+  }
+
+  return { outbound, rows };
+}
+
 async function maybeCreateFollowupRequest({
   conversationId,
   state,
@@ -1288,71 +1349,141 @@ app.get('/webhook', (req, res) => {
 });
 
 app.post('/webhook', async (req, res) => {
-  let from = null;
-
   try {
     await refreshLocationCatalog();
 
-    const entry = req.body.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const value = changes?.value;
-    const message = value?.messages?.[0];
+    async function processInboundWhatsAppMessage({ entry, change, value, message }) {
+      let from = null;
 
-    if (!message) return res.sendStatus(200);
+      if (!message || typeof message !== 'object') return;
 
-    const rawFrom = message.from;
-    from = normalizePhoneNumber(rawFrom) || rawFrom;
-    const messageType = message.type;
-    const metaMessageId = message.id || null;
+      const rawFrom = message.from;
+      const fromIsValid = typeof rawFrom === 'string' && rawFrom.trim().length > 0;
+      const messageType = message.type;
+      const metaMessageId = message.id || null;
 
-    let text = '';
+      if (!metaMessageId) {
+        console.log('inbound_missing_message_id_skipped', {
+          message_type: messageType || null,
+          from: rawFrom || null,
+        });
+        return;
+      }
 
-    if (messageType === 'text') {
-      text = cleanSpaces(message.text?.body || '');
-    } else if (messageType === 'audio') {
-      text = 'El usuario envió un audio.';
-    } else if (messageType === 'image') {
-      text = 'El usuario envió una imagen.';
-    } else {
-      text = `El usuario envió un mensaje tipo ${messageType}.`;
-    }
+      if (!fromIsValid) {
+        console.log('inbound_missing_from_skipped', {
+          meta_message_id: metaMessageId,
+          message_type: messageType || null,
+        });
+        return;
+      }
 
-    console.log('--- NUEVO MENSAJE ---');
-    console.log('From:', from);
-    console.log('Tipo:', messageType);
-    console.log('Texto:', text);
+      const duplicateInbound = await inboundMessageAlreadyProcessed(metaMessageId);
+      if (duplicateInbound) {
+        console.log('inbound_duplicate_skipped', {
+          meta_message_id: metaMessageId,
+          from: rawFrom,
+        });
+        return;
+      }
 
-    const conversationRow = await getOrCreateConversation(from);
-    const conversationId = conversationRow?.id || null;
-    const normalizedText = normalizeText(text);
+      const normalizedReferral = extractWhatsAppReferral(message);
+      if (normalizedReferral) {
+        console.log('referral_detected', {
+          meta_message_id: metaMessageId,
+          from: rawFrom,
+          referral: normalizedReferral,
+        });
+      } else {
+        console.log('referral_absent', {
+          meta_message_id: metaMessageId,
+          from: rawFrom,
+        });
+      }
 
-    if (rawFrom && from && rawFrom !== from) {
-      await saveConversationEvent(conversationId, 'contact_phone_normalized', {
-        raw_phone: rawFrom,
-        normalized_phone: from,
+      const inboundRawPayload = normalizedReferral
+        ? {
+            ...(req.body || {}),
+            perseo_metadata: {
+              ...((req.body && req.body.perseo_metadata) || {}),
+              whatsapp_referral: normalizedReferral,
+            },
+          }
+        : req.body;
+
+      from = normalizePhoneNumber(rawFrom) || rawFrom;
+
+      let text = '';
+
+      if (messageType === 'text') {
+        text = cleanSpaces(message.text?.body || '');
+      } else if (messageType === 'audio') {
+        text = 'El usuario envió un audio.';
+      } else if (messageType === 'image') {
+        text = 'El usuario envió una imagen.';
+      } else {
+        text = `El usuario envió un mensaje tipo ${messageType}.`;
+      }
+
+      console.log('--- NUEVO MENSAJE ---');
+      console.log('From:', from);
+      console.log('Tipo:', messageType);
+      console.log('Texto:', text);
+
+      const conversationRow = await getOrCreateConversation(from);
+      const conversationId = conversationRow?.id || null;
+      const normalizedText = normalizeText(text);
+
+      if (rawFrom && from && rawFrom !== from) {
+        await saveConversationEvent(conversationId, 'contact_phone_normalized', {
+          raw_phone: rawFrom,
+          normalized_phone: from,
+        });
+      }
+
+      const inboundMessageRow = await saveConversationMessage({
+        conversationId,
+        direction: 'inbound',
+        senderType: 'lead',
+        messageType:
+          messageType === 'text'
+            ? 'text'
+            : messageType === 'audio'
+            ? 'audio'
+            : messageType === 'image'
+            ? 'image'
+            : 'system',
+        messageText: text,
+        metaMessageId,
+        rawPayload: inboundRawPayload,
       });
-    }
 
-    await saveConversationMessage({
-      conversationId,
-      direction: 'inbound',
-      senderType: 'lead',
-      messageType:
-        messageType === 'text'
-          ? 'text'
-          : messageType === 'audio'
-          ? 'audio'
-          : messageType === 'image'
-          ? 'image'
-          : 'system',
-      messageText: text,
-      metaMessageId,
-      rawPayload: req.body,
-    });
+      try {
+        const referralPersistResult = await persistConversationReferral({
+          supabase,
+          conversationId,
+          conversationMessageId: inboundMessageRow?.id || null,
+          metaMessageId,
+          referral: normalizedReferral,
+        });
 
-    const previousAiState = normalizeAiState(conversationRow?.ai_state);
-    const incomingSignals = parseMessageSignals(text, previousAiState);
-    const signals = incomingSignals;
+        if (referralPersistResult?.ok) {
+          console.log('[referral] persisted', {
+            id: referralPersistResult.id || null,
+            duplicate: referralPersistResult.duplicate || false,
+          });
+        } else if (referralPersistResult?.skipped) {
+          console.log('[referral] skipped', { reason: referralPersistResult.reason });
+        } else {
+          console.warn('[referral] persist warning', referralPersistResult);
+        }
+      } catch (error) {
+        console.error('[referral] unexpected persist error', error);
+      }
+
+      const previousAiState = normalizeAiState(conversationRow?.ai_state);
+      const incomingSignals = parseMessageSignals(text, previousAiState);
+      const signals = incomingSignals;
 
     if (!signals.property_code) {
       const propertySlug = extractPropertySlugFromText(text);
@@ -1432,7 +1563,7 @@ app.post('/webhook', async (req, res) => {
         });
 
         const notFoundReply = enrichReplyWithNextStepCta(
-          'No encontré esa propiedad disponible en este momento. Si quieres, te muestro opciones similares. ¿Qué zona te interesa?',
+          'No encontré esa propiedad disponible en este momento. Si deseas, puedo mostrarte opciones similares. ¿Qué zona te interesa?',
           directState.next_step
         );
 
@@ -1447,17 +1578,14 @@ app.post('/webhook', async (req, res) => {
           ].slice(-MAX_SHORT_MEMORY_MESSAGES)
         );
 
-        await saveConversationMessage({
+        await saveOutboundMessages({
           conversationId,
-          direction: 'outbound',
-          senderType: 'ai_agent',
-          messageType: 'text',
-          messageText: notFoundReply,
+          messages: notFoundReply,
           rawPayload: {},
         });
 
-        await sendWhatsAppText(from, notFoundReply);
-        return res.sendStatus(200);
+        await sendWhatsAppMessages(from, notFoundReply);
+        return;
       }
 
       const directState = {
@@ -1506,17 +1634,14 @@ app.post('/webhook', async (req, res) => {
         )
       );
 
-      const outboundMessageRow = await saveConversationMessage({
+      const directOutbound = await saveOutboundMessages({
         conversationId,
-        direction: 'outbound',
-        senderType: 'ai_agent',
-        messageType: 'text',
-        messageText: directReply,
+        messages: directReply,
         rawPayload: {},
       });
 
-      if (outboundMessageRow?.id) {
-        await savePropertySuggestions(conversationId, outboundMessageRow.id, [property]);
+      if (directOutbound.rows[0]?.id) {
+        await savePropertySuggestions(conversationId, directOutbound.rows[0].id, [property]);
       }
 
       const contactId = await upsertContactForConversation(conversationRow, directState, from);
@@ -1544,17 +1669,18 @@ app.post('/webhook', async (req, res) => {
       await saveConversationState(conversationId, directState);
       await maybeGenerateAiSummary(conversationId, directState, [property]);
 
+      const directOutboundMessages = normalizeOutboundMessages(directReply);
       conversations.set(
         from,
         [
           ...(conversations.get(from) || []),
           { role: 'user', content: text },
-          { role: 'assistant', content: directReply },
+          { role: 'assistant', content: directOutboundMessages.join('\n\n') || directReply },
         ].slice(-MAX_SHORT_MEMORY_MESSAGES)
       );
 
-      await sendWhatsAppText(from, directReply);
-      return res.sendStatus(200);
+      await sendWhatsAppMessages(from, directReply);
+      return;
     }
 
     if (incomingSignals.location_text && !incomingSignals.location_any) {
@@ -1570,6 +1696,14 @@ app.post('/webhook', async (req, res) => {
 
     const changeType = detectStateChange(previousAiState, incomingSignals);
     let nextAiState = buildNextState(previousAiState, incomingSignals, changeType);
+
+    // Persistir referral en ai_state para detección de pauta en cierre por inactividad.
+    // buildNextState puede descartar campos extra en restart_flow, por lo que se aplica aquí.
+    if (normalizedReferral) {
+      nextAiState.whatsapp_referral = normalizedReferral;
+    } else if (previousAiState.whatsapp_referral && !nextAiState.whatsapp_referral) {
+      nextAiState.whatsapp_referral = previousAiState.whatsapp_referral;
+    }
 
     // 🔒 Anti-loop: evitar repetir preguntas si ya estamos esperando respuesta
     if (previousAiState.awaiting_field && !incomingSignals[previousAiState.awaiting_field]) {
@@ -1947,12 +2081,12 @@ app.post('/webhook', async (req, res) => {
 
     if (isGreetingOnly(text) && !previousAiState.lead_flow && !incomingSignals.property_code) {
       reply =
-        'Hola, soy el asistente de Luxetty 😊\nCon gusto te ayudo.\n¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
+        'Hola, bienvenido a Luxetty 😊\n¿En qué puedo orientarte hoy? ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
     } else if (nextAiState.handoff_sent && isClosureCheck(text)) {
       // 🚫 No responder para evitar duplicar cierre
-      return res.sendStatus(200);
+      return;
     } else if (nextAiState.direct_property_reference && nextAiState.property_code && matchedProperties.length === 0) {
-      reply = `No encontré esa propiedad disponible en este momento. Si quieres, te ayudo a buscar opciones similares. ¿Qué zona te interesa?`;
+      reply = `No encontré esa propiedad disponible en este momento. Si deseas, puedo ayudarte a buscar opciones similares. ¿Qué zona te interesa?`;
     } else if (shouldUsePlaybookReply(nextAiState, nextAiState.playbook_step)) {
       const playbookReply = buildPlaybookReply(nextAiState.playbook_step, nextAiState);
       if (playbookReply) {
@@ -1997,8 +2131,8 @@ app.post('/webhook', async (req, res) => {
         shouldAskField(nextAiState, 'full_name')
       ) {
         reply = nextAiState.wants_visit
-          ? 'Claro. Para ayudarte a coordinar una visita, ¿me compartes tu nombre completo?'
-          : 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
+          ? 'Para coordinar la visita, ¿me compartes tu nombre, por favor?'
+          : 'Para canalizarte con un asesor de Luxetty, ¿me compartes tu nombre, por favor?';
         nextAiState.awaiting_field = 'full_name';
       } else if (
         !shouldAnswerDirectPrice &&
@@ -2006,7 +2140,7 @@ app.post('/webhook', async (req, res) => {
         nextAiState.full_name &&
         shouldAskField(nextAiState, 'contact_preference')
       ) {
-        reply = 'Perfecto. ¿Prefieres que te contacten por WhatsApp o por llamada?';
+        reply = '¿Prefieres que te contacten por WhatsApp o por llamada?';
         nextAiState.awaiting_field = 'contact_preference';
       } else if (
         !shouldAnswerDirectPrice &&
@@ -2015,7 +2149,7 @@ app.post('/webhook', async (req, res) => {
         nextAiState.contact_preference &&
         shouldAskField(nextAiState, 'contact_number_confirmed')
       ) {
-        reply = 'Perfecto. ¿Este es el mejor número para contactarte?';
+        reply = '¿Este es el mejor número para contactarte?';
         nextAiState.awaiting_field = 'contact_number_confirmed';
       }
 
@@ -2090,8 +2224,8 @@ app.post('/webhook', async (req, res) => {
             ) {
               nextAiState.awaiting_field = 'full_name';
               reply = nextAiState.wants_visit
-                ? 'Claro. Para ayudarte a coordinar una visita, ¿me compartes tu nombre completo?'
-                : 'Claro. Antes de pasarte con un asesor, ¿me compartes tu nombre completo?';
+                ? 'Para coordinar la visita, ¿me compartes tu nombre, por favor?'
+                : 'Para canalizarte con un asesor de Luxetty, ¿me compartes tu nombre, por favor?';
             }
           }
         }
@@ -2157,14 +2291,16 @@ ${locationCatalog.rawNames.join(', ')}
 
       reply =
         response.choices?.[0]?.message?.content?.trim() ||
-        'Con gusto te ayudo. ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
+        '¿En qué puedo orientarte? ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
     }
 
     if (!reply) {
       reply = await buildFallbackOpenAIReply(text, nextAiState, changeType);
     }
 
-    reply = sanitizeReply(reply);
+    const getReplyText = (value) => (Array.isArray(value) ? value.join('\n\n') : value);
+
+    reply = sanitizeReply(getReplyText(reply));
 
     // ✅ Anti-loop semántico: evitar preguntas ya resueltas
     if (
@@ -2173,7 +2309,7 @@ ${locationCatalog.rawNames.join(', ')}
       /nombre completo/i.test(reply) &&
       shouldAskField(nextAiState, 'contact_preference')
     ) {
-      reply = 'Perfecto. ¿Prefieres que te contacten por WhatsApp o por llamada?';
+      reply = '¿Prefieres que te contacten por WhatsApp o por llamada?';
       nextAiState.awaiting_field = 'contact_preference';
     }
 
@@ -2183,7 +2319,7 @@ ${locationCatalog.rawNames.join(', ')}
       /whatsapp o por llamada/i.test(reply) &&
       shouldAskField(nextAiState, 'contact_number_confirmed')
     ) {
-      reply = 'Perfecto. ¿Este es el mejor número para contactarte?';
+      reply = '¿Este es el mejor número para contactarte?';
       nextAiState.awaiting_field = 'contact_number_confirmed';
     }
 
@@ -2216,7 +2352,7 @@ ${locationCatalog.rawNames.join(', ')}
       lastAssistantMessage.content === reply &&
       nextAiState.lead_flow !== 'demand'
     ) {
-      reply = 'Perfecto, continúo ayudándote. ¿Puedes darme un poco más de detalle para avanzar?';
+      reply = 'Entendido. ¿Puedes darme un poco más de detalle para orientarte mejor?';
     }
 
     const updatedMessages = [
@@ -2226,33 +2362,6 @@ ${locationCatalog.rawNames.join(', ')}
     ];
 
     conversations.set(from, updatedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
-
-    let outboundMessageRow = await saveConversationMessage({
-      conversationId,
-      direction: 'outbound',
-      senderType: 'ai_agent',
-      messageType: 'text',
-      messageText: reply,
-      rawPayload: {},
-    });
-
-    if (matchedProperties.length > 0 && outboundMessageRow?.id) {
-      await savePropertySuggestions(
-        conversationId,
-        outboundMessageRow.id,
-        matchedProperties
-      );
-
-      await saveConversationEvent(conversationId, 'properties_suggested', {
-        property_ids: matchedProperties.map((p) => p.id),
-        count: matchedProperties.length,
-        raw_result_count: rawResultCount,
-        result_quality: resultQuality,
-        top_match_score: topMatchScore,
-        direct_property_reference: !!nextAiState.direct_property_reference,
-        property_code: nextAiState.property_code || null,
-      });
-    }
 
     if (
       !isGreetingOnly(text) &&
@@ -2275,7 +2384,7 @@ ${locationCatalog.rawNames.join(', ')}
 
         if (
           leadAutomationResult?.handoffTriggered &&
-          !lastAssistantMessage?.content?.includes('Esto ya vale la pena verlo con un asesor')
+          !lastAssistantMessage?.content?.includes('Para darte una atención más precisa, puedo canalizar')
         ) {
           reply = buildIntelligentHandoffReply();
           nextAiState.handoff_ready = true;
@@ -2287,13 +2396,6 @@ ${locationCatalog.rawNames.join(', ')}
           ];
           conversations.set(from, refreshedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
 
-          if (outboundMessageRow?.id) {
-            await supabase
-              .from('conversation_messages')
-              .update({ message_text: reply })
-              .eq('id', outboundMessageRow.id);
-          }
-
           await saveConversationEvent(conversationId, 'intelligent_handoff_message_sent', {
             lead_id: leadAutomationResult.leadId || null,
             assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
@@ -2303,29 +2405,82 @@ ${locationCatalog.rawNames.join(', ')}
       }
     }
 
+    const outboundResult = await saveOutboundMessages({
+      conversationId,
+      messages: reply,
+      rawPayload: {},
+    });
+
+    if (matchedProperties.length > 0 && outboundResult.rows[0]?.id) {
+      await savePropertySuggestions(
+        conversationId,
+        outboundResult.rows[0].id,
+        matchedProperties
+      );
+
+      await saveConversationEvent(conversationId, 'properties_suggested', {
+        property_ids: matchedProperties.map((p) => p.id),
+        count: matchedProperties.length,
+        raw_result_count: rawResultCount,
+        result_quality: resultQuality,
+        top_match_score: topMatchScore,
+        direct_property_reference: !!nextAiState.direct_property_reference,
+        property_code: nextAiState.property_code || null,
+      });
+    }
+
     await saveConversationState(conversationId, nextAiState);
     await maybeGenerateAiSummary(conversationId, nextAiState, matchedProperties);
-    await sendWhatsAppText(from, reply);
+    await sendWhatsAppMessages(from, reply);
+
+    }
+
+    const entries = Array.isArray(req.body?.entry) ? req.body.entry : [];
+
+    for (const entry of entries) {
+      const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+
+      for (const change of changes) {
+        const value = change?.value || {};
+        const messages = Array.isArray(value?.messages) ? value.messages : [];
+
+        for (const message of messages) {
+          try {
+            await processInboundWhatsAppMessage({ entry, change, value, message });
+          } catch (messageError) {
+            console.error('--- ERROR WEBHOOK MESSAGE ---');
+            console.error(
+              messageError?.response?.data ||
+                messageError?.stack ||
+                messageError?.message ||
+                messageError
+            );
+
+            const fallbackFromRaw = message?.from;
+            const fallbackTo = normalizePhoneNumber(fallbackFromRaw) || fallbackFromRaw;
+
+            if (fallbackTo) {
+              try {
+                await sendWhatsAppText(
+                  fallbackTo,
+                  'Perdón, tuve un problema momentáneo. ¿Me lo puedes repetir en una sola frase?'
+                );
+              } catch (sendError) {
+                console.error(
+                  'Error enviando fallback:',
+                  sendError?.response?.data || sendError?.message || sendError
+                );
+              }
+            }
+          }
+        }
+      }
+    }
 
     return res.sendStatus(200);
   } catch (error) {
     console.error('--- ERROR WEBHOOK ---');
     console.error(error?.response?.data || error?.stack || error?.message || error);
-
-    if (from) {
-      try {
-        await sendWhatsAppText(
-          from,
-          'Perdón, tuve un problema momentáneo. ¿Me lo puedes repetir en una sola frase?'
-        );
-      } catch (sendError) {
-        console.error(
-          'Error enviando fallback:',
-          sendError?.response?.data || sendError?.message || sendError
-        );
-      }
-    }
-
     return res.sendStatus(200);
   }
 });

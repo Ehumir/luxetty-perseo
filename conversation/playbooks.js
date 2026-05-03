@@ -98,21 +98,21 @@ function getPlaybookAwaitingField(step) {
 }
 
 function buildPlaybookReply(step, state = {}) {
-  if (step === 'ask_budget') return 'Perfecto. ¿Cuál es tu presupuesto aproximado?';
-  if (step === 'ask_zone') return 'Perfecto. ¿En qué zona te interesa buscar?';
-  if (step === 'offer_options_or_agent') return 'Con eso puedo avanzar. ¿Prefieres que te muestre opciones o que te conecte con un asesor?';
+  if (step === 'ask_budget') return '¿Cuál es tu presupuesto aproximado?';
+  if (step === 'ask_zone') return '¿En qué zona te interesa buscar?';
+  if (step === 'offer_options_or_agent') return 'Con esa información puedo orientarte mejor. ¿Prefieres ver opciones disponibles o que un asesor de Luxetty te contacte?';
 
-  if (step === 'ask_property_type') return 'Perfecto. ¿Qué tipo de propiedad quieres vender o poner en renta?';
-  if (step === 'ask_location') return 'Perfecto. ¿En qué zona está la propiedad?';
-  if (step === 'ask_price_expectation') return 'Perfecto. ¿En cuánto te gustaría venderla o rentarla aproximadamente?';
+  if (step === 'ask_property_type') return '¿Qué tipo de propiedad deseas vender o poner en renta?';
+  if (step === 'ask_location') return '¿En qué zona se encuentra la propiedad?';
+  if (step === 'ask_price_expectation') return '¿En cuánto te gustaría venderla o rentarla aproximadamente?';
   if (step === 'offer_agent') return 'Con esos datos puedo avanzar. ¿Prefieres que un asesor de Luxetty revise tu propiedad contigo?';
 
-  if (step === 'confirm_interest') return 'Perfecto, entiendo que te interesa esta propiedad. ¿Quieres verla o tienes alguna pregunta puntual?';
-  if (step === 'offer_visit_or_questions') return '¿Quieres que coordinemos una visita o prefieres resolver dudas primero?';
+  if (step === 'confirm_interest') return 'Entiendo que te interesa esta propiedad. ¿Deseas verla o tienes alguna pregunta puntual?';
+  if (step === 'offer_visit_or_questions') return '¿Deseas coordinar una visita o prefieres resolver alguna duda antes?';
   if (step === 'push_agent') {
     return state.full_name
-      ? 'Perfecto. ¿Prefieres que te contacten por WhatsApp o por llamada?'
-      : 'Claro. Para avanzarte con un asesor, ¿me compartes tu nombre completo?';
+      ? '¿Prefieres que te contacten por WhatsApp o por llamada?'
+      : 'Para canalizarte con un asesor de Luxetty, ¿me compartes tu nombre, por favor?';
   }
 
   return null;
