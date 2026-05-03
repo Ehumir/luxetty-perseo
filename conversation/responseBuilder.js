@@ -234,6 +234,14 @@ function hasValidPropertyPrice(property = {}) {
   return Number.isFinite(price) && price > 0;
 }
 
+function buildPropertyAdvisorCta(state = {}, code = null) {
+  if (state.full_name) {
+    return `Si me autorizas, un asesor de Luxetty puede contactarte para apoyarte con detalles confirmados y visita de ${code || 'la propiedad'}. ¿Deseas que te contacte?`;
+  }
+
+  return 'Para que un asesor de Luxetty pueda apoyarte con detalles confirmados y visita, ¿me compartes tu nombre?';
+}
+
 function buildPropertyInterestReply(property, state = {}) {
   const code = getPropertyVisibleCode(property, state);
   const location = getPropertyLocationLabel(property);
@@ -241,26 +249,17 @@ function buildPropertyInterestReply(property, state = {}) {
   const locationText = location ? ` en ${location}` : '';
 
   if (!url) {
-    const detailText = hasValidPropertyPrice(property)
-      ? ` está en ${formatMoney(property.price, property.currency_code || 'MXN')}`
-      : ', te puedo compartir los detalles disponibles';
-
-    return `Hola 👋
-Sí, claro. La propiedad ${code}${locationText}${detailText}, pero necesito que un asesor revise la información pública antes de compartirte el enlace.
-
-¿Te gustaría que un asesor la revise contigo?`;
+    return [
+      `Con gusto. Identifiqué la propiedad ${code}${locationText}.`,
+      `Para compartirte información confirmada, voy a canalizar tu caso con un asesor de Luxetty. ${buildPropertyAdvisorCta(state, code)}`,
+    ];
   }
 
-  const keyDetail = hasValidPropertyPrice(property)
-    ? `está en ${formatMoney(property.price, property.currency_code || 'MXN')}`
-    : 'te puedo compartir los detalles disponibles';
-
-  return `Hola 👋
-Sí, claro. La propiedad ${code}${locationText} ${keyDetail}.
-
-Te dejo aquí fotos y detalles 👉 ${url}
-
-¿Te gustaría agendar una visita o que un asesor te apoye con más detalles de esta propiedad?`;
+  return [
+    `Con gusto. Te comparto la liga de la propiedad ${code}${locationText}.`,
+    url,
+    buildPropertyAdvisorCta(state, code),
+  ];
 }
 
 function buildPropertyPriceReply(property, state = {}) {
@@ -281,7 +280,7 @@ function buildDirectPropertyReply(state, changeType, properties = []) {
   const property = Array.isArray(properties) && properties.length > 0 ? properties[0] : null;
 
   if (!property) {
-    return `No encontré una propiedad activa con el ID ${state.property_code}. Si quieres, dime qué tipo de propiedad buscas y te ayudo a encontrar opciones.`;
+    return `No encontré una propiedad activa con el ID ${state.property_code}. Si deseas, puedo ampliar la búsqueda por zona o canalizar tu caso con un asesor de Luxetty para ayudarte.`;
   }
 
   const template = getPropertySlugUrl(property)

@@ -22,7 +22,12 @@ const { SYSTEM_PROMPT } = require('./config/prompts');
 const { supabase } = require('./services/supabaseService');
 const { openai } = require('./services/openaiService');
 const { axios } = require('./services/whatsappService');
-const { createOrReuseLeadFromConversation } = require('./services/leadAutomation');
+const {
+  createOrReuseLeadFromConversation,
+  detectLeadCreationOpportunity,
+  extractCampaignReferralContext,
+  buildLeadContextFromConversation,
+} = require('./services/leadAutomation');
 const { runInactivityFollowups } = require('./services/followupAutomation');
 const { persistConversationReferral } = require('./services/referralService');
 
@@ -531,14 +536,105 @@ async function maybeCreateOrReuseLeadWithEngine({
   nextAiState,
   contactId,
   property = null,
+  messageText = '',
+  referralContext = null,
+  rawPayload = null,
 }) {
   try {
+    const propertyId = property?.id || null;
+    const propertyCode =
+      nextAiState?.property_code || nextAiState?.direct_property_code || property?.listing_id || null;
+
+    const campaignExtraction = extractCampaignReferralContext({
+      aiState: nextAiState,
+      referral: referralContext,
+      rawPayload,
+      messageText,
+    });
+
+    if (campaignExtraction.hasCampaignContext) {
+      console.log('campaign_context_detected', {
+        conversation_id: conversationId,
+        property_id: propertyId,
+        has_referral: !!campaignExtraction.referralContext,
+      });
+    } else {
+      console.log('campaign_context_missing', {
+        conversation_id: conversationId,
+        property_id: propertyId,
+      });
+    }
+
+    const shouldEvaluatePropertyOpportunity = !!(
+      propertyId ||
+      nextAiState?.direct_property_reference ||
+      nextAiState?.property_code ||
+      nextAiState?.direct_property_code
+    );
+
+    if (shouldEvaluatePropertyOpportunity) {
+      const leadOpportunity = detectLeadCreationOpportunity({
+        aiState: nextAiState,
+        propertyId,
+        propertyCode,
+        messageText,
+        hasCampaignContext: campaignExtraction.hasCampaignContext,
+      });
+
+      if (propertyId && leadOpportunity.shouldCreate) {
+        console.log('property_interest_detected', {
+          conversation_id: conversationId,
+          property_id: propertyId,
+          property_code: propertyCode,
+          reason: leadOpportunity.reason,
+        });
+      }
+
+      if (!leadOpportunity.shouldCreate) {
+        return {
+          success: false,
+          reason: leadOpportunity.reason,
+        };
+      }
+    }
+
+    const leadContext = buildLeadContextFromConversation({
+      conversation: conversationRow,
+      aiState: nextAiState,
+      property,
+      propertyId,
+      propertyCode,
+      propertySlug: property?.slug || null,
+      contactId,
+      referralContext: campaignExtraction.referralContext,
+      campaignContext: campaignExtraction.campaignContext,
+      rawReferral: campaignExtraction.rawReferral,
+    });
+
+    console.log('lead_create_attempted', {
+      conversation_id: leadContext.conversationId,
+      contact_id_present: !!leadContext.contactId,
+      property_id: leadContext.propertyId,
+      property_code: leadContext.propertyCode,
+      source_channel: leadContext.sourceChannel,
+      has_campaign_context: !!leadContext.campaignContext,
+      has_referral: !!leadContext.referralContext,
+    });
+
+    const aiStateForLead = {
+      ...(nextAiState || {}),
+      whatsapp_referral:
+        nextAiState?.whatsapp_referral || campaignExtraction.referralContext || null,
+      campaign_context:
+        nextAiState?.campaign_context || campaignExtraction.campaignContext || null,
+    };
+
     const result = await createOrReuseLeadFromConversation({
       supabase,
       conversation: conversationRow,
-      aiState: nextAiState,
+      aiState: aiStateForLead,
       contactId,
-      propertyId: property?.id || null,
+      propertyId,
       property,
       logger: console,
     });
@@ -547,9 +643,38 @@ async function maybeCreateOrReuseLeadWithEngine({
       Object.assign(nextAiState, result.aiState);
     }
 
+    if (result?.success && result.wasCreated) {
+      console.log('lead_created', {
+        conversation_id: conversationId,
+        lead_id: result.leadId || null,
+        property_id: propertyId,
+      });
+    } else if (result?.success && !result.wasCreated) {
+      console.log('lead_linked_existing', {
+        conversation_id: conversationId,
+        lead_id: result.leadId || null,
+        property_id: propertyId,
+      });
+      console.log('lead_skipped_duplicate', {
+        conversation_id: conversationId,
+        lead_id: result.leadId || null,
+      });
+    } else if (!result?.success) {
+      console.warn('lead_creation_failed', {
+        conversation_id: conversationId,
+        reason: result?.reason || 'unknown',
+        error: result?.error || null,
+      });
+    }
+
     return result;
   } catch (err) {
     console.warn('Lead automation failed:', err?.message || err);
+    console.warn('lead_creation_failed', {
+      conversation_id: conversationId,
+      reason: 'lead_automation_exception',
+      error: err?.message || String(err),
+    });
     await saveConversationEvent(conversationId, 'lead_assignment_failed', {
       reason: 'lead_automation_exception',
       error: err?.message || String(err),
@@ -1208,13 +1333,15 @@ async function upsertContactForConversation(conversationRow, state, phone) {
       return existingContact.id;
     }
 
+    const createPayload = {
+      phone: normalizedPhone,
+      whatsapp: normalizedPhone,
+    };
+    if (contactName) createPayload.full_name = contactName;
+
     const { data: created, error } = await supabase
       .from('contacts')
-      .insert({
-        full_name: contactName,
-        phone: normalizedPhone,
-        whatsapp: normalizedPhone,
-      })
+      .insert(createPayload)
       .select()
       .single();
 
@@ -1627,12 +1754,15 @@ app.post('/webhook', async (req, res) => {
         matchedProperties: [property],
       });
 
-      let directReply = sanitizeReply(
-        enrichReplyWithNextStepCta(
-          buildDemandReply(directState, null, [property], 'direct_property_code'),
-          directState.next_step
-        )
+      const directReplyBase = buildDemandReply(
+        directState,
+        null,
+        [property],
+        'direct_property_code'
       );
+      const directReply = Array.isArray(directReplyBase)
+        ? directReplyBase.map((message) => sanitizeReply(message)).filter(Boolean)
+        : sanitizeReply(enrichReplyWithNextStepCta(directReplyBase, directState.next_step));
 
       const directOutbound = await saveOutboundMessages({
         conversationId,
@@ -1645,25 +1775,26 @@ app.post('/webhook', async (req, res) => {
       }
 
       const contactId = await upsertContactForConversation(conversationRow, directState, from);
-      if (contactId) {
-        const leadAutomationResult = await maybeCreateOrReuseLeadWithEngine({
-          conversationId,
-          conversationRow,
-          nextAiState: directState,
-          contactId,
-          property,
+      const leadAutomationResult = await maybeCreateOrReuseLeadWithEngine({
+        conversationId,
+        conversationRow,
+        nextAiState: directState,
+        contactId,
+        property,
+        messageText: text,
+        referralContext: normalizedReferral,
+        rawPayload: inboundRawPayload,
+      });
+
+      if (leadAutomationResult?.handoffTriggered) {
+        directState.handoff_ready = true;
+
+        await saveConversationEvent(conversationId, 'intelligent_handoff_ready', {
+          lead_id: leadAutomationResult.leadId || null,
+          assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
+          source: 'ai_agent',
+          message_preserved: 'property_interest_microcommitment',
         });
-
-        if (leadAutomationResult?.handoffTriggered) {
-          directState.handoff_ready = true;
-
-          await saveConversationEvent(conversationId, 'intelligent_handoff_ready', {
-            lead_id: leadAutomationResult.leadId || null,
-            assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
-            source: 'ai_agent',
-            message_preserved: 'property_interest_microcommitment',
-          });
-        }
       }
 
       await saveConversationState(conversationId, directState);
@@ -1675,7 +1806,12 @@ app.post('/webhook', async (req, res) => {
         [
           ...(conversations.get(from) || []),
           { role: 'user', content: text },
-          { role: 'assistant', content: directOutboundMessages.join('\n\n') || directReply },
+          {
+            role: 'assistant',
+            content:
+              directOutboundMessages.join('\n\n') ||
+              (Array.isArray(directReply) ? directReply.join('\n\n') : directReply),
+          },
         ].slice(-MAX_SHORT_MEMORY_MESSAGES)
       );
 
@@ -2380,6 +2516,9 @@ ${locationCatalog.rawNames.join(', ')}
           nextAiState,
           contactId,
           property: propertyForLead,
+          messageText: text,
+          referralContext: normalizedReferral,
+          rawPayload: inboundRawPayload,
         });
 
         if (
