@@ -249,6 +249,208 @@ function hasClearIntent(aiState = {}, propertyId = null) {
   return hasCommercialContext(aiState, propertyId);
 }
 
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+function extractReferralFromRawPayload(rawPayload = null) {
+  if (!isPlainObject(rawPayload)) return null;
+
+  const direct = rawPayload?.perseo_metadata?.whatsapp_referral;
+  if (isPlainObject(direct)) return direct;
+
+  const messageReferral = rawPayload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.referral;
+  if (isPlainObject(messageReferral)) return messageReferral;
+
+  const contextReferral = rawPayload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.context?.referral;
+  if (isPlainObject(contextReferral)) return contextReferral;
+
+  return null;
+}
+
+function parseUtmFromUrl(rawUrl) {
+  const sourceUrl = firstNonEmptyString(rawUrl);
+  if (!sourceUrl) return null;
+
+  try {
+    const parsed = new URL(sourceUrl);
+    const pick = (name) => firstNonEmptyString(parsed.searchParams.get(name));
+    const utm = {
+      utm_source: pick('utm_source'),
+      utm_medium: pick('utm_medium'),
+      utm_campaign: pick('utm_campaign'),
+      utm_term: pick('utm_term'),
+      utm_content: pick('utm_content'),
+    };
+    const hasAny = Object.values(utm).some(Boolean);
+    return hasAny ? utm : null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function extractCampaignReferralContext({ aiState = {}, referral = null, rawPayload = null, messageText = '' } = {}) {
+  const referralCandidate =
+    (isPlainObject(referral) && referral) ||
+    (isPlainObject(aiState?.whatsapp_referral) && aiState.whatsapp_referral) ||
+    extractReferralFromRawPayload(rawPayload) ||
+    null;
+
+  const sourceUrl = firstNonEmptyString(
+    referralCandidate?.source_url,
+    referralCandidate?.sourceUrl,
+    referralCandidate?.url,
+    referralCandidate?.link
+  );
+
+  const sourceType = firstNonEmptyString(
+    referralCandidate?.source_type,
+    referralCandidate?.sourceType,
+    referralCandidate?.type
+  );
+
+  const text = normalizeText(messageText || '');
+  const sourcePlatform =
+    (sourceUrl && /instagram\.com/i.test(sourceUrl) && 'instagram') ||
+    (sourceUrl && /(facebook\.com|fb\.com)/i.test(sourceUrl) && 'facebook') ||
+    (text.includes('instagram') && 'instagram') ||
+    (text.includes('facebook') && 'facebook') ||
+    (text.includes('meta ads') && 'meta') ||
+    null;
+
+  const campaignContext = {
+    source_type: sourceType,
+    source_id: firstNonEmptyString(referralCandidate?.source_id, referralCandidate?.sourceId),
+    source_url: sourceUrl,
+    ad_id: firstNonEmptyString(referralCandidate?.ad_id, referralCandidate?.adId, referralCandidate?.ad?.id),
+    ad_name: firstNonEmptyString(
+      referralCandidate?.ad_name,
+      referralCandidate?.adName,
+      referralCandidate?.ad_title,
+      referralCandidate?.ad?.name
+    ),
+    ad_body: firstNonEmptyString(referralCandidate?.ad_body, referralCandidate?.body, referralCandidate?.text),
+    adgroup_id: firstNonEmptyString(
+      referralCandidate?.adgroup_id,
+      referralCandidate?.adgroupId,
+      referralCandidate?.adset_id,
+      referralCandidate?.ad_set_id,
+      referralCandidate?.adsetId
+    ),
+    campaign_id: firstNonEmptyString(referralCandidate?.campaign_id, referralCandidate?.campaignId, referralCandidate?.campaign?.id),
+    campaign_name: firstNonEmptyString(referralCandidate?.campaign_name, referralCandidate?.campaignName, referralCandidate?.campaign?.name),
+    ctwa_clid: firstNonEmptyString(referralCandidate?.ctwa_clid, referralCandidate?.ctwaClid, referralCandidate?.clid),
+    source_platform: sourcePlatform,
+    utm: parseUtmFromUrl(sourceUrl),
+  };
+
+  const hasCampaignContext = Object.values(campaignContext).some((value) => {
+    if (value == null) return false;
+    if (typeof value === 'object') return Object.keys(value).length > 0;
+    return String(value).trim() !== '';
+  });
+
+  return {
+    referralContext: referralCandidate,
+    campaignContext: hasCampaignContext ? campaignContext : null,
+    rawReferral: referralCandidate,
+    hasCampaignContext,
+  };
+}
+
+function detectLeadCreationOpportunity({ aiState = {}, propertyId = null, propertyCode = null, messageText = '', hasCampaignContext = false } = {}) {
+  const text = normalizeText(messageText || '');
+  const leadType = resolveLeadType(aiState);
+  const hasPropertyReference = !!(
+    propertyId ||
+    aiState.direct_property_reference ||
+    aiState.property_code ||
+    aiState.direct_property_code ||
+    propertyCode
+  );
+
+  const explicitCommercialSignals = !!(
+    aiState.wants_visit ||
+    aiState.asks_property_details ||
+    aiState.wants_human ||
+    aiState.shows_high_interest ||
+    text.includes('me interesa') ||
+    text.includes('quiero informacion') ||
+    text.includes('quiero información') ||
+    text.includes('quiero detalles') ||
+    text.includes('precio') ||
+    text.includes('disponible') ||
+    text.includes('visita')
+  );
+
+  if (!hasPropertyReference && !explicitCommercialSignals && !hasCampaignContext) {
+    return { shouldCreate: false, reason: 'ambiguous_or_non_commercial' };
+  }
+
+  if (!propertyId && hasPropertyReference) {
+    return { shouldCreate: false, reason: 'property_not_found_for_reference' };
+  }
+
+  if (!leadType && !propertyId) {
+    return { shouldCreate: false, reason: 'missing_lead_type' };
+  }
+
+  if (propertyId && explicitCommercialSignals) {
+    return { shouldCreate: true, reason: 'property_interest_detected' };
+  }
+
+  if (propertyId && hasCampaignContext) {
+    return { shouldCreate: true, reason: 'campaign_property_interest_detected' };
+  }
+
+  return { shouldCreate: false, reason: 'not_enough_context' };
+}
+
+function buildLeadContextFromConversation({
+  conversation = null,
+  aiState = {},
+  property = null,
+  propertyId = null,
+  propertyCode = null,
+  propertySlug = null,
+  contactId = null,
+  referralContext = null,
+  campaignContext = null,
+  rawReferral = null,
+} = {}) {
+  const normalizedPhone = normalizePhoneNumber(conversation?.phone) || conversation?.phone || null;
+
+  return {
+    normalizedPhone,
+    contactId: contactId || conversation?.contact_id || null,
+    conversationId: conversation?.id || null,
+    propertyId: propertyId || property?.id || aiState?.interested_property_id || null,
+    propertyCode: propertyCode || property?.listing_id || aiState?.property_code || aiState?.direct_property_code || null,
+    propertySlug: propertySlug || property?.slug || null,
+    userIntent: aiState?.intent_type || aiState?.lead_flow || null,
+    sourceChannel: conversation?.channel || null,
+    referralContext: referralContext || null,
+    campaignContext: campaignContext || null,
+    rawReferral: rawReferral || null,
+    needsName: !aiState?.full_name,
+    shouldAskForAdvisorContact: !!(
+      aiState?.direct_property_reference ||
+      aiState?.wants_visit ||
+      aiState?.asks_property_details ||
+      aiState?.shows_high_interest
+    ),
+  };
+}
+
 function buildNotesSummary(aiState = {}, property = null) {
   const parts = [];
   const leadType = resolveLeadType(aiState);
@@ -305,6 +507,10 @@ function buildDetailedNotesSummary({ aiState = {}, conversation = {}, property =
 
   if (referral && typeof referral === 'object') {
     parts.push(`Referral: ${JSON.stringify(referral)}.`);
+  }
+
+  if (aiState?.campaign_context && typeof aiState.campaign_context === 'object') {
+    parts.push(`Contexto de campaña: ${JSON.stringify(aiState.campaign_context)}.`);
   }
 
   const relevantSignals = summarizeRelevantMessageSignals(aiState);
@@ -439,6 +645,31 @@ async function findCompatibleLead(supabase, { contactId, leadType, operation, pr
   const { data, error } = await query;
   if (error) {
     console.error('LEAD_AUTOMATION_FIND_COMPATIBLE_ERROR', { error: error.message });
+    return null;
+  }
+
+  return data?.[0] || null;
+}
+
+async function findCompatibleLeadByPhoneAndProperty(supabase, { normalizedPhone, leadType, operation, propertyId }) {
+  if (!normalizedPhone || !propertyId) return null;
+
+  let query = supabase
+    .from('leads')
+    .select('*')
+    .eq('phone', normalizedPhone)
+    .eq('lead_type', leadType)
+    .eq('interested_property_id', propertyId)
+    .eq('is_active', true)
+    .eq('is_archived', false)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (operation) query = query.eq('interested_in_operation', operation);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('LEAD_AUTOMATION_FIND_COMPATIBLE_PHONE_ERROR', { error: error.message });
     return null;
   }
 
@@ -664,7 +895,7 @@ async function createOrReuseLeadFromConversation({
       property_id: propertyId || null,
     });
 
-    if (!contactId) {
+    if (!contactId && !propertyId) {
       logWarn(logger, 'LEAD_AUTOMATION_SKIPPED_MISSING_CONTACT', { conversation_id: conversationId });
       await saveConversationEvent(supabase, conversationId, 'lead_not_created_missing_contact', {
         reason: 'missing_contact',
@@ -678,6 +909,17 @@ async function createOrReuseLeadFromConversation({
         assignmentResult: null,
         reason: 'missing_contact',
       };
+    }
+
+    if (!contactId && propertyId) {
+      log(logger, 'LEAD_AUTOMATION_CONTACTLESS_PROPERTY_FLOW', {
+        conversation_id: conversationId,
+        property_id: propertyId,
+      });
+      await saveConversationEvent(supabase, conversationId, 'lead_contact_missing_but_property_interest_detected', {
+        property_id: propertyId,
+        reason: 'contact_missing_property_interest',
+      });
     }
 
     if (aiState?.direct_property_reference && (aiState.property_code || aiState.direct_property_code) && !propertyId) {
@@ -813,7 +1055,7 @@ async function createOrReuseLeadFromConversation({
       }
     }
 
-    if (!lead) {
+    if (!lead && contactId) {
       lead = await findCompatibleLead(supabase, {
         contactId,
         leadType,
@@ -829,6 +1071,29 @@ async function createOrReuseLeadFromConversation({
         await saveConversationEvent(supabase, conversationId, 'lead_reused', {
           lead_id: lead.id,
           reason: 'compatible_active_lead',
+          source: 'ai_agent',
+        });
+      }
+    }
+
+    if (!lead && !contactId) {
+      const normalizedConversationPhone = normalizePhoneNumber(conversation?.phone) || conversation?.phone || null;
+      lead = await findCompatibleLeadByPhoneAndProperty(supabase, {
+        normalizedPhone: normalizedConversationPhone,
+        leadType,
+        operation,
+        propertyId: propertyId || null,
+      });
+
+      if (lead) {
+        log(logger, 'LEAD_AUTOMATION_REUSE_BY_PHONE_PROPERTY', {
+          conversation_id: conversationId,
+          lead_id: lead.id,
+          property_id: propertyId || null,
+        });
+        await saveConversationEvent(supabase, conversationId, 'lead_reused', {
+          lead_id: lead.id,
+          reason: 'compatible_active_lead_by_phone_property',
           source: 'ai_agent',
         });
       }
@@ -1230,6 +1495,9 @@ async function createPautaAbandonedLead({
 module.exports = {
   calculateLeadScore,
   shouldTriggerHandoff,
+  detectLeadCreationOpportunity,
+  extractCampaignReferralContext,
+  buildLeadContextFromConversation,
   createOrReuseLeadFromConversation,
   createPautaAbandonedLead,
 };
