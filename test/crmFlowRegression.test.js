@@ -352,3 +352,133 @@ test('crm regression: existe lead previo de contacto pero nueva conversacion lo 
   assert.equal(result.wasCreated, false);
   assert.equal(db.leads.length, 1);
 });
+
+test('crm regression: no crea lead con imagen sola sin intencion', () => {
+  const decision = detectLeadCreationOpportunity({
+    aiState: { lead_flow: null },
+    messageText: '',
+    unifiedContext: {
+      sourceSignals: {
+        hasText: false,
+        hasCaption: false,
+        hasAudioTranscription: false,
+        hasImageVision: true,
+        hasLocation: false,
+        hasInteractive: false,
+        hasCampaignContext: false,
+        hasPropertyContext: false,
+      },
+      shouldCreateOrUpdateLead: false,
+      normalizedIntent: { category: 'unknown' },
+      crmAction: { reason: 'intent_not_actionable' },
+    },
+  });
+
+  assert.equal(decision.shouldCreate, false);
+  assert.equal(decision.reason, 'media_without_actionable_intent');
+});
+
+test('crm regression: ubicacion posterior actualiza lead existente sin duplicar', async () => {
+  const db = baseDb();
+  db.leads.push({
+    id: 'lead-offer-1',
+    contact_id: 'contact-1',
+    lead_type: 'supply',
+    interested_in_operation: 'sale',
+    interested_property_id: null,
+    is_active: true,
+    is_archived: false,
+  });
+  db.conversations[0].lead_id = 'lead-offer-1';
+
+  const supabase = buildMockSupabase(db);
+
+  const result = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'offer',
+      operation_type: 'sale',
+      location_text: 'Cumbres',
+      context_fusion: {
+        normalizedIntent: { category: 'sell_property', confidence: 0.9 },
+      },
+    },
+    contactId: 'contact-1',
+    propertyId: null,
+    property: null,
+    logger: console,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.wasCreated, false);
+  assert.equal(result.leadId, 'lead-offer-1');
+  assert.equal(db.leads.length, 1);
+});
+
+test('crm regression: audio repetido no duplica lead', async () => {
+  const db = baseDb();
+  const supabase = buildMockSupabase(db);
+
+  const payload = {
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'demand',
+      operation_type: 'rent',
+      location_text: 'Cumbres',
+      budget_max: 20000,
+      context_fusion: {
+        normalizedIntent: { category: 'rent_property', confidence: 0.9 },
+      },
+    },
+    contactId: 'contact-1',
+    propertyId: null,
+    property: null,
+    logger: console,
+  };
+
+  const first = await createOrReuseLeadFromConversation(payload);
+  db.conversations[0].lead_id = first.leadId;
+  const second = await createOrReuseLeadFromConversation(payload);
+
+  assert.equal(first.success, true);
+  assert.equal(second.success, true);
+  assert.equal(db.leads.length, 1);
+});
+
+test('crm regression: respeta asesor asignado en lead existente', async () => {
+  const db = baseDb();
+  db.leads.push({
+    id: 'lead-assigned-1',
+    contact_id: 'contact-1',
+    lead_type: 'demand',
+    interested_in_operation: 'sale',
+    interested_property_id: null,
+    assigned_agent_profile_id: 'agent-existing',
+    is_active: true,
+    is_archived: false,
+  });
+  db.conversations[0].lead_id = 'lead-assigned-1';
+
+  const supabase = buildMockSupabase(db);
+
+  const result = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'demand',
+      operation_type: 'sale',
+      asks_property_details: true,
+    },
+    contactId: 'contact-1',
+    propertyId: null,
+    property: null,
+    logger: console,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.leadId, 'lead-assigned-1');
+  assert.equal(result.assignedAgentProfileId, 'agent-existing');
+  assert.equal(db.leads.length, 1);
+});

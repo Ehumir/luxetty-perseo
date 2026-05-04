@@ -367,10 +367,42 @@ function extractCampaignReferralContext({ aiState = {}, referral = null, rawPayl
   };
 }
 
-function detectLeadCreationOpportunity({ aiState = {}, propertyId = null, propertyCode = null, messageText = '', hasCampaignContext = false } = {}) {
+function detectLeadCreationOpportunity({ aiState = {}, propertyId = null, propertyCode = null, messageText = '', hasCampaignContext = false, unifiedContext = null } = {}) {
   const text = normalizeText(messageText || '');
   if (aiState?.non_real_estate_or_provider) {
     return { shouldCreate: false, reason: 'non_real_estate_or_provider' };
+  }
+
+  if (unifiedContext?.normalizedIntent?.category === 'not_interested') {
+    return { shouldCreate: false, reason: 'user_not_interested' };
+  }
+
+  if (unifiedContext?.sourceSignals) {
+    const s = unifiedContext.sourceSignals;
+    const hasOnlyMediaContext = !!(
+      !s.hasText &&
+      !s.hasCaption &&
+      !s.hasAudioTranscription &&
+      (s.hasImageVision || s.hasLocation) &&
+      !s.hasInteractive &&
+      !s.hasCampaignContext &&
+      !s.hasPropertyContext
+    );
+
+    if (hasOnlyMediaContext && !unifiedContext?.shouldCreateOrUpdateLead) {
+      return { shouldCreate: false, reason: 'media_without_actionable_intent' };
+    }
+  }
+
+  if (unifiedContext?.shouldCreateOrUpdateLead === true) {
+    const leadType = unifiedContext?.crmAction?.leadType || null;
+    const fallbackLeadType = resolveLeadType(aiState);
+    if (leadType || fallbackLeadType || propertyId) {
+      return {
+        shouldCreate: true,
+        reason: unifiedContext?.crmAction?.reason || 'context_fusion_actionable',
+      };
+    }
   }
 
   const leadType = resolveLeadType(aiState);
@@ -414,6 +446,13 @@ function detectLeadCreationOpportunity({ aiState = {}, propertyId = null, proper
 
   if (propertyId && hasCampaignContext) {
     return { shouldCreate: true, reason: 'campaign_property_interest_detected' };
+  }
+
+  if (
+    unifiedContext?.normalizedIntent?.category === 'valuate_property' &&
+    unifiedContext?.normalizedIntent?.userAcceptedAdvisor
+  ) {
+    return { shouldCreate: true, reason: 'valuation_with_advisor_acceptance' };
   }
 
   return { shouldCreate: false, reason: 'not_enough_context' };

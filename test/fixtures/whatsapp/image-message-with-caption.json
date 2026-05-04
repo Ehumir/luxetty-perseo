@@ -1,0 +1,11 @@
+{
+  "from": "5218111111111",
+  "id": "wamid.TEST.IMG.002",
+  "timestamp": "1710000003",
+  "type": "image",
+  "image": {
+    "id": "media-img-qa-2",
+    "mime_type": "image/jpeg",
+    "caption": "Quiero vender esta casa en Cumbres"
+  }
+}

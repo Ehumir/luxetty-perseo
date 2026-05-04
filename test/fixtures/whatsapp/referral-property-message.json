@@ -1,0 +1,17 @@
+{
+  "from": "5218111111111",
+  "id": "wamid.TEST.REF.001",
+  "timestamp": "1710000010",
+  "type": "text",
+  "text": {
+    "body": "Me interesa"
+  },
+  "referral": {
+    "source_type": "ad",
+    "source_id": "src-qa-1",
+    "source_url": "https://facebook.com/ads/test?utm_source=meta&utm_campaign=camp-lux-a0453",
+    "campaign_id": "cmp-qa-1",
+    "ad_id": "ad-qa-1",
+    "headline": "Casa en venta en Cumbres"
+  }
+}

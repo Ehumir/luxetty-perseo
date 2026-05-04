@@ -11,6 +11,7 @@ const {
 const {
   buildInboundMessageContext,
   buildMediaAcknowledgementReply,
+  buildImageVisionContextPrefix,
 } = require('../conversation/mediaSignals');
 const { extractCampaignReferralContext } = require('../services/leadAutomation');
 
@@ -148,29 +149,24 @@ test('regression: referral/campana conserva contexto para orientacion', () => {
   assert.equal(extracted.campaignContext.ad_id, 'ad-22');
 });
 
-test('regression: imagen con analisis preliminar usa lenguaje transparente', () => {
+test('regression: imagen usa fallback transparente sin afirmar vision', () => {
   const inbound = buildInboundMessageContext(imageMessage({ id: 'img-qa-1' }));
-  inbound.media.ai_analysis = {
-    ok: true,
-    summary: 'Probable fachada de casa en estado medio',
-  };
 
   const reply = buildMediaAcknowledgementReply(inbound.media);
-  assert.match(reply, /revisi[oó]n autom[aá]tica preliminar/i);
-  assert.doesNotMatch(reply, /ya vi tu imagen|conclusi[oó]n definitiva/i);
-  assert.match(reply, /evitar suposiciones/i);
+  assert.match(reply, /recib[ií] la imagen/i);
+  assert.match(reply, /venderla, rentarla o est[aá]s buscando una propiedad similar/i);
+  assert.doesNotMatch(reply, /revisi[oó]n autom[aá]tica|ya vi tu imagen|conclusi[oó]n definitiva/i);
 });
 
 test('regression: imagen con falla de descarga mantiene fallback transparente', () => {
   const inbound = buildInboundMessageContext(imageMessage({ id: 'img-qa-2' }));
   inbound.media.media_downloaded = false;
   inbound.media.media_download_error = 'whatsapp_media_download_failed';
-  inbound.media.ai_analysis = null;
 
   const reply = buildMediaAcknowledgementReply(inbound.media);
-  assert.match(reply, /recib[ií] la imagen/i);
-  assert.match(reply, /confirmas|me confirmas/i);
-  assert.doesNotMatch(reply, /ya vi la imagen|an[aá]lisis completo/i);
+  assert.match(reply, /no pude descargarlo correctamente/i);
+  assert.match(reply, /reenviar|resumir en texto/i);
+  assert.doesNotMatch(reply, /ya vi la imagen|an[aá]lisis completo|escuch[eé] completo/i);
 });
 
 test('regression: audio y voice sin transcripcion no fingen escucha', () => {
@@ -195,7 +191,7 @@ test('regression: documento no afirma lectura documental completa', () => {
   const reply = buildMediaAcknowledgementReply(inbound.media);
 
   assert.match(reply, /recib[ií] el documento/i);
-  assert.match(reply, /no quiero darte una conclusi[oó]n legal/i);
+  assert.match(reply, /registrar como referencia/i);
   assert.doesNotMatch(reply, /ya le[ií] tu documento|documento analizado al 100/i);
 });
 
@@ -207,4 +203,51 @@ test('regression: interactive button/list y contacts generan texto util no robot
   assert.match(buttonInbound.messageText, /Quiero visita/i);
   assert.match(listInbound.messageText, /Ver rentas/i);
   assert.match(contactsInbound.messageText, /comparti[oó] contactos/i);
+});
+
+test('regression: imagen con caption de venta conserva intencion de captacion', () => {
+  const inbound = buildInboundMessageContext(
+    imageMessage({
+      id: 'img-cap-1',
+      caption: 'Quiero vender esta casa en Cumbres',
+    })
+  );
+
+  const signals = parseMessageSignals(inbound.messageText, { lead_flow: null }, inbound);
+  assert.equal(signals.lead_flow, 'offer');
+  assert.equal(signals.operation_type, 'sale');
+});
+
+test('regression: imagen despues de audio de venta mantiene continuidad de caso', () => {
+  const prefix = buildImageVisionContextPrefix(
+    {
+      image_vision: { ok: true },
+    },
+    {
+      lead_flow: 'offer',
+      intent_type: 'supply',
+      last_audio_transcription: 'quiero vender mi casa en cumbres',
+    }
+  );
+
+  assert.match(prefix, /referencia de la propiedad/i);
+  assert.match(prefix, /vender o rentar/i);
+});
+
+test('regression: imagen no concluyente no inventa precio ni colonia ni metros', () => {
+  const inbound = buildInboundMessageContext(imageMessage({ id: 'img-blurry-1' }));
+  inbound.media.image_vision = {
+    ok: true,
+    status: 'analyzed',
+    propertySignals: {
+      visibleAreaType: 'unknown',
+      probablePropertyType: 'unknown',
+      apparentCondition: 'no_concluyente',
+      confidence: 0.2,
+    },
+    suggestedFollowUp: '¿Buscas vender, rentar o comprar?',
+  };
+
+  const reply = buildMediaAcknowledgementReply(inbound.media);
+  assert.doesNotMatch(reply, /precio|colonia|metros|rec[aá]maras|ba[nñ]os/i);
 });

@@ -1,0 +1,12 @@
+{
+  "from": "5218111111111",
+  "id": "wamid.TEST.LOC.001",
+  "timestamp": "1710000007",
+  "type": "location",
+  "location": {
+    "latitude": 25.6751,
+    "longitude": -100.3185,
+    "name": "Cumbres",
+    "address": "Monterrey, Nuevo Leon"
+  }
+}

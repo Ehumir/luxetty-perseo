@@ -1,0 +1,10 @@
+{
+  "from": "5218111111111",
+  "id": "wamid.TEST.STK.001",
+  "timestamp": "1710000011",
+  "type": "sticker",
+  "sticker": {
+    "id": "media-sticker-qa-1",
+    "mime_type": "image/webp"
+  }
+}
