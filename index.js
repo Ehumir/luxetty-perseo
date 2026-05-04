@@ -41,6 +41,8 @@ const {
   buildInboundMessageContext,
   buildMediaAcknowledgementReply,
 } = require('./conversation/mediaSignals');
+const { resolveInboundMedia } = require('./services/whatsappMediaService');
+const { analyzePropertyImage } = require('./services/mediaAiAnalyzer');
 const { getNextStep } = require('./conversation/nextStep');
 const {
   getNextPlaybookStep,
@@ -156,6 +158,22 @@ function buildIntelligentHandoffReply() {
 function hasValidPropertySlug(property) {
   const slug = typeof property?.slug === 'string' ? property.slug.trim() : '';
   return !!slug && !/\s/.test(slug);
+}
+
+function mapInboundMessageType(messageType) {
+  if (messageType === 'text') return 'text';
+  if (messageType === 'audio') return 'audio';
+  if (messageType === 'voice') return 'voice';
+  if (messageType === 'image') return 'image';
+  if (messageType === 'document') return 'document';
+  if (messageType === 'video') return 'video';
+  if (messageType === 'sticker') return 'sticker';
+  if (messageType === 'location') return 'location';
+  if (messageType === 'contact' || messageType === 'contacts') return 'contact';
+  if (messageType === 'button' || messageType === 'interactive') return 'interactive';
+  if (messageType === 'referral') return 'referral';
+  if (messageType === 'unsupported' || messageType === 'unknown') return 'unsupported';
+  return 'system';
 }
 
 function isDirectPriceQuestion(text) {
@@ -1600,16 +1618,57 @@ app.post('/webhook', async (req, res) => {
       from = normalizePhoneNumber(rawFrom) || rawFrom;
 
       const inboundContext = buildInboundMessageContext(message);
-      const text = inboundContext.messageText;
-      const transcriptionText = inboundContext.transcriptionText;
+      let text = inboundContext.messageText;
+      let transcriptionText = inboundContext.transcriptionText;
+
+      const conversationRow = await getOrCreateConversation(from);
+      const conversationId = conversationRow?.id || null;
+      const previousAiState = normalizeAiState(conversationRow?.ai_state);
+
+      let mediaResolution = null;
+
+      if (inboundContext?.media && inboundContext.media.type !== 'text') {
+        mediaResolution = await resolveInboundMedia(message);
+
+        if (mediaResolution?.ok) {
+          inboundContext.media.attachment_detected_not_processed = false;
+          inboundContext.media.media_downloaded = true;
+          inboundContext.media.media_download_bytes = mediaResolution.download?.byteLength || null;
+          inboundContext.media.media_download_mime_type =
+            mediaResolution.download?.mimeType || mediaResolution.mimeType || inboundContext.media.mime_type || null;
+
+          if (messageType === 'image' && mediaResolution.download?.buffer) {
+            const imageAnalysis = await analyzePropertyImage({
+              buffer: mediaResolution.download.buffer,
+              mimeType: mediaResolution.download.mimeType || mediaResolution.mimeType || inboundContext.media.mime_type,
+              caption: inboundContext.media.caption || null,
+              conversationState: previousAiState,
+            });
+
+            inboundContext.media.ai_analysis = imageAnalysis;
+
+            if (imageAnalysis?.ok) {
+              inboundContext.media.attachment_detected_not_processed = false;
+              inboundContext.media.ai_visual_analysis_ok = true;
+
+              if (!cleanSpaces(inboundContext.media.caption || '') && cleanSpaces(imageAnalysis.summary || '')) {
+                text = `${text} Resumen visual preliminar: ${imageAnalysis.summary}`;
+              }
+            } else {
+              inboundContext.media.ai_visual_analysis_ok = false;
+            }
+          }
+        } else {
+          inboundContext.media.media_downloaded = false;
+          inboundContext.media.media_download_error = mediaResolution?.error?.message || mediaResolution?.reason || null;
+        }
+      }
 
       console.log('--- NUEVO MENSAJE ---');
       console.log('From:', from);
       console.log('Tipo:', messageType);
       console.log('Texto:', text);
 
-      const conversationRow = await getOrCreateConversation(from);
-      const conversationId = conversationRow?.id || null;
       const normalizedText = normalizeText(text);
 
       if (rawFrom && from && rawFrom !== from) {
@@ -1623,28 +1682,7 @@ app.post('/webhook', async (req, res) => {
         conversationId,
         direction: 'inbound',
         senderType: 'lead',
-        messageType:
-          messageType === 'text'
-            ? 'text'
-            : messageType === 'audio'
-            ? 'audio'
-            : messageType === 'voice'
-            ? 'voice'
-            : messageType === 'image'
-            ? 'image'
-            : messageType === 'document'
-            ? 'document'
-            : messageType === 'video'
-            ? 'video'
-            : messageType === 'sticker'
-            ? 'sticker'
-            : messageType === 'location'
-            ? 'location'
-            : messageType === 'contact'
-            ? 'contact'
-            : messageType === 'unsupported'
-            ? 'unsupported'
-            : 'system',
+        messageType: mapInboundMessageType(messageType),
         messageText: text,
         transcriptionText,
         metaMessageId,
@@ -1674,7 +1712,6 @@ app.post('/webhook', async (req, res) => {
         console.error('[referral] unexpected persist error', error);
       }
 
-      const previousAiState = normalizeAiState(conversationRow?.ai_state);
       const incomingSignals = parseMessageSignals(text, previousAiState, inboundContext);
       const signals = incomingSignals;
 
@@ -1693,6 +1730,18 @@ app.post('/webhook', async (req, res) => {
           property_image_candidate: !!inboundContext.media.property_image_candidate,
           legal_or_property_document_candidate: !!inboundContext.media.legal_or_property_document_candidate,
           has_transcription: !!inboundContext.transcriptionText,
+          media_downloaded: !!inboundContext.media.media_downloaded,
+          media_download_error: inboundContext.media.media_download_error || null,
+          media_download_bytes: inboundContext.media.media_download_bytes || null,
+          media_download_mime_type: inboundContext.media.media_download_mime_type || null,
+          media_resolution_reason: mediaResolution?.reason || null,
+          media_resolution_stage: mediaResolution?.error?.stage || null,
+          image_analysis_ok: !!inboundContext.media.ai_analysis?.ok,
+          image_analysis_kind: inboundContext.media.ai_analysis?.kind || null,
+          image_analysis_confidence:
+            inboundContext.media.ai_analysis?.confidence != null
+              ? Number(inboundContext.media.ai_analysis.confidence)
+              : null,
         });
       }
 
@@ -1975,6 +2024,17 @@ app.post('/webhook', async (req, res) => {
       nextAiState.last_media_unsupported = !!inboundContext.media.unsupported_media;
       nextAiState.property_image_candidate = !!inboundContext.media.property_image_candidate;
       nextAiState.legal_or_property_document_candidate = !!inboundContext.media.legal_or_property_document_candidate;
+      nextAiState.last_media_downloaded = !!inboundContext.media.media_downloaded;
+      nextAiState.last_media_download_error = inboundContext.media.media_download_error || null;
+      nextAiState.last_media_download_bytes = inboundContext.media.media_download_bytes || null;
+      nextAiState.last_media_download_mime_type = inboundContext.media.media_download_mime_type || null;
+      nextAiState.last_image_analysis_ok = !!inboundContext.media.ai_analysis?.ok;
+      nextAiState.last_image_analysis_kind = inboundContext.media.ai_analysis?.kind || null;
+      nextAiState.last_image_analysis_confidence =
+        inboundContext.media.ai_analysis?.confidence != null
+          ? Number(inboundContext.media.ai_analysis.confidence)
+          : null;
+      nextAiState.last_image_analysis_summary = inboundContext.media.ai_analysis?.summary || null;
     }
 
     if (inboundContext?.media?.audio_has_transcription && transcriptionText) {

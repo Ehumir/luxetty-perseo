@@ -118,3 +118,36 @@ test('I) documento con termino legal se marca legal_sensitive desde caption/file
   const signals = parseMessageSignals(inbound.messageText, { lead_flow: 'offer' }, inbound);
   assert.equal(signals.legal_sensitive, true);
 });
+
+test('J) interactive y button traducen opcion seleccionada a texto util', () => {
+  const interactiveInbound = buildInboundMessageContext({
+    type: 'interactive',
+    interactive: {
+      button_reply: { id: 'btn-visita', title: 'Quiero agendar visita' },
+    },
+  });
+
+  const buttonInbound = buildInboundMessageContext({
+    type: 'button',
+    button: { payload: 'asesor_humano' },
+  });
+
+  assert.match(interactiveInbound.messageText, /agendar visita/i);
+  assert.match(buttonInbound.messageText, /asesor_humano/i);
+});
+
+test('K) imagen con analisis preliminar usa ack transparente', () => {
+  const inbound = buildInboundMessageContext({
+    type: 'image',
+    image: { id: 'img-2' },
+  });
+
+  inbound.media.ai_analysis = {
+    ok: true,
+    summary: 'Parece fachada de casa residencial en estado conservado',
+  };
+
+  const reply = buildMediaAcknowledgementReply(inbound.media);
+  assert.match(reply, /revisi[oó]n autom[aá]tica preliminar/i);
+  assert.match(reply, /evitar suposiciones/i);
+});
