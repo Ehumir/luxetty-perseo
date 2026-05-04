@@ -98,13 +98,23 @@ function getPlaybookAwaitingField(step) {
 }
 
 function buildPlaybookReply(step, state = {}) {
+  const operationType = state.operation_type;
+
   if (step === 'ask_budget') return '¿Cuál es tu presupuesto aproximado?';
   if (step === 'ask_zone') return '¿En qué zona te interesa buscar?';
   if (step === 'offer_options_or_agent') return 'Con esa información puedo orientarte mejor. ¿Prefieres ver opciones disponibles o que un asesor de Luxetty te contacte?';
 
-  if (step === 'ask_property_type') return '¿Qué tipo de propiedad deseas vender o poner en renta?';
+  if (step === 'ask_property_type') {
+    if (operationType === 'sale') return '¿Qué tipo de propiedad deseas vender?';
+    if (operationType === 'rent') return '¿Qué tipo de propiedad deseas poner en renta?';
+    return '¿Qué tipo de propiedad deseas vender o poner en renta?';
+  }
   if (step === 'ask_location') return '¿En qué zona se encuentra la propiedad?';
-  if (step === 'ask_price_expectation') return '¿En cuánto te gustaría venderla o rentarla aproximadamente?';
+  if (step === 'ask_price_expectation') {
+    if (operationType === 'sale') return '¿En cuánto te gustaría venderla aproximadamente?';
+    if (operationType === 'rent') return '¿En cuánto te gustaría rentarla aproximadamente?';
+    return '¿En cuánto te gustaría venderla o rentarla aproximadamente?';
+  }
   if (step === 'offer_agent') return 'Con esos datos puedo avanzar. ¿Prefieres que un asesor de Luxetty revise tu propiedad contigo?';
 
   if (step === 'confirm_interest') return 'Entiendo que te interesa esta propiedad. ¿Deseas verla o tienes alguna pregunta puntual?';

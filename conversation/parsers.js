@@ -548,7 +548,12 @@ function detectComplaintFollowup(message) {
     text.includes('ya dejé mis datos') ||
     text.includes('nadie me llamo') ||
     text.includes('nadie me llamó') ||
-    text.includes('me dejaron en visto')
+    text.includes('me dejaron en visto') ||
+    text.includes('no entendiste') ||
+    text.includes('no me entendiste') ||
+    text.includes('no entendio') ||
+    text.includes('no entendió') ||
+    text.includes('no captaste')
   );
 }
 
