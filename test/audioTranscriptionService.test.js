@@ -72,3 +72,20 @@ test('transcribeAudio handles provider failure transparently', async () => {
   assert.equal(result.status, 'failed');
   assert.equal(result.error_code, 'provider_timeout');
 });
+
+test('transcribeAudio accepts mime type with codec parameters', async () => {
+  const result = await transcribeAudio({
+    fileBuffer: Buffer.from('fake-audio-binary'),
+    mimeType: 'audio/ogg; codecs=opus',
+    mediaId: 'aud-4',
+    transcriber: async () => ({
+      text: 'quiero vender mi casa',
+      confidence: 0.8,
+      language: 'es',
+    }),
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.status, 'transcribed');
+  assert.equal(result.transcription_text, 'quiero vender mi casa');
+});

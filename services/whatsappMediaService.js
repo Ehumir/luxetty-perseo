@@ -9,6 +9,7 @@ const GRAPH_VERSION = GRAPH_API_VERSION || 'v19.0';
 const GRAPH_BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_MAX_BYTES = Number(MEDIA_DOWNLOAD_MAX_BYTES || 15 * 1024 * 1024);
+const DEBUG_MEDIA_PIPELINE = String(process.env.DEBUG_MEDIA_PIPELINE || '').toLowerCase() === 'true';
 
 const DOWNLOADABLE_TYPES = new Set(['image', 'audio', 'voice', 'document']);
 const ALLOWED_MIME_TYPES = new Set([
@@ -23,6 +24,44 @@ const ALLOWED_MIME_TYPES = new Set([
   'audio/amr',
   'application/pdf',
 ]);
+
+function normalizeMimeType(mimeType = '') {
+  return String(mimeType || '')
+    .toLowerCase()
+    .split(';')[0]
+    .trim();
+}
+
+function sanitizeErrorMessage(message = '') {
+  const text = String(message || '');
+  const withoutBearer = text.replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]');
+  return withoutBearer.replace(/https?:\/\/\S+/gi, '[URL_REDACTED]').slice(0, 240);
+}
+
+function debugMediaLog(label, payload = {}) {
+  if (!DEBUG_MEDIA_PIPELINE) return;
+  try {
+    console.log(`[DEBUG_MEDIA_PIPELINE] ${label}`, payload);
+  } catch (_) {
+    // no-op
+  }
+}
+
+function chooseEffectiveMimeType(metadataMimeType = '', responseContentType = '', descriptorMimeType = '') {
+  const normalizedMetadata = normalizeMimeType(metadataMimeType);
+  const normalizedResponse = normalizeMimeType(responseContentType);
+  const normalizedDescriptor = normalizeMimeType(descriptorMimeType);
+
+  if (normalizedResponse && normalizedResponse !== 'application/octet-stream') {
+    return normalizedResponse;
+  }
+
+  if (normalizedMetadata) {
+    return normalizedMetadata;
+  }
+
+  return normalizedDescriptor || normalizedResponse || null;
+}
 
 function sanitizeFilename(name = '') {
   const text = String(name || '').trim();
@@ -172,7 +211,7 @@ function getInboundMediaDescriptor(message = {}) {
 function isAllowedDownload(descriptor = {}, options = {}) {
   const allowedMimeTypes = options.allowedMimeTypes || ALLOWED_MIME_TYPES;
   const mediaType = descriptor?.mediaType || null;
-  const mimeType = (descriptor?.mimeType || '').toLowerCase();
+  const mimeType = normalizeMimeType(descriptor?.mimeType || '');
 
   if (!DOWNLOADABLE_TYPES.has(mediaType)) {
     return { allowed: false, reason: 'skipped_unsupported' };
@@ -305,13 +344,23 @@ async function resolveInboundMedia(message = {}, options = {}) {
     const metadata = await getWhatsAppMediaMetadata(descriptor.mediaId, options);
     const mediaUrl = metadata?.url || null;
     const metadataMimeType = metadata?.mime_type || descriptor.mimeType || null;
+    const normalizedMetadataMimeType = normalizeMimeType(metadataMimeType);
 
-    if (metadataMimeType && !ALLOWED_MIME_TYPES.has(String(metadataMimeType).toLowerCase())) {
+    debugMediaLog('metadata_resolved', {
+      media_type: descriptor.mediaType || null,
+      media_id_present: !!descriptor.mediaId,
+      media_id: descriptor.mediaId || null,
+      metadata_mime_original: metadataMimeType || null,
+      normalized_mime: normalizedMetadataMimeType || null,
+      media_url_resolved: !!mediaUrl,
+    });
+
+    if (normalizedMetadataMimeType && !ALLOWED_MIME_TYPES.has(normalizedMetadataMimeType)) {
       return {
         success: false,
         status: 'skipped_unsupported_mime',
         media_id: descriptor.mediaId,
-        mime_type: metadataMimeType,
+        mime_type: normalizedMetadataMimeType,
         buffer: null,
         size_bytes: null,
         error_code: 'skipped_unsupported_mime',
@@ -341,23 +390,52 @@ async function resolveInboundMedia(message = {}, options = {}) {
     }
 
     const download = await downloadWhatsAppMedia(mediaUrl, options);
+    const responseContentType = download.mimeType || null;
+    const effectiveMimeType = chooseEffectiveMimeType(
+      metadataMimeType,
+      responseContentType,
+      descriptor.mimeType
+    );
+
+    debugMediaLog('download_resolved', {
+      media_type: descriptor.mediaType || null,
+      media_id: descriptor.mediaId || null,
+      metadata_mime_original: metadataMimeType || null,
+      response_content_type_original: responseContentType,
+      normalized_mime: effectiveMimeType,
+      download_status: 'downloaded',
+      buffer_size: Number(download.byteLength || 0) || 0,
+    });
 
     return {
       success: true,
       status: 'downloaded',
       media_id: descriptor.mediaId,
-      mime_type: download.mimeType || metadataMimeType,
+      mime_type: effectiveMimeType,
       buffer: download.buffer,
       size_bytes: Number(download.byteLength || 0) || null,
       error_code: null,
       error_message: null,
       downloaded_at: now,
       download_status: 'downloaded',
+      metadata_mime_original: metadataMimeType || null,
+      response_content_type_original: responseContentType,
+      normalized_mime: effectiveMimeType,
+      media_url_resolved: !!mediaUrl,
       ...descriptor,
       metadata,
       download,
     };
   } catch (err) {
+    const sanitizedError = sanitizeErrorMessage(err?.context?.message || err?.message || 'Unknown media resolution error');
+    debugMediaLog('download_failed', {
+      media_type: descriptor.mediaType || null,
+      media_id: descriptor.mediaId || null,
+      download_status: 'failed',
+      error_code: err?.code || 'resolve_media_failed',
+      error_message: sanitizedError,
+    });
+
     return {
       success: false,
       status: 'failed',
@@ -366,7 +444,7 @@ async function resolveInboundMedia(message = {}, options = {}) {
       buffer: null,
       size_bytes: null,
       error_code: err?.code || 'resolve_media_failed',
-      error_message: err?.context?.message || err?.message || 'Unknown media resolution error',
+      error_message: sanitizedError,
       downloaded_at: null,
       download_status: 'failed',
       ...descriptor,

@@ -25,7 +25,7 @@ const MIME_EXTENSION = {
 };
 
 function normalizeMimeType(mimeType = '') {
-  return cleanSpaces(String(mimeType || '').toLowerCase());
+  return cleanSpaces(String(mimeType || '').toLowerCase().split(';')[0]);
 }
 
 function clampConfidence(value) {

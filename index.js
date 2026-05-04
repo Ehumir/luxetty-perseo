@@ -87,6 +87,7 @@ const { isGreetingOnly } = require('./utils/messageChecks');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+const DEBUG_MEDIA_PIPELINE = String(process.env.DEBUG_MEDIA_PIPELINE || '').toLowerCase() === 'true';
 
 console.log('ENV CHECK:', {
   SUPABASE_URL: !!process.env.SUPABASE_URL,
@@ -103,6 +104,21 @@ const locationCatalog = {
   rawNames: [],
   normalizedMap: new Map(),
 };
+
+function sanitizeDebugErrorMessage(message = '') {
+  const text = String(message || '');
+  const withoutBearer = text.replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]');
+  return withoutBearer.replace(/https?:\/\/\S+/gi, '[URL_REDACTED]').slice(0, 240);
+}
+
+function logDebugMediaPipeline(label, payload = {}) {
+  if (!DEBUG_MEDIA_PIPELINE) return;
+  try {
+    console.log(`[DEBUG_MEDIA_PIPELINE] ${label}`, payload);
+  } catch (_) {
+    // no-op
+  }
+}
 
 function isClosureCheck(text) {
   const t = normalizeText(text);
@@ -1700,6 +1716,11 @@ app.post('/webhook', async (req, res) => {
       const inboundContext = buildInboundMessageContext(message);
       let text = inboundContext.messageText;
       let transcriptionText = inboundContext.transcriptionText;
+      let finalInputTextSource = text ? 'message_text' : 'empty';
+      let transcriptionAttempted = false;
+      let transcriptionSuccess = false;
+      let transcriptionErrorCode = null;
+      let transcriptionErrorMessage = null;
 
       const conversationRow = await getOrCreateConversation(from);
       const conversationId = conversationRow?.id || null;
@@ -1709,6 +1730,7 @@ app.post('/webhook', async (req, res) => {
       const signalText = extractInboundSignalText(message);
       if (signalText) {
         text = cleanSpaces(signalText);
+        finalInputTextSource = 'signal_text';
       }
 
       const inboundMediaMetadata = extractInboundMediaMetadata(message, {
@@ -1756,6 +1778,7 @@ app.post('/webhook', async (req, res) => {
           Buffer.isBuffer(mediaResolution?.buffer);
 
         if (canAttemptAudioTranscription) {
+          transcriptionAttempted = true;
           const audioTranscription = await transcribeAudio({
             fileBuffer: mediaResolution.buffer,
             mimeType: mediaResolution.mime_type || inboundContext.media.mime_type,
@@ -1782,8 +1805,10 @@ app.post('/webhook', async (req, res) => {
           };
 
           if (audioTranscription.success && audioTranscription.transcription_text) {
+            transcriptionSuccess = true;
             transcriptionText = audioTranscription.transcription_text;
             text = audioTranscription.transcription_text;
+            finalInputTextSource = 'audio_transcription';
             inboundContext.transcriptionText = transcriptionText;
             inboundContext.media.audio_has_transcription = true;
             inboundContext.media.audio_without_transcription = false;
@@ -1797,6 +1822,9 @@ app.post('/webhook', async (req, res) => {
               inboundContext.media.audio_transcription_duplicate = true;
             }
           } else {
+            transcriptionSuccess = false;
+            transcriptionErrorCode = audioTranscription.error_code || null;
+            transcriptionErrorMessage = sanitizeDebugErrorMessage(audioTranscription.error_message || '');
             inboundContext.media.audio_transcription_success = false;
             inboundContext.media.audio_without_transcription = true;
             inboundContext.media.audio_transcription_failed = true;
@@ -2702,6 +2730,7 @@ app.post('/webhook', async (req, res) => {
     await maybeGenerateAiSummary(conversationId, nextAiState, matchedProperties);
 
     let reply = null;
+    let fallbackReason = null;
 
     function shouldAskField(state, fieldName) {
       if (!state) return false;
@@ -2725,10 +2754,13 @@ app.post('/webhook', async (req, res) => {
     }
 
     if (inboundContext?.media?.audio_transcription_duplicate) {
+      fallbackReason = 'audio_transcription_duplicate';
       reply = 'Gracias, ya tengo ese punto principal de tu audio. Para avanzar sin repetir información, ¿prefieres que te conecte con un asesor o seguimos afinando detalles aquí?';
     } else if (inboundContext?.media?.audio_low_confidence) {
+      fallbackReason = 'audio_low_confidence';
       reply = 'Gracias, recibí tu audio y pude transcribir una parte. Para evitar errores, ¿me confirmas en una frase el dato más importante? Si prefieres, también puedo pedir que un asesor te contacte.';
     } else if (inboundContext?.media?.audio_without_transcription) {
+      fallbackReason = 'audio_without_transcription';
       reply = buildMediaAcknowledgementReply(inboundContext.media);
     } else if (incomingSignals.non_real_estate_or_provider) {
       reply = 'Gracias por tu mensaje. Este canal esta enfocado en compra, renta y venta de propiedades. Si tu solicitud es de otro tipo, con gusto la canalizo por la via interna correspondiente.';
@@ -2962,6 +2994,7 @@ app.post('/webhook', async (req, res) => {
         : null;
 
       if (mediaReply) {
+        fallbackReason = 'media_acknowledgement';
         reply = mediaReply;
       }
 
@@ -3013,6 +3046,7 @@ ${locationCatalog.rawNames.join(', ')}
 
     if (!reply) {
       reply = await buildFallbackOpenAIReply(text, nextAiState, changeType);
+      fallbackReason = fallbackReason || 'fallback_openai_reply';
     }
 
     const getReplyText = (value) => (Array.isArray(value) ? value.join('\n\n') : value);
@@ -3070,6 +3104,7 @@ ${locationCatalog.rawNames.join(', ')}
       nextAiState.lead_flow !== 'demand'
     ) {
       reply = 'Entendido. ¿Puedes darme un poco más de detalle para orientarte mejor?';
+      fallbackReason = 'anti_loop_same_reply';
     }
 
     const updatedMessages = [
@@ -3130,6 +3165,43 @@ ${locationCatalog.rawNames.join(', ')}
           });
         }
       }
+    }
+
+    if (inboundContext?.media && inboundContext.media.type !== 'text') {
+      const metadataMimeOriginal =
+        mediaResolution?.metadata_mime_original ||
+        inboundMediaMetadata?.mime_type ||
+        inboundContext?.media?.mime_type ||
+        null;
+      const responseContentTypeOriginal = mediaResolution?.response_content_type_original || null;
+      const normalizedMime =
+        mediaResolution?.normalized_mime ||
+        mediaResolution?.mime_type ||
+        inboundContext?.media?.media_download_mime_type ||
+        inboundContext?.media?.mime_type ||
+        null;
+      const bufferSize =
+        mediaResolution?.size_bytes ||
+        (Buffer.isBuffer(mediaResolution?.buffer) ? mediaResolution.buffer.length : 0) ||
+        0;
+
+      logDebugMediaPipeline('final', {
+        media_type: inboundContext?.media?.type || messageType || null,
+        media_id_present: !!(inboundMediaMetadata?.media_id || mediaResolution?.media_id),
+        media_id: inboundMediaMetadata?.media_id || mediaResolution?.media_id || null,
+        metadata_mime_original: metadataMimeOriginal,
+        response_content_type_original: responseContentTypeOriginal,
+        normalized_mime: normalizedMime,
+        media_url_resolved: mediaResolution?.media_url_resolved === true,
+        download_status: mediaResolution?.download_status || 'not_attempted',
+        buffer_size: bufferSize,
+        transcription_attempted: transcriptionAttempted,
+        transcription_success: transcriptionSuccess,
+        transcription_error_code: transcriptionErrorCode,
+        transcription_error_message: transcriptionErrorMessage,
+        final_input_text_source: finalInputTextSource,
+        fallback_reason: fallbackReason,
+      });
     }
 
     const outboundResult = await saveOutboundMessages({
