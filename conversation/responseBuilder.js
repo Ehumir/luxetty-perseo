@@ -384,7 +384,13 @@ function buildOfferReply(state, changeType, context = {}) {
   const signals = context?.signals || {};
 
   if (state.complaint_followup || signals.complaint_followup) {
-    return 'Tienes razon, gracias por comentarlo. Pauso lo comercial para retomar tu caso con prioridad y seguimiento humano. Para ubicarlo rapido, ¿me confirmas tu nombre y si era por compra, renta o venta?';
+    const operationPrompt =
+      state.operation_type === 'sale'
+        ? 'venta'
+        : state.operation_type === 'rent'
+        ? 'renta'
+        : 'compra, renta o venta';
+    return `Tienes razon, gracias por comentarlo. Pauso lo comercial para retomar tu caso con prioridad y seguimiento humano. Para ubicarlo rapido, ¿me confirmas tu nombre y si era por ${operationPrompt}?`;
   }
 
   if (state.sell_buy_bridge || signals.sell_buy_bridge) {

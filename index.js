@@ -2729,7 +2729,7 @@ app.post('/webhook', async (req, res) => {
     } else if (inboundContext?.media?.audio_low_confidence) {
       reply = 'Gracias, recibí tu audio y pude transcribir una parte. Para evitar errores, ¿me confirmas en una frase el dato más importante? Si prefieres, también puedo pedir que un asesor te contacte.';
     } else if (inboundContext?.media?.audio_without_transcription) {
-      reply = buildMediaAcknowledgementReply(inboundContext.media);
+      reply = buildMediaAcknowledgementReply(inboundContext.media, { aiState: nextAiState });
     } else if (incomingSignals.non_real_estate_or_provider) {
       reply = 'Gracias por tu mensaje. Este canal esta enfocado en compra, renta y venta de propiedades. Si tu solicitud es de otro tipo, con gusto la canalizo por la via interna correspondiente.';
       nextAiState.lead_flow = null;
@@ -2737,7 +2737,13 @@ app.post('/webhook', async (req, res) => {
       nextAiState.awaiting_field = null;
     } else if (incomingSignals.complaint_followup) {
       nextAiState.wants_human = true;
-      reply = 'Tienes razon, gracias por decirmelo. Te apoyo a retomarlo con prioridad y seguimiento humano. Para ubicar tu caso rapido, ¿me confirmas tu nombre y si era por compra, renta o venta?';
+      const complaintOperationPrompt =
+        nextAiState.operation_type === 'sale'
+          ? 'venta'
+          : nextAiState.operation_type === 'rent'
+          ? 'renta'
+          : 'compra, renta o venta';
+      reply = `Tienes razon, gracias por decirmelo. Te apoyo a retomarlo con prioridad y seguimiento humano. Para ubicar tu caso rapido, ¿me confirmas tu nombre y si era por ${complaintOperationPrompt}?`;
       if (!nextAiState.full_name) {
         nextAiState.awaiting_field = 'full_name';
       }
@@ -2909,7 +2915,7 @@ app.post('/webhook', async (req, res) => {
         previousAiState,
         nextAiState
       )
-        ? buildMediaAcknowledgementReply(inboundContext?.media)
+        ? buildMediaAcknowledgementReply(inboundContext?.media, { aiState: nextAiState })
         : null;
 
       if (mediaReply) {
@@ -2958,7 +2964,7 @@ app.post('/webhook', async (req, res) => {
         previousAiState,
         nextAiState
       )
-        ? buildMediaAcknowledgementReply(inboundContext?.media)
+        ? buildMediaAcknowledgementReply(inboundContext?.media, { aiState: nextAiState })
         : null;
 
       if (mediaReply) {
@@ -3062,12 +3068,19 @@ ${locationCatalog.rawNames.join(', ')}
     // 🔒 Anti-loop: evitar repetir exactamente la misma respuesta
     const lastMessages = conversations.get(from) || [];
     const lastAssistantMessage = [...lastMessages].reverse().find(m => m.role === 'assistant');
+    const shouldPreserveContextualReply =
+      !!incomingSignals.complaint_followup ||
+      !!inboundContext?.media?.audio_without_transcription ||
+      !!inboundContext?.media?.media_download_error ||
+      !!inboundContext?.media?.audio_low_confidence ||
+      !!inboundContext?.media?.audio_transcription_duplicate;
 
 
     if (
       lastAssistantMessage &&
       lastAssistantMessage.content === reply &&
-      nextAiState.lead_flow !== 'demand'
+      nextAiState.lead_flow !== 'demand' &&
+      !shouldPreserveContextualReply
     ) {
       reply = 'Entendido. ¿Puedes darme un poco más de detalle para orientarte mejor?';
     }

@@ -336,8 +336,41 @@ function buildInboundMessageContext(message = {}) {
   };
 }
 
-function buildMediaAcknowledgementReply(media = {}) {
+function resolveMediaContext(aiState = {}) {
+  if (!aiState || typeof aiState !== 'object') {
+    return { operationHint: null, zoneHint: '' };
+  }
+
+  const zone = cleanSpaces(aiState.location_text || '');
+  const zoneHint = zone ? ` en ${zone}` : '';
+
+  if (aiState.lead_flow === 'offer' && aiState.operation_type === 'sale') {
+    return { operationHint: 'venta de tu propiedad', zoneHint };
+  }
+
+  if (aiState.lead_flow === 'offer' && aiState.operation_type === 'rent') {
+    return { operationHint: 'renta de tu propiedad', zoneHint };
+  }
+
+  if (aiState.lead_flow === 'demand' && aiState.operation_type === 'sale') {
+    return { operationHint: 'compra de propiedad', zoneHint };
+  }
+
+  if (aiState.lead_flow === 'demand' && aiState.operation_type === 'rent') {
+    return { operationHint: 'busqueda de renta', zoneHint };
+  }
+
+  return { operationHint: null, zoneHint };
+}
+
+function buildMediaAcknowledgementReply(media = {}, options = {}) {
+  const { operationHint, zoneHint } = resolveMediaContext(options?.aiState || {});
+
   if (media?.media_download_error) {
+    if (operationHint) {
+      return `Gracias, recibí tu archivo, pero hoy no pude descargarlo correctamente. Para no frenar la ${operationHint}${zoneHint}, ¿me lo puedes reenviar o resumir en texto el punto principal?`;
+    }
+
     return 'Gracias, recibí tu archivo, pero hoy no pude descargarlo correctamente. ¿Me lo puedes reenviar o resumir en texto el punto principal para continuar sin retraso?';
   }
 
