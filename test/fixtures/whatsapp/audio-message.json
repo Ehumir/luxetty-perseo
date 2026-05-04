@@ -1,0 +1,10 @@
+{
+  "from": "5218111111111",
+  "id": "wamid.TEST.AUD.001",
+  "timestamp": "1710000004",
+  "type": "audio",
+  "audio": {
+    "id": "media-aud-qa-1",
+    "mime_type": "audio/ogg"
+  }
+}

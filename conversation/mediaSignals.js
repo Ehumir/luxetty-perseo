@@ -71,6 +71,86 @@ function extractInteractiveText(interactive = {}) {
   return cleanSpaces(interactive?.body || '');
 }
 
+function mapAreaTypeToSpanish(areaType = null) {
+  const mapping = {
+    fachada: 'fachada',
+    sala: 'sala',
+    comedor: 'comedor',
+    cocina: 'cocina',
+    recamara: 'recamara',
+    bano: 'bano',
+    patio: 'patio',
+    cochera: 'cochera',
+    terraza: 'terraza',
+    terreno: 'terreno',
+    amenidad: 'amenidad',
+    documento: 'documento',
+  };
+
+  return mapping[areaType] || null;
+}
+
+function mapPropertyTypeToSpanish(propertyType = null) {
+  const mapping = {
+    casa: 'casa',
+    departamento: 'departamento',
+    terreno: 'terreno',
+    local: 'local comercial',
+    oficina: 'oficina',
+    bodega: 'bodega',
+    interior: 'espacio interior',
+    exterior: 'espacio exterior',
+  };
+
+  return mapping[propertyType] || null;
+}
+
+function buildImageVisionReply(media = {}) {
+  const vision = media?.image_vision || null;
+
+  if (!vision) return null;
+
+  if (vision.ok) {
+    const confidence = Number(vision?.propertySignals?.confidence ?? 0);
+    const areaType = mapAreaTypeToSpanish(vision?.propertySignals?.visibleAreaType || null);
+    const propertyType = mapPropertyTypeToSpanish(vision?.propertySignals?.probablePropertyType || null);
+    const followUp = cleanSpaces(vision?.suggestedFollowUp || '');
+
+    if (!areaType || confidence < 0.45) {
+      return followUp
+        ? `Gracias, ya pude revisar la imagen. No alcanzo a identificar con claridad suficiente la propiedad, pero puedo ayudarte igual. ${followUp}`
+        : 'Gracias, ya pude revisar la imagen. No alcanzo a identificar con claridad suficiente la propiedad, pero puedo ayudarte igual. ¿Me confirmas si quieres venderla, rentarla o buscar una parecida?';
+    }
+
+    if (areaType === 'fachada' || areaType === 'exterior') {
+      return `Gracias, ya pude revisar la imagen. Por lo visible, parece una ${areaType} de ${propertyType || 'propiedad'}. Para orientarte bien, necesito confirmar dos datos: ¿buscas venderla o rentarla, y en que colonia esta?`;
+    }
+
+    return `Gracias, ya revise la imagen. Se aprecia un ${areaType}${propertyType ? ` de ${propertyType}` : ''}, aparentemente en condicion habitable, aunque con una foto no puedo confirmar caracteristicas completas. ¿Esta propiedad la quieres vender, rentar o estas buscando algo similar?`;
+  }
+
+  if (vision.status === 'unsupported_mime') {
+    return 'Recibi la imagen, pero este tipo de archivo no esta habilitado para analisis visual en este momento. Para ayudarte sin perder tiempo, ¿me confirmas si buscas venderla, rentarla o estas buscando una propiedad similar?';
+  }
+
+  return 'Recibi la imagen, pero no pude analizarla con suficiente claridad desde aqui. Para ayudarte sin perder tiempo, ¿me confirmas si buscas venderla, rentarla o estas buscando una propiedad similar?';
+}
+
+function buildImageVisionContextPrefix(media = {}, aiState = {}) {
+  const vision = media?.image_vision || null;
+  if (!vision?.ok) return null;
+
+  if (aiState?.lead_flow === 'offer') {
+    return 'Perfecto, esta imagen me ayuda como referencia de la propiedad que quieres vender o rentar.';
+  }
+
+  if (aiState?.lead_flow === 'demand') {
+    return 'Perfecto, esta imagen me ayuda como referencia de la propiedad que estas buscando.';
+  }
+
+  return 'Perfecto, esta imagen me ayuda como referencia para orientarte mejor.';
+}
+
 function buildInboundMessageContext(message = {}) {
   const messageType = message?.type || null;
   const isForwarded =
@@ -86,10 +166,16 @@ function buildInboundMessageContext(message = {}) {
     mime_type: null,
     media_id: null,
     map_url: null,
+    location_latitude: null,
+    location_longitude: null,
+    location_name: null,
+    location_address: null,
     audio_without_transcription: false,
     audio_has_transcription: false,
     property_image_candidate: false,
     legal_or_property_document_candidate: false,
+    image_vision_status: null,
+    image_vision_success: false,
     attachment_detected_not_processed: false,
     unsupported_media: false,
     is_forwarded: isForwarded,
@@ -170,14 +256,24 @@ function buildInboundMessageContext(message = {}) {
   } else if (messageType === 'location') {
     const latitude = message?.location?.latitude;
     const longitude = message?.location?.longitude;
+    const locationName = cleanSpaces(message?.location?.name || '');
+    const locationAddress = cleanSpaces(message?.location?.address || '');
     media.category = 'location_link';
+    media.location_latitude = latitude ?? null;
+    media.location_longitude = longitude ?? null;
+    media.location_name = locationName || null;
+    media.location_address = locationAddress || null;
     media.map_url =
       latitude != null && longitude != null
         ? `https://maps.google.com/?q=${latitude},${longitude}`
         : null;
-    messageText = media.map_url
-      ? `El usuario compartió una ubicación: ${media.map_url}`
-      : 'El usuario compartió una ubicación.';
+    if (locationName || locationAddress) {
+      messageText = `El usuario compartió una ubicación: ${locationName || ''} ${locationAddress || ''}`.trim();
+    } else {
+      messageText = media.map_url
+        ? `El usuario compartió una ubicación: ${media.map_url}`
+        : 'El usuario compartió una ubicación.';
+    }
   } else if (messageType === 'video') {
     media.category = 'video';
     media.caption = cleanSpaces(message?.video?.caption || '') || null;
@@ -215,6 +311,12 @@ function buildInboundMessageContext(message = {}) {
     media.category = 'interactive';
     const interactiveText = extractInteractiveText(message?.interactive || {});
     messageText = interactiveText || 'El usuario seleccionó una opción interactiva.';
+  } else if (messageType === 'list_reply') {
+    media.category = 'interactive';
+    messageText = cleanSpaces(message?.list_reply?.title || message?.list_reply?.description || message?.list_reply?.id || '') || 'El usuario seleccionó una opción de lista.';
+  } else if (messageType === 'button_reply') {
+    media.category = 'interactive';
+    messageText = cleanSpaces(message?.button_reply?.title || message?.button_reply?.id || '') || 'El usuario seleccionó una opción de botón.';
   } else if (messageType === 'unsupported' || messageType === 'unknown') {
     media.category = 'unsupported_media';
     media.unsupported_media = true;
@@ -235,32 +337,41 @@ function buildInboundMessageContext(message = {}) {
 }
 
 function buildMediaAcknowledgementReply(media = {}) {
+  if (media?.media_download_error) {
+    return 'Gracias, recibí tu archivo, pero hoy no pude descargarlo correctamente. ¿Me lo puedes reenviar o resumir en texto el punto principal para continuar sin retraso?';
+  }
+
   if (media?.audio_without_transcription) {
-    return 'Gracias, recibí tu audio. Para no interpretar mal la información, ¿me puedes escribir en una frase el punto principal? También puedo pedirle a un asesor que te contacte para revisarlo contigo.';
+    if (media?.audio_without_transcription_repeat) {
+      return 'Gracias, sigo recibiendo tus audios, pero en este momento no estoy logrando transcribirlos con claridad. Para no atrasarte, ¿me confirmas en texto solo el dato clave (venta, renta, compra o visita) o prefieres que te contacte un asesor?';
+    }
+
+    return 'Gracias, recibí tu audio. Tuve un problema para transcribirlo completo y no quiero malinterpretarlo. ¿Me puedes compartir en una frase si buscas vender, rentar, comprar o agendar una visita? Si prefieres, también puedo pedir que un asesor te contacte.';
   }
 
   if (media?.type === 'image' || media?.type === 'document') {
-    if (media?.ai_analysis?.ok && media.ai_analysis.summary) {
-      return `Gracias, recibí la imagen y pude hacer una revisión automática preliminar. Detecté: ${media.ai_analysis.summary}. Para confirmar datos clave contigo y evitar suposiciones, ¿me compartes en texto lo principal que quieres lograr con esta propiedad?`;
+    if (media.type === 'image' && media.image_vision) {
+      const imageVisionReply = buildImageVisionReply(media);
+      if (imageVisionReply) return imageVisionReply;
     }
 
     if (media.category === 'document') {
-      return 'Gracias, recibí el documento. Para manejarlo correctamente, no quiero darte una conclusión legal sin revisión. Lo ideal es que nuestro equipo lo revise y te diga qué ruta comercial conviene para vender la propiedad. ¿Te parece bien que un asesor te contacte para revisarlo?';
+      return 'Gracias, recibí el documento. Por ahora lo puedo registrar como referencia, pero necesito que me confirmes por mensaje el punto principal para avanzar correctamente.';
     }
 
     if (media.category === 'land') {
-      return 'Gracias, recibí la imagen. Para poder orientarte mejor sin asumir algo incorrecto, ¿me confirmas si corresponde a terreno/lote? Si sí, ¿cuántos m² tiene y en qué fraccionamiento está?';
+      return 'Gracias, recibí la imagen. La voy a tomar como referencia, pero para orientarte bien necesito confirmar algunos datos de la propiedad. ¿Buscas venderla, rentarla o estás buscando una propiedad similar?';
     }
 
     if (media.category === 'house') {
-      return 'Gracias, recibí la imagen. Si corresponde a la propiedad, me ayuda como referencia, pero para no asumir detalles visuales necesito confirmar contigo: ¿está habitada actualmente y cuántos m² de terreno y construcción tiene?';
+      return 'Gracias, recibí la imagen. La voy a tomar como referencia, pero para orientarte bien necesito confirmar algunos datos de la propiedad. ¿Buscas venderla, rentarla o estás buscando una propiedad similar?';
     }
 
-    return 'Gracias, recibí la imagen. Para orientarte sin asumir información incorrecta, ¿me confirmas si es fachada, interior, documento o ubicación de la propiedad?';
+    return 'Gracias, recibí la imagen. La voy a tomar como referencia, pero para orientarte bien necesito confirmar algunos datos de la propiedad. ¿Buscas venderla, rentarla o estás buscando una propiedad similar?';
   }
 
   if (media?.category === 'location_link') {
-    return 'Gracias, recibí la ubicación. Con eso podemos ubicar mejor la zona. Para avanzar, ¿me confirmas si la propiedad está en venta, renta o estás buscando una valuación?';
+    return 'Gracias, recibí la ubicación. Para orientarte mejor, ¿esa ubicación corresponde a la propiedad que quieres vender/rentar o a la zona donde estás buscando?';
   }
 
   if (media?.category === 'video') {
@@ -280,4 +391,5 @@ module.exports = {
   extractMapUrl,
   buildInboundMessageContext,
   buildMediaAcknowledgementReply,
+  buildImageVisionContextPrefix,
 };

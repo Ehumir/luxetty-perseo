@@ -1,0 +1,10 @@
+{
+  "from": "5218111111111",
+  "id": "wamid.TEST.IMG.001",
+  "timestamp": "1710000002",
+  "type": "image",
+  "image": {
+    "id": "media-img-qa-1",
+    "mime_type": "image/jpeg"
+  }
+}

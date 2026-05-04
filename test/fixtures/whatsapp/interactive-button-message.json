@@ -1,0 +1,13 @@
+{
+  "from": "5218111111111",
+  "id": "wamid.TEST.INTBTN.001",
+  "timestamp": "1710000008",
+  "type": "interactive",
+  "interactive": {
+    "type": "button_reply",
+    "button_reply": {
+      "id": "btn-vender",
+      "title": "Quiero vender"
+    }
+  }
+}

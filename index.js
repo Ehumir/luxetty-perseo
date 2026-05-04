@@ -40,9 +40,16 @@ const { parseMessageSignals } = require('./conversation/parsers');
 const {
   buildInboundMessageContext,
   buildMediaAcknowledgementReply,
+  buildImageVisionContextPrefix,
 } = require('./conversation/mediaSignals');
+const { buildUnifiedConversationContext } = require('./conversation/contextFusion');
+const {
+  extractInboundMediaMetadata,
+  extractInboundSignalText,
+} = require('./conversation/mediaIngestion');
 const { resolveInboundMedia } = require('./services/whatsappMediaService');
-const { analyzePropertyImage } = require('./services/mediaAiAnalyzer');
+const { transcribeAudio } = require('./services/audioTranscriptionService');
+const { analyzeImage } = require('./services/imageVisionService');
 const { getNextStep } = require('./conversation/nextStep');
 const {
   getNextPlaybookStep,
@@ -151,6 +158,44 @@ function enrichReplyWithNextStepCta(reply, nextStep) {
   return `${base} ${getNextStepCta(nextStep)}`;
 }
 
+function shouldUseMediaAcknowledgement(media = {}, incomingSignals = {}, previousAiState = {}, nextAiState = {}) {
+  if (!media || !media.type) return false;
+
+  if (media.type === 'audio' || media.type === 'voice') {
+    return !!media.audio_without_transcription;
+  }
+
+  if (media.type !== 'image' && media.type !== 'document') {
+    return true;
+  }
+
+  const hasIntentContext =
+    !!incomingSignals?.lead_flow ||
+    !!incomingSignals?.intent_type ||
+    !!incomingSignals?.property_code ||
+    !!previousAiState?.lead_flow ||
+    !!nextAiState?.lead_flow;
+
+  if (media.type === 'image' && hasIntentContext) {
+    return false;
+  }
+
+  return true;
+}
+
+function prependVisionPrefixIfNeeded(reply, media = {}, aiState = {}) {
+  const baseReply = cleanSpaces(reply || '');
+  if (!baseReply) return baseReply;
+
+  const prefix = buildImageVisionContextPrefix(media, aiState);
+  if (!prefix) return baseReply;
+
+  const normalizedBase = normalizeText(baseReply);
+  if (normalizedBase.includes(normalizeText(prefix))) return baseReply;
+
+  return `${prefix} ${baseReply}`;
+}
+
 function buildIntelligentHandoffReply() {
   return 'Para darte una atención más precisa, puedo canalizar tu caso con un asesor de Luxetty que te apoye directamente.';
 }
@@ -171,6 +216,7 @@ function mapInboundMessageType(messageType) {
   if (messageType === 'location') return 'location';
   if (messageType === 'contact' || messageType === 'contacts') return 'contact';
   if (messageType === 'button' || messageType === 'interactive') return 'interactive';
+  if (messageType === 'list_reply' || messageType === 'button_reply') return 'interactive';
   if (messageType === 'referral') return 'referral';
   if (messageType === 'unsupported' || messageType === 'unknown') return 'unsupported';
   return 'system';
@@ -567,6 +613,7 @@ async function maybeCreateOrReuseLeadWithEngine({
   messageText = '',
   referralContext = null,
   rawPayload = null,
+  unifiedContext = null,
 }) {
   try {
     const propertyId = property?.id || null;
@@ -607,6 +654,7 @@ async function maybeCreateOrReuseLeadWithEngine({
         propertyCode,
         messageText,
         hasCampaignContext: campaignExtraction.hasCampaignContext,
+        unifiedContext,
       });
 
       if (propertyId && leadOpportunity.shouldCreate) {
@@ -655,6 +703,7 @@ async function maybeCreateOrReuseLeadWithEngine({
         nextAiState?.whatsapp_referral || campaignExtraction.referralContext || null,
       campaign_context:
         nextAiState?.campaign_context || campaignExtraction.campaignContext || null,
+      context_fusion: unifiedContext || nextAiState?.context_fusion || null,
     };
 
     const result = await createOrReuseLeadFromConversation({
@@ -719,6 +768,37 @@ async function updateConversationMeta(conversationId, payload) {
   } catch (err) {
     console.error('FATAL updateConversationMeta:', err);
   }
+}
+
+async function fetchConversationLinkedEntities(conversationRow = {}) {
+  const result = {
+    existingContact: null,
+    existingLead: null,
+  };
+
+  try {
+    if (conversationRow?.contact_id) {
+      const { data } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('id', conversationRow.contact_id)
+        .maybeSingle();
+      result.existingContact = data || null;
+    }
+
+    if (conversationRow?.lead_id) {
+      const { data } = await supabase
+        .from('leads')
+        .select('*')
+        .eq('id', conversationRow.lead_id)
+        .maybeSingle();
+      result.existingLead = data || null;
+    }
+  } catch (error) {
+    console.warn('fetchConversationLinkedEntities warning:', error?.message || error);
+  }
+
+  return result;
 }
 
 async function saveConversationState(conversationId, nextState, aiSummary = null) {
@@ -1624,44 +1704,175 @@ app.post('/webhook', async (req, res) => {
       const conversationRow = await getOrCreateConversation(from);
       const conversationId = conversationRow?.id || null;
       const previousAiState = normalizeAiState(conversationRow?.ai_state);
+      const linkedEntities = await fetchConversationLinkedEntities(conversationRow);
+
+      const signalText = extractInboundSignalText(message);
+      if (signalText) {
+        text = cleanSpaces(signalText);
+      }
+
+      const inboundMediaMetadata = extractInboundMediaMetadata(message, {
+        conversationId,
+        from,
+      });
 
       let mediaResolution = null;
 
       if (inboundContext?.media && inboundContext.media.type !== 'text') {
         mediaResolution = await resolveInboundMedia(message);
+        inboundContext.media.media_download_status = mediaResolution?.download_status || 'received';
 
-        if (mediaResolution?.ok) {
+        if (mediaResolution?.success) {
           inboundContext.media.attachment_detected_not_processed = false;
           inboundContext.media.media_downloaded = true;
-          inboundContext.media.media_download_bytes = mediaResolution.download?.byteLength || null;
+          inboundContext.media.media_download_bytes = mediaResolution.size_bytes || null;
           inboundContext.media.media_download_mime_type =
-            mediaResolution.download?.mimeType || mediaResolution.mimeType || inboundContext.media.mime_type || null;
-
-          if (messageType === 'image' && mediaResolution.download?.buffer) {
-            const imageAnalysis = await analyzePropertyImage({
-              buffer: mediaResolution.download.buffer,
-              mimeType: mediaResolution.download.mimeType || mediaResolution.mimeType || inboundContext.media.mime_type,
-              caption: inboundContext.media.caption || null,
-              conversationState: previousAiState,
-            });
-
-            inboundContext.media.ai_analysis = imageAnalysis;
-
-            if (imageAnalysis?.ok) {
-              inboundContext.media.attachment_detected_not_processed = false;
-              inboundContext.media.ai_visual_analysis_ok = true;
-
-              if (!cleanSpaces(inboundContext.media.caption || '') && cleanSpaces(imageAnalysis.summary || '')) {
-                text = `${text} Resumen visual preliminar: ${imageAnalysis.summary}`;
-              }
-            } else {
-              inboundContext.media.ai_visual_analysis_ok = false;
-            }
-          }
+            mediaResolution.mime_type || inboundContext.media.mime_type || null;
         } else {
           inboundContext.media.media_downloaded = false;
-          inboundContext.media.media_download_error = mediaResolution?.error?.message || mediaResolution?.reason || null;
+          inboundContext.media.media_download_error = mediaResolution?.error_message || mediaResolution?.error?.message || mediaResolution?.status || null;
         }
+
+        inboundMediaMetadata.download_status = mediaResolution?.download_status || inboundMediaMetadata.download_status;
+        inboundMediaMetadata.download_result = {
+          status: mediaResolution?.status || null,
+          success: !!mediaResolution?.success,
+          media_id: mediaResolution?.media_id || inboundMediaMetadata.media_id,
+          mime_type: mediaResolution?.mime_type || inboundMediaMetadata.mime_type,
+          size_bytes: mediaResolution?.size_bytes || null,
+          error_code: mediaResolution?.error_code || null,
+          error_message: mediaResolution?.error_message || null,
+          downloaded_at: mediaResolution?.downloaded_at || null,
+        };
+
+        const canAttemptAudioTranscription =
+          (messageType === 'audio' || messageType === 'voice') &&
+          !!mediaResolution?.success &&
+          Buffer.isBuffer(mediaResolution?.buffer);
+
+        const canAttemptImageVision =
+          messageType === 'image' &&
+          !!mediaResolution?.success &&
+          Buffer.isBuffer(mediaResolution?.buffer);
+
+        if (canAttemptAudioTranscription) {
+          const audioTranscription = await transcribeAudio({
+            fileBuffer: mediaResolution.buffer,
+            mimeType: mediaResolution.mime_type || inboundContext.media.mime_type,
+            filename: inboundContext.media.file_name || inboundMediaMetadata.filename || null,
+            mediaId: mediaResolution.media_id || inboundMediaMetadata.media_id,
+            conversationId,
+            messageId: metaMessageId,
+            provider: 'openai',
+          });
+
+          inboundContext.media.audio_transcription = audioTranscription;
+          inboundMediaMetadata.audio_transcription = {
+            status: audioTranscription.status,
+            success: audioTranscription.success,
+            provider: audioTranscription.provider,
+            model: audioTranscription.model,
+            confidence_score: audioTranscription.confidence_score,
+            needs_confirmation: audioTranscription.needs_confirmation,
+            language: audioTranscription.language,
+            duration_seconds: audioTranscription.duration_seconds,
+            error_code: audioTranscription.error_code,
+            error_message: audioTranscription.error_message,
+            transcribed_at: audioTranscription.transcribed_at,
+          };
+
+          if (audioTranscription.success && audioTranscription.transcription_text) {
+            transcriptionText = audioTranscription.transcription_text;
+            text = audioTranscription.transcription_text;
+            inboundContext.transcriptionText = transcriptionText;
+            inboundContext.media.audio_has_transcription = true;
+            inboundContext.media.audio_without_transcription = false;
+            inboundContext.media.audio_transcription_success = true;
+            inboundContext.media.audio_low_confidence = !!audioTranscription.needs_confirmation;
+
+            if (
+              cleanSpaces(previousAiState.last_audio_transcription || '') &&
+              normalizeText(previousAiState.last_audio_transcription) === normalizeText(transcriptionText)
+            ) {
+              inboundContext.media.audio_transcription_duplicate = true;
+            }
+          } else {
+            inboundContext.media.audio_transcription_success = false;
+            inboundContext.media.audio_without_transcription = true;
+            inboundContext.media.audio_transcription_failed = true;
+          }
+        }
+
+        if (canAttemptImageVision) {
+          const imageVision = await analyzeImage({
+            fileBuffer: mediaResolution.buffer,
+            mimeType: mediaResolution.mime_type || inboundContext.media.mime_type,
+            filename: inboundContext.media.file_name || inboundMediaMetadata.filename || null,
+            mediaId: mediaResolution.media_id || inboundMediaMetadata.media_id,
+            conversationId,
+            messageId: metaMessageId,
+            caption: inboundContext.media.caption || inboundMediaMetadata.caption || null,
+            provider: 'openai',
+          });
+
+          inboundContext.media.image_vision = imageVision;
+          inboundContext.media.image_vision_status = imageVision.status || null;
+          inboundContext.media.image_vision_success = !!imageVision.ok;
+
+          inboundMediaMetadata.image_vision = {
+            status: imageVision.status,
+            success: imageVision.ok,
+            provider: imageVision.provider,
+            model: imageVision.model || null,
+            summary: imageVision.summary || null,
+            property_signals: imageVision.propertySignals || null,
+            suggested_follow_up: imageVision.suggestedFollowUp || null,
+            caution: imageVision.caution || null,
+            error_code: imageVision.errorCode || null,
+            error_message: imageVision.errorMessage || null,
+          };
+        }
+      }
+
+      if (
+        inboundContext?.media?.audio_without_transcription &&
+        previousAiState?.has_audio_without_transcription
+      ) {
+        inboundContext.media.audio_without_transcription_repeat = true;
+      }
+
+      const propertyContextFromState =
+        previousAiState?.direct_property_reference && previousAiState?.property_code
+          ? {
+              listing_id: previousAiState.property_code,
+            }
+          : null;
+
+      const campaignContextForFusion = extractCampaignReferralContext({
+        aiState: previousAiState,
+        referral: normalizedReferral,
+        rawPayload: inboundRawPayload,
+        messageText: text,
+      });
+
+      const unifiedContext = buildUnifiedConversationContext({
+        inboundText: text,
+        caption: inboundContext?.media?.caption || inboundMediaMetadata?.caption || null,
+        audioTranscription: transcriptionText,
+        imageVision: inboundContext?.media?.image_vision || inboundMediaMetadata?.image_vision || null,
+        location: inboundMediaMetadata?.location || null,
+        interactive: inboundMediaMetadata?.interactive || null,
+        previousAiState,
+        existingContact: linkedEntities.existingContact,
+        existingLead: linkedEntities.existingLead,
+        campaignContext: campaignContextForFusion?.campaignContext || null,
+        propertyContext: propertyContextFromState,
+        rawMessage: message,
+        now: nowIso(),
+      });
+
+      if (cleanSpaces(unifiedContext?.effectiveText || '')) {
+        text = cleanSpaces(unifiedContext.effectiveText);
       }
 
       console.log('--- NUEVO MENSAJE ---');
@@ -1686,7 +1897,23 @@ app.post('/webhook', async (req, res) => {
         messageText: text,
         transcriptionText,
         metaMessageId,
-        rawPayload: inboundRawPayload,
+        rawPayload: {
+          ...(inboundRawPayload || {}),
+          perseo_metadata: {
+            ...((inboundRawPayload && inboundRawPayload.perseo_metadata) || {}),
+            media_ingestion: inboundMediaMetadata,
+            image_vision: inboundMediaMetadata.image_vision || null,
+            context_fusion: {
+              source_signals: unifiedContext?.sourceSignals || null,
+              normalized_intent: unifiedContext?.normalizedIntent || null,
+              crm_action: unifiedContext?.crmAction || null,
+              missing_critical_fields: unifiedContext?.missingCriticalFields || [],
+              should_create_or_update_lead: !!unifiedContext?.shouldCreateOrUpdateLead,
+              should_ask_one_more_question: !!unifiedContext?.shouldAskOneMoreQuestion,
+              suggested_next_question: unifiedContext?.suggestedNextQuestion || null,
+            },
+          },
+        },
       });
 
       try {
@@ -1736,12 +1963,40 @@ app.post('/webhook', async (req, res) => {
           media_download_mime_type: inboundContext.media.media_download_mime_type || null,
           media_resolution_reason: mediaResolution?.reason || null,
           media_resolution_stage: mediaResolution?.error?.stage || null,
-          image_analysis_ok: !!inboundContext.media.ai_analysis?.ok,
-          image_analysis_kind: inboundContext.media.ai_analysis?.kind || null,
-          image_analysis_confidence:
-            inboundContext.media.ai_analysis?.confidence != null
-              ? Number(inboundContext.media.ai_analysis.confidence)
-              : null,
+          download_status: inboundMediaMetadata.download_status || null,
+          media_sha256: inboundMediaMetadata.sha256 || null,
+          media_voice: inboundMediaMetadata.voice,
+          media_timestamp: inboundMediaMetadata.timestamp || null,
+          media_location_latitude: inboundMediaMetadata.location?.latitude ?? null,
+          media_location_longitude: inboundMediaMetadata.location?.longitude ?? null,
+          media_location_name: inboundMediaMetadata.location?.name || null,
+          media_location_address: inboundMediaMetadata.location?.address || null,
+          interactive_type: inboundMediaMetadata.interactive?.interactive_type || null,
+          interactive_button_reply_id: inboundMediaMetadata.interactive?.button_reply_id || null,
+          interactive_button_reply_title: inboundMediaMetadata.interactive?.button_reply_title || null,
+          interactive_list_reply_id: inboundMediaMetadata.interactive?.list_reply_id || null,
+          interactive_list_reply_title: inboundMediaMetadata.interactive?.list_reply_title || null,
+          audio_transcription_status: inboundMediaMetadata.audio_transcription?.status || null,
+          audio_transcription_success: !!inboundMediaMetadata.audio_transcription?.success,
+          audio_transcription_provider: inboundMediaMetadata.audio_transcription?.provider || null,
+          audio_transcription_model: inboundMediaMetadata.audio_transcription?.model || null,
+          audio_transcription_confidence: inboundMediaMetadata.audio_transcription?.confidence_score ?? null,
+          audio_transcription_needs_confirmation: !!inboundMediaMetadata.audio_transcription?.needs_confirmation,
+          audio_transcription_error_code: inboundMediaMetadata.audio_transcription?.error_code || null,
+          audio_transcription_error_message: inboundMediaMetadata.audio_transcription?.error_message || null,
+          image_vision_status: inboundMediaMetadata.image_vision?.status || null,
+          image_vision_success: !!inboundMediaMetadata.image_vision?.success,
+          image_vision_provider: inboundMediaMetadata.image_vision?.provider || null,
+          image_vision_model: inboundMediaMetadata.image_vision?.model || null,
+          image_vision_confidence: inboundMediaMetadata.image_vision?.property_signals?.confidence ?? null,
+          image_vision_probable_property_type:
+            inboundMediaMetadata.image_vision?.property_signals?.probablePropertyType || null,
+          image_vision_visible_area_type:
+            inboundMediaMetadata.image_vision?.property_signals?.visibleAreaType || null,
+          image_vision_apparent_condition:
+            inboundMediaMetadata.image_vision?.property_signals?.apparentCondition || null,
+          image_vision_error_code: inboundMediaMetadata.image_vision?.error_code || null,
+          image_vision_error_message: inboundMediaMetadata.image_vision?.error_message || null,
         });
       }
 
@@ -2028,22 +2283,94 @@ app.post('/webhook', async (req, res) => {
       nextAiState.last_media_download_error = inboundContext.media.media_download_error || null;
       nextAiState.last_media_download_bytes = inboundContext.media.media_download_bytes || null;
       nextAiState.last_media_download_mime_type = inboundContext.media.media_download_mime_type || null;
-      nextAiState.last_image_analysis_ok = !!inboundContext.media.ai_analysis?.ok;
-      nextAiState.last_image_analysis_kind = inboundContext.media.ai_analysis?.kind || null;
-      nextAiState.last_image_analysis_confidence =
-        inboundContext.media.ai_analysis?.confidence != null
-          ? Number(inboundContext.media.ai_analysis.confidence)
-          : null;
-      nextAiState.last_image_analysis_summary = inboundContext.media.ai_analysis?.summary || null;
+      nextAiState.last_media_download_status = inboundContext.media.media_download_status || null;
     }
 
     if (inboundContext?.media?.audio_has_transcription && transcriptionText) {
       nextAiState.last_audio_transcription = transcriptionText;
       nextAiState.has_audio_without_transcription = false;
+      nextAiState.last_audio_transcription_status =
+        inboundContext.media.audio_transcription?.status || 'transcribed';
+      nextAiState.last_audio_transcription_confidence =
+        inboundContext.media.audio_transcription?.confidence_score != null
+          ? Number(inboundContext.media.audio_transcription.confidence_score)
+          : null;
+      nextAiState.last_audio_transcription_needs_confirmation =
+        !!inboundContext.media.audio_transcription?.needs_confirmation;
     }
 
     if (inboundContext?.media?.audio_without_transcription) {
       nextAiState.has_audio_without_transcription = true;
+    }
+
+    if (inboundContext?.media?.image_vision) {
+      nextAiState.last_image_vision_status = inboundContext.media.image_vision.status || null;
+      nextAiState.last_image_vision_summary = inboundContext.media.image_vision.summary || null;
+      nextAiState.last_image_vision_confidence =
+        inboundContext.media.image_vision.propertySignals?.confidence != null
+          ? Number(inboundContext.media.image_vision.propertySignals.confidence)
+          : null;
+      nextAiState.last_image_vision_property_type =
+        inboundContext.media.image_vision.propertySignals?.probablePropertyType || null;
+      nextAiState.last_image_vision_area_type =
+        inboundContext.media.image_vision.propertySignals?.visibleAreaType || null;
+      nextAiState.last_image_vision_condition =
+        inboundContext.media.image_vision.propertySignals?.apparentCondition || null;
+    }
+
+    if (unifiedContext?.ok) {
+      const fusedCategory = unifiedContext.normalizedIntent?.category || null;
+
+      if (!nextAiState.lead_flow) {
+        if (['sell_property', 'rent_out_property', 'valuate_property'].includes(fusedCategory)) {
+          nextAiState.lead_flow = 'offer';
+        } else if (['buy_property', 'rent_property', 'visit_property', 'ask_property_info'].includes(fusedCategory)) {
+          nextAiState.lead_flow = 'demand';
+        }
+      }
+
+      if (!nextAiState.operation_type) {
+        if (fusedCategory === 'rent_out_property' || fusedCategory === 'rent_property') {
+          nextAiState.operation_type = 'rent';
+        } else if (['sell_property', 'buy_property', 'valuate_property'].includes(fusedCategory)) {
+          nextAiState.operation_type = 'sale';
+        }
+      }
+
+      if (unifiedContext.normalizedIntent?.requiresHumanAdvisor) {
+        nextAiState.wants_human = true;
+      }
+
+      if (
+        fusedCategory === 'ask_property_info' &&
+        (unifiedContext.sourceSignals?.hasCampaignContext || unifiedContext.sourceSignals?.hasPropertyContext)
+      ) {
+        nextAiState.asks_property_details = true;
+      }
+
+      nextAiState.context_fusion = {
+        last_intent_category: unifiedContext.normalizedIntent?.category || null,
+        last_intent_confidence: unifiedContext.normalizedIntent?.confidence ?? null,
+        lead_type: unifiedContext.crmAction?.leadType || null,
+        offer_context: unifiedContext.propertyOffer || null,
+        demand_context: unifiedContext.propertyDemand || null,
+        last_media_summary:
+          unifiedContext.propertyOffer?.visualSummary ||
+          unifiedContext.normalizedIntent?.source ||
+          null,
+        last_audio_text: transcriptionText || null,
+        last_image_summary: unifiedContext.propertyOffer?.visualSummary || null,
+        last_location: unifiedContext.propertyOffer?.location || null,
+        missing_critical_fields: unifiedContext.missingCriticalFields || [],
+        pending_question:
+          unifiedContext.shouldAskOneMoreQuestion
+            ? unifiedContext.suggestedNextQuestion || null
+            : null,
+        crm_action_last_decision: unifiedContext.crmAction || null,
+        source_signals: unifiedContext.sourceSignals || null,
+        should_create_or_update_lead: !!unifiedContext.shouldCreateOrUpdateLead,
+        updated_at: nowIso(),
+      };
     }
 
     if (incomingSignals.full_name) {
@@ -2397,7 +2724,11 @@ app.post('/webhook', async (req, res) => {
       return shouldAskField(state, fieldName);
     }
 
-    if (inboundContext?.media?.audio_without_transcription) {
+    if (inboundContext?.media?.audio_transcription_duplicate) {
+      reply = 'Gracias, ya tengo ese punto principal de tu audio. Para avanzar sin repetir información, ¿prefieres que te conecte con un asesor o seguimos afinando detalles aquí?';
+    } else if (inboundContext?.media?.audio_low_confidence) {
+      reply = 'Gracias, recibí tu audio y pude transcribir una parte. Para evitar errores, ¿me confirmas en una frase el dato más importante? Si prefieres, también puedo pedir que un asesor te contacte.';
+    } else if (inboundContext?.media?.audio_without_transcription) {
       reply = buildMediaAcknowledgementReply(inboundContext.media);
     } else if (incomingSignals.non_real_estate_or_provider) {
       reply = 'Gracias por tu mensaje. Este canal esta enfocado en compra, renta y venta de propiedades. Si tu solicitud es de otro tipo, con gusto la canalizo por la via interna correspondiente.';
@@ -2569,12 +2900,23 @@ app.post('/webhook', async (req, res) => {
           }
         }
       }
+
+      reply = prependVisionPrefixIfNeeded(reply, inboundContext?.media, nextAiState);
     } else if (nextAiState.lead_flow === 'offer') {
-      const mediaReply = buildMediaAcknowledgementReply(inboundContext?.media);
+      const mediaReply = shouldUseMediaAcknowledgement(
+        inboundContext?.media,
+        incomingSignals,
+        previousAiState,
+        nextAiState
+      )
+        ? buildMediaAcknowledgementReply(inboundContext?.media)
+        : null;
+
       if (mediaReply) {
         reply = mediaReply;
       } else {
         reply = buildOfferReply(nextAiState, changeType, { signals: incomingSignals, text });
+        reply = prependVisionPrefixIfNeeded(reply, inboundContext?.media, nextAiState);
       }
 
       if (
@@ -2610,7 +2952,15 @@ app.post('/webhook', async (req, res) => {
         reply = buildFinalHandoffReply(nextAiState);
       }
     } else {
-      const mediaReply = buildMediaAcknowledgementReply(inboundContext?.media);
+      const mediaReply = shouldUseMediaAcknowledgement(
+        inboundContext?.media,
+        incomingSignals,
+        previousAiState,
+        nextAiState
+      )
+        ? buildMediaAcknowledgementReply(inboundContext?.media)
+        : null;
+
       if (mediaReply) {
         reply = mediaReply;
       }
@@ -2652,6 +3002,12 @@ ${locationCatalog.rawNames.join(', ')}
       reply =
         response.choices?.[0]?.message?.content?.trim() ||
         '¿En qué puedo orientarte? ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
+      }
+    }
+
+    if (!reply) {
+      if (unifiedContext?.shouldAskOneMoreQuestion && unifiedContext?.suggestedNextQuestion) {
+        reply = unifiedContext.suggestedNextQuestion;
       }
     }
 
@@ -2724,10 +3080,16 @@ ${locationCatalog.rawNames.join(', ')}
 
     conversations.set(from, updatedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
 
-    if (
+    const shouldAttemptLeadAutomation =
       !isGreetingOnly(text) &&
-      (nextAiState.lead_flow === 'demand' || nextAiState.lead_flow === 'offer' || nextAiState.direct_property_reference)
-    ) {
+      (
+        nextAiState.lead_flow === 'demand' ||
+        nextAiState.lead_flow === 'offer' ||
+        nextAiState.direct_property_reference ||
+        nextAiState?.context_fusion?.should_create_or_update_lead
+      );
+
+    if (shouldAttemptLeadAutomation) {
       const propertyForLead =
         nextAiState.direct_property_reference && matchedProperties.length > 0
           ? matchedProperties[0]
@@ -2744,6 +3106,7 @@ ${locationCatalog.rawNames.join(', ')}
           messageText: text,
           referralContext: normalizedReferral,
           rawPayload: inboundRawPayload,
+          unifiedContext: nextAiState?.context_fusion || null,
         });
 
         if (

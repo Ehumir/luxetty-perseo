@@ -1,0 +1,14 @@
+{
+  "from": "5218111111111",
+  "id": "wamid.TEST.INTLIST.001",
+  "timestamp": "1710000009",
+  "type": "interactive",
+  "interactive": {
+    "type": "list_reply",
+    "list_reply": {
+      "id": "list-rentas",
+      "title": "Ver opciones en renta",
+      "description": "Zona Cumbres"
+    }
+  }
+}

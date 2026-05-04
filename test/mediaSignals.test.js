@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   buildInboundMessageContext,
   buildMediaAcknowledgementReply,
+  buildImageVisionContextPrefix,
 } = require('../conversation/mediaSignals');
 const { detectIntent } = require('../conversation/intent');
 const { parseMessageSignals } = require('../conversation/parsers');
@@ -28,7 +29,7 @@ test('B) imagen sin caption pide aclaracion de tipo sin inventar detalles', () =
 
   const reply = buildMediaAcknowledgementReply(inbound.media);
   assert.match(reply, /recib[ií] la imagen/i);
-  assert.match(reply, /fachada, interior, documento o ubicaci[oó]n/i);
+  assert.match(reply, /venderla, rentarla o est[aá]s buscando una propiedad similar/i);
   assert.equal(inbound.media.attachment_detected_not_processed, true);
 });
 
@@ -39,8 +40,8 @@ test('C) documento legal sensible activa respuesta cauta y canal humano', () => 
   });
 
   const reply = buildMediaAcknowledgementReply(inbound.media);
-  assert.match(reply, /no quiero darte una conclusi[oó]n legal/i);
-  assert.match(reply, /asesor/i);
+  assert.match(reply, /lo puedo registrar como referencia/i);
+  assert.match(reply, /confirmes por mensaje el punto principal/i);
   assert.equal(inbound.media.legal_or_property_document_candidate, true);
 });
 
@@ -53,7 +54,8 @@ test('D) audio sin transcripcion pide resumen en texto', () => {
   assert.equal(inbound.media.audio_without_transcription, true);
   const reply = buildMediaAcknowledgementReply(inbound.media);
   assert.match(reply, /recibí tu audio/i);
-  assert.match(reply, /me puedes escribir/i);
+  assert.match(reply, /frase/i);
+  assert.match(reply, /asesor/i);
 });
 
 test('E) audio con transcripcion conserva contenido para intencion', () => {
@@ -136,18 +138,93 @@ test('J) interactive y button traducen opcion seleccionada a texto util', () => 
   assert.match(buttonInbound.messageText, /asesor_humano/i);
 });
 
-test('K) imagen con analisis preliminar usa ack transparente', () => {
+test('K) imagen recibida mantiene ack transparente sin vision real', () => {
   const inbound = buildInboundMessageContext({
     type: 'image',
     image: { id: 'img-2' },
   });
 
-  inbound.media.ai_analysis = {
+  const reply = buildMediaAcknowledgementReply(inbound.media);
+  assert.match(reply, /recib[ií] la imagen/i);
+  assert.match(reply, /venderla, rentarla o est[aá]s buscando una propiedad similar/i);
+  assert.doesNotMatch(reply, /revisi[oó]n autom[aá]tica|detect[eé]:/i);
+});
+
+test('L) imagen con vision de fachada responde de forma consultiva', () => {
+  const inbound = buildInboundMessageContext({
+    type: 'image',
+    image: { id: 'img-vision-1' },
+  });
+
+  inbound.media.image_vision = {
     ok: true,
-    summary: 'Parece fachada de casa residencial en estado conservado',
+    status: 'analyzed',
+    summary: 'Fachada de casa con cochera.',
+    propertySignals: {
+      probablePropertyType: 'casa',
+      visibleAreaType: 'fachada',
+      apparentCondition: 'buena',
+      confidence: 0.81,
+    },
+    suggestedFollowUp: '¿Buscas venderla o rentarla?',
   };
 
   const reply = buildMediaAcknowledgementReply(inbound.media);
-  assert.match(reply, /revisi[oó]n autom[aá]tica preliminar/i);
-  assert.match(reply, /evitar suposiciones/i);
+  assert.match(reply, /ya pude revisar la imagen/i);
+  assert.match(reply, /por lo visible/i);
+  assert.match(reply, /venderla o rentarla/i);
+});
+
+test('M) imagen borrosa con vision no concluyente mantiene limites', () => {
+  const inbound = buildInboundMessageContext({
+    type: 'image',
+    image: { id: 'img-vision-2' },
+  });
+
+  inbound.media.image_vision = {
+    ok: true,
+    status: 'analyzed',
+    summary: null,
+    propertySignals: {
+      probablePropertyType: 'unknown',
+      visibleAreaType: 'unknown',
+      apparentCondition: 'no_concluyente',
+      confidence: 0.2,
+    },
+    suggestedFollowUp: '¿Buscas vender, rentar o comprar?',
+  };
+
+  const reply = buildMediaAcknowledgementReply(inbound.media);
+  assert.match(reply, /no alcanzo a identificar con claridad/i);
+  assert.match(reply, /vender|rentar|comprar/i);
+  assert.doesNotMatch(reply, /precio|colonia|metros|recamaras/i);
+});
+
+test('N) prefijo contextual conecta imagen con flujo de venta activo', () => {
+  const prefix = buildImageVisionContextPrefix(
+    {
+      image_vision: {
+        ok: true,
+      },
+    },
+    {
+      lead_flow: 'offer',
+    }
+  );
+
+  assert.match(prefix, /imagen me ayuda como referencia/i);
+  assert.match(prefix, /vender o rentar/i);
+});
+
+test('O) audio consecutivo sin transcripcion usa variacion consultiva', () => {
+  const inbound = buildInboundMessageContext({
+    type: 'audio',
+    audio: { id: 'aud-retry-1' },
+  });
+  inbound.media.audio_without_transcription_repeat = true;
+
+  const reply = buildMediaAcknowledgementReply(inbound.media);
+  assert.match(reply, /sigo recibiendo tus audios/i);
+  assert.match(reply, /dato clave/i);
+  assert.doesNotMatch(reply, /archivo procesado|lead creado|ticket creado/i);
 });

@@ -77,6 +77,13 @@ function getDefaultAiState() {
     legal_or_property_document_candidate: false,
     last_audio_transcription: null,
     has_audio_without_transcription: false,
+    last_image_vision_status: null,
+    last_image_vision_summary: null,
+    last_image_vision_confidence: null,
+    last_image_vision_property_type: null,
+    last_image_vision_area_type: null,
+    last_image_vision_condition: null,
+    context_fusion: null,
 
     must_have_features: [],
     timeline_text: null,

@@ -215,7 +215,8 @@ test('13) audio sin transcripcion mantiene fallback honesto', () => {
   const reply = buildMediaAcknowledgementReply(inbound.media);
   assert.equal(inbound.media.audio_without_transcription, true);
   assert.match(reply, /recib[ií] tu audio/i);
-  assert.match(reply, /me puedes escribir/i);
+  assert.match(reply, /frase/i);
+  assert.match(reply, /asesor/i);
   assert.doesNotMatch(reply, /escuche|escuch[eé]/i);
 });
 

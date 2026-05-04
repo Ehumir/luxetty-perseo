@@ -1,0 +1,12 @@
+{
+  "from": "5218111111111",
+  "id": "wamid.TEST.DOC.001",
+  "timestamp": "1710000006",
+  "type": "document",
+  "document": {
+    "id": "media-doc-qa-1",
+    "filename": "escritura.pdf",
+    "mime_type": "application/pdf",
+    "caption": "Documento de propiedad"
+  }
+}
