@@ -52,6 +52,25 @@ function extractMapUrl(text = '') {
   return match?.[0] || null;
 }
 
+function extractInteractiveText(interactive = {}) {
+  const buttonReply = interactive?.button_reply || null;
+  if (buttonReply) {
+    return cleanSpaces(buttonReply.title || buttonReply.id || '');
+  }
+
+  const listReply = interactive?.list_reply || null;
+  if (listReply) {
+    return cleanSpaces(listReply.title || listReply.description || listReply.id || '');
+  }
+
+  const nfmReply = interactive?.nfm_reply || null;
+  if (nfmReply) {
+    return cleanSpaces(nfmReply.body || nfmReply.response_json || nfmReply.name || '');
+  }
+
+  return cleanSpaces(interactive?.body || '');
+}
+
 function buildInboundMessageContext(message = {}) {
   const messageType = message?.type || null;
   const isForwarded =
@@ -180,6 +199,22 @@ function buildInboundMessageContext(message = {}) {
     messageText = contactName || contactPhone
       ? `El usuario compartió un contacto: ${contactName || 'sin nombre'} ${contactPhone || ''}`.trim()
       : 'El usuario compartió un contacto.';
+  } else if (messageType === 'contacts') {
+    media.category = 'contact';
+    const firstContact = Array.isArray(message?.contacts) ? message.contacts[0] : null;
+    const contactName = cleanSpaces(firstContact?.name?.formatted_name || firstContact?.name || '');
+    const contactPhone = cleanSpaces(firstContact?.phones?.[0]?.phone || '');
+    messageText = contactName || contactPhone
+      ? `El usuario compartió contactos: ${contactName || 'sin nombre'} ${contactPhone || ''}`.trim()
+      : 'El usuario compartió contactos.';
+  } else if (messageType === 'button') {
+    media.category = 'interactive';
+    const buttonText = cleanSpaces(message?.button?.text || message?.button?.payload || '');
+    messageText = buttonText || 'El usuario seleccionó una opción de botón.';
+  } else if (messageType === 'interactive') {
+    media.category = 'interactive';
+    const interactiveText = extractInteractiveText(message?.interactive || {});
+    messageText = interactiveText || 'El usuario seleccionó una opción interactiva.';
   } else if (messageType === 'unsupported' || messageType === 'unknown') {
     media.category = 'unsupported_media';
     media.unsupported_media = true;
@@ -205,6 +240,10 @@ function buildMediaAcknowledgementReply(media = {}) {
   }
 
   if (media?.type === 'image' || media?.type === 'document') {
+    if (media?.ai_analysis?.ok && media.ai_analysis.summary) {
+      return `Gracias, recibí la imagen y pude hacer una revisión automática preliminar. Detecté: ${media.ai_analysis.summary}. Para confirmar datos clave contigo y evitar suposiciones, ¿me compartes en texto lo principal que quieres lograr con esta propiedad?`;
+    }
+
     if (media.category === 'document') {
       return 'Gracias, recibí el documento. Para manejarlo correctamente, no quiero darte una conclusión legal sin revisión. Lo ideal es que nuestro equipo lo revise y te diga qué ruta comercial conviene para vender la propiedad. ¿Te parece bien que un asesor te contacte para revisarlo?';
     }
