@@ -31,6 +31,25 @@ function detectIntent(message, prevState = null) {
     text.includes('venta mi casa') ||
     text.includes('venta mi propiedad');
 
+  const wantsSellerGeneric =
+    text.includes('quiero vender una propiedad') ||
+    text.includes('quiero informacion') ||
+    text.includes('quiero información') ||
+    text.includes('compran terrenos') ||
+    text.includes('compras terrenos') ||
+    text.includes('quiero vender casa') ||
+    text.includes('tengo una propiedad') ||
+    text.includes('necesito vender') ||
+    text.includes('esta invadida') ||
+    text.includes('está invadida') ||
+    text.includes('tengo papeles') ||
+    text.includes('la quiero vender barata') ||
+    text.includes('tiene inquilino') ||
+    text.includes('esta intestada') ||
+    text.includes('está intestada') ||
+    text.includes('esta en sucesion') ||
+    text.includes('está en sucesión');
+
   const wantsRent =
     text.includes('quiero rentar') ||
     text.includes('busco renta') ||
@@ -63,7 +82,6 @@ function detectIntent(message, prevState = null) {
     text.includes('tienes depas') ||
     text.includes('tienen depas') ||
     text.includes('comprar') ||
-    text.includes('compra') ||
     text.includes('busco una propiedad');
 
   const implicitDemand =
@@ -146,6 +164,9 @@ function detectIntent(message, prevState = null) {
     operationType = 'rent';
   } else if (wantsBuy) {
     leadType = 'demand';
+    operationType = 'sale';
+  } else if (wantsSellerGeneric) {
+    leadType = 'offer';
     operationType = 'sale';
   }
 

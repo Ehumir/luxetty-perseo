@@ -5,6 +5,7 @@ const {
   buildPropertyInterestReply,
   buildPropertyPriceReply,
   buildDemandReply,
+  buildOfferReply,
 } = require('../conversation/responseBuilder');
 
 test('buildPropertyInterestReply returns sequenced commercial messages for A0453', () => {
@@ -104,4 +105,130 @@ test('buildPropertyPriceReply answers price directly after initial interest', ()
 
 ¿Quieres verla esta semana?`
   );
+});
+
+test('lead vendedor pregunta cuanto cobras recibe objecion consultiva + pregunta base', () => {
+  const reply = buildOfferReply(
+    {
+      lead_flow: 'offer',
+      operation_type: 'sale',
+    },
+    'append_info',
+    {
+      signals: {
+        asks_commission: true,
+      },
+    }
+  );
+
+  assert.match(reply, /comisión se maneja como un porcentaje sobre el precio final de venta/i);
+  assert.match(reply, /¿La propiedad ya está publicada o apenas estás evaluando vender\?/i);
+});
+
+test('propietaria con credito hipotecario reconoce saldo y continua calificacion', () => {
+  const reply = buildOfferReply(
+    {
+      lead_flow: 'offer',
+      operation_type: 'sale',
+      owner_relation: 'owner',
+      location_text: 'Mitras Poniente',
+      property_type: 'house',
+      terrain_m2: 120,
+      construction_m2: 220,
+      bedrooms: 2,
+      bathrooms: 2,
+      occupancy_status: 'occupied',
+      floors_count: 2,
+      garage_spaces: 1,
+      has_terrace_patio: true,
+      legal_deeded: true,
+      has_mortgage: true,
+      mortgage_balance_text: null,
+    },
+    'append_info'
+  );
+
+  assert.match(reply, /revisar el saldo del crédito/i);
+});
+
+test('si ya dijo zona y tipo no debe repetir esas preguntas', () => {
+  const reply = buildOfferReply(
+    {
+      lead_flow: 'offer',
+      operation_type: 'sale',
+      owner_relation: 'owner',
+      location_text: 'Guadalupe',
+      property_type: 'house',
+    },
+    'append_info'
+  );
+
+  assert.doesNotMatch(reply, /¿En qué zona o colonia/i);
+  assert.doesNotMatch(reply, /¿Es casa, departamento, terreno o local\?/i);
+  assert.match(reply, /m² de terreno y construcción/i);
+});
+
+test('precio esperado no se valida como correcto, se orienta con comparables', () => {
+  const reply = buildOfferReply(
+    {
+      lead_flow: 'offer',
+      operation_type: 'sale',
+      owner_relation: 'owner',
+      location_text: 'Monterrey',
+      property_type: 'house',
+      terrain_m2: 200,
+      construction_m2: 300,
+      bedrooms: 3,
+      bathrooms: 3,
+      occupancy_status: 'occupied',
+      floors_count: 2,
+      garage_spaces: 2,
+      has_terrace_patio: true,
+      legal_deeded: true,
+      has_mortgage: false,
+      works_with_realtor: false,
+      exclusivity_type: 'open',
+      expected_price: 5300000,
+      sale_motivation: 'cambiarme de zona',
+      urgency_level: 'medium',
+    },
+    'append_info'
+  );
+
+  assert.match(reply, /cierres reales/i);
+  assert.match(reply, /absorción/i);
+  assert.match(reply, /visita rápida de 20 minutos/i);
+});
+
+test('si acepta visita avanza a confirmacion de contacto y canalizacion', () => {
+  const reply = buildOfferReply(
+    {
+      lead_flow: 'offer',
+      operation_type: 'sale',
+      owner_relation: 'owner',
+      location_text: 'Monterrey',
+      property_type: 'house',
+      terrain_m2: 200,
+      construction_m2: 300,
+      bedrooms: 3,
+      bathrooms: 3,
+      occupancy_status: 'occupied',
+      floors_count: 2,
+      garage_spaces: 2,
+      has_terrace_patio: true,
+      legal_deeded: true,
+      has_mortgage: false,
+      works_with_realtor: false,
+      exclusivity_type: 'open',
+      expected_price: 5300000,
+      sale_motivation: 'liquidez',
+      urgency_level: 'high',
+      accepted_visit: true,
+      full_name: 'Laura Diaz',
+      contact_preference: null,
+    },
+    'append_info'
+  );
+
+  assert.match(reply, /prefieres que te contacten por WhatsApp o por llamada/i);
 });

@@ -1,6 +1,7 @@
 const { normalizeText, cleanSpaces } = require('../utils/text');
 const { detectIntent } = require('./intent');
 const { getDefaultAiState } = require('./aiState');
+const { classifySellerScenarios } = require('./sellerScenarioClassifier');
 
 function normalizePropertyCodeFromText(rawValue) {
   if (!rawValue) return null;
@@ -222,6 +223,446 @@ function extractBathrooms(message) {
   const text = normalizeText(message);
   const match = text.match(/(\d+)\s*(banos?|baños?)/i);
   if (match) return Number(match[1]);
+  return null;
+}
+
+function extractAreaMetric(message, keyword) {
+  const text = normalizeText(message);
+  const patterns = [
+    new RegExp(`(?:${keyword})\\s*(?:de)?\\s*(\\d{2,5}(?:[\\.,]\\d+)?)\\s*(?:m2|m²|metros?)`, 'i'),
+    new RegExp(`(\\d{2,5}(?:[\\.,]\\d+)?)\\s*(?:m2|m²|metros?)\\s*(?:de)?\\s*${keyword}`, 'i'),
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      const value = Number(match[1].replace(',', '.'));
+      if (Number.isFinite(value) && value > 0) return Math.round(value);
+    }
+  }
+
+  return null;
+}
+
+function extractTerrainM2(message) {
+  return extractAreaMetric(message, 'terreno|lote');
+}
+
+function extractConstructionM2(message) {
+  return extractAreaMetric(message, 'construccion|construcción');
+}
+
+function extractFloorsCount(message) {
+  const text = normalizeText(message);
+  const match = text.match(/(\d+)\s*(pisos?|plantas?|niveles?)/i);
+  if (match?.[1]) return Number(match[1]);
+  if (text.includes('una planta')) return 1;
+  if (text.includes('dos plantas')) return 2;
+  if (text.includes('tres plantas')) return 3;
+  return null;
+}
+
+function extractGarageSpaces(message) {
+  const text = normalizeText(message);
+  const match = text.match(/(\d+)\s*(cocheras?|autos?|carros?|vehiculos?|vehículos?)/i);
+  if (match?.[1]) return Number(match[1]);
+  if (text.includes('sin cochera')) return 0;
+  return null;
+}
+
+function detectTerracePatio(message) {
+  const text = normalizeText(message);
+  if (text.includes('terraza') || text.includes('patio')) return true;
+  if (text.includes('sin terraza') || text.includes('sin patio')) return false;
+  return null;
+}
+
+function detectOccupancyStatus(message) {
+  const text = normalizeText(message);
+  if (
+    text.includes('habitada') ||
+    text.includes('la habito') ||
+    text.includes('la habitamos') ||
+    text.includes('actualmente vivo') ||
+    text.includes('vivimos aqui') ||
+    text.includes('vivimos aquí')
+  ) {
+    return 'occupied';
+  }
+
+  if (
+    text.includes('desocupada') ||
+    text.includes('vacia') ||
+    text.includes('vacía') ||
+    text.includes('sin habitar')
+  ) {
+    return 'vacant';
+  }
+
+  return null;
+}
+
+function extractOccupancyDurationText(message) {
+  const raw = cleanSpaces(message || '');
+  const text = normalizeText(message);
+  if (!text.includes('ocupad') && !text.includes('inquilin') && !text.includes('invad')) return null;
+  const years = raw.match(/(\d{1,2})\s*años?/i);
+  if (years?.[0]) return cleanSpaces(years[0]);
+  const months = raw.match(/(\d{1,2})\s*mes(?:es)?/i);
+  if (months?.[0]) return cleanSpaces(months[0]);
+  return null;
+}
+
+function detectOccupancyEntryMode(message) {
+  const text = normalizeText(message);
+  if (text.includes('arreglo verbal') || text.includes('con permiso') || text.includes('le dieron chance') || text.includes('autorizado')) {
+    return 'with_permission';
+  }
+  if (text.includes('despojo') || text.includes('invasion') || text.includes('invasión') || text.includes('sin permiso')) {
+    return 'without_permission';
+  }
+  return null;
+}
+
+function detectHeirsRelation(message) {
+  const text = normalizeText(message);
+  if (text.includes('soy heredero') || text.includes('somos herederos')) return 'heir';
+  if (text.includes('tengo poder') || text.includes('apoderado')) return 'attorney_in_fact';
+  if (text.includes('familiar')) return 'family_representative';
+  return null;
+}
+
+function detectCanShareDocuments(message) {
+  const text = normalizeText(message);
+  if (text.includes('te comparto documentos') || text.includes('tengo documentos') || text.includes('puedo anexar')) return true;
+  if (text.includes('no tengo documentos') || text.includes('sin documentos')) return false;
+  return null;
+}
+
+function detectLegalDeeded(message) {
+  const text = normalizeText(message);
+  if (text.includes('escriturada') || text.includes('con escritura') || text.includes('si esta escriturada') || text.includes('sí está escriturada')) {
+    return true;
+  }
+  if (text.includes('sin escritura') || text.includes('no esta escriturada') || text.includes('no está escriturada')) {
+    return false;
+  }
+  return null;
+}
+
+function detectMortgage(message) {
+  const text = normalizeText(message);
+  if (
+    text.includes('credito hipotecario') ||
+    text.includes('crédito hipotecario') ||
+    text.includes('hipoteca') ||
+    text.includes('sigo pagando') ||
+    text.includes('debo al banco') ||
+    text.includes('todavia debo') ||
+    text.includes('todavía debo') ||
+    text.includes('tiene adeudo')
+  ) {
+    return true;
+  }
+  if (text.includes('sin hipoteca') || text.includes('libre de gravamen') || text.includes('ya esta pagada') || text.includes('ya está pagada')) {
+    return false;
+  }
+  return null;
+}
+
+function extractMortgageBalanceText(message) {
+  const raw = cleanSpaces(message || '');
+  const text = normalizeText(message);
+  if (!text.includes('saldo') && !text.includes('debo') && !text.includes('restan')) return null;
+  if (raw.length < 8) return null;
+  return raw.slice(0, 160);
+}
+
+function detectWorksWithRealtor(message) {
+  const text = normalizeText(message);
+  if (text.includes('ya me apoya una inmobiliaria') || text.includes('ya trabajo con inmobiliaria') || text.includes('ya tengo inmobiliaria') || text.includes('ya tengo asesor')) {
+    return true;
+  }
+  if (text.includes('no trabajo con inmobiliaria') || text.includes('apenas estoy revisando') || text.includes('no tengo inmobiliaria')) {
+    return false;
+  }
+  return null;
+}
+
+function detectExclusivityType(message) {
+  const text = normalizeText(message);
+  if (text.includes('no quiero exclusiva') || text.includes('no quiero exclusividad')) return 'open';
+  if (text.includes('exclusiva') || text.includes('exclusividad')) return 'exclusive';
+  if (text.includes('abierta') || text.includes('sin exclusividad') || text.includes('no quiero exclusividad')) return 'open';
+  return null;
+}
+
+function detectSaleMotivation(message) {
+  const raw = cleanSpaces(message || '');
+  const text = normalizeText(message);
+
+  const triggers = [
+    'porque',
+    'por que',
+    'cambiarme',
+    'invertir',
+    'liquidez',
+    'herencia',
+    'necesito vender',
+    'quiero vender por',
+  ];
+
+  if (!triggers.some((token) => text.includes(token))) return null;
+
+  if (raw.length < 12) return null;
+  return raw.slice(0, 220);
+}
+
+function detectUrgencyLevel(message) {
+  const text = normalizeText(message);
+  if (text.includes('urgente') || text.includes('lo antes posible') || text.includes('este mes')) return 'high';
+  if (text.includes('en 1') || text.includes('en 2') || text.includes('en 3') || text.includes('proximos meses') || text.includes('próximos meses')) return 'medium';
+  if (text.includes('sin prisa') || text.includes('explorando') || text.includes('apenas revisando')) return 'low';
+  return null;
+}
+
+function detectIsExploringSale(message) {
+  const text = normalizeText(message);
+  if (text.includes('apenas revisando') || text.includes('solo explorando') || text.includes('solo quiero saber')) return true;
+  return null;
+}
+
+function detectAcceptedVisit(message) {
+  const text = normalizeText(message);
+  if (text.includes('si acepto visita') || text.includes('sí acepto visita') || text.includes('agendamos visita') || text.includes('me parece bien la visita') || text.includes('si me queda entre semana') || text.includes('fin de semana me queda')) {
+    return true;
+  }
+  if (text.includes('no quiero visita') || text.includes('sin visita')) return false;
+  return null;
+}
+
+function detectCommissionQuestion(message) {
+  const text = normalizeText(message);
+  return (
+    text.includes('cuanto cobras') ||
+    text.includes('cuánto cobras') ||
+    text.includes('comision') ||
+    text.includes('comisión') ||
+    text.includes('porcentaje')
+  );
+}
+
+function detectOnlyValuationQuestion(message) {
+  const text = normalizeText(message);
+  return text.includes('solo quiero saber cuanto vale') || text.includes('solo quiero saber cuánto vale') || text.includes('cuanto vale mi casa') || text.includes('cuánto vale mi casa');
+}
+
+function detectValuationIntent(message) {
+  const text = normalizeText(message);
+  return (
+    text.includes('valuar') ||
+    text.includes('valuacion') ||
+    text.includes('valuación') ||
+    text.includes('cuanto vale mi propiedad') ||
+    text.includes('cuánto vale mi propiedad') ||
+    text.includes('cuanto vale mi casa') ||
+    text.includes('cuánto vale mi casa') ||
+    text.includes('en cuanto puedo vender') ||
+    text.includes('en cuánto puedo vender') ||
+    text.includes('valor de mi casa') ||
+    text.includes('valor de mi propiedad')
+  );
+}
+
+function detectHigherOtherAgencyObjection(message) {
+  const text = normalizeText(message);
+  return text.includes('otra inmobiliaria me dijo mas') || text.includes('otra inmobiliaria me dijo más') || text.includes('me ofrecieron mas') || text.includes('me ofrecieron más');
+}
+
+function detectNoExclusivityObjection(message) {
+  const text = normalizeText(message);
+  return text.includes('no quiero exclusividad') || text.includes('no quiero exclusiva') || text.includes('sin exclusividad');
+}
+
+function detectExistingRealtorObjection(message) {
+  const text = normalizeText(message);
+  return text.includes('ya me apoya una inmobiliaria') || text.includes('ya tengo inmobiliaria') || text.includes('ya trabajo con un asesor');
+}
+
+function detectDirectPurchaseQuestion(message) {
+  const text = normalizeText(message);
+  return text.includes('compran terrenos') || text.includes('compras terrenos') || text.includes('compran casas') || text.includes('compran propiedad');
+}
+
+function detectUrgentSaleSignal(message) {
+  const text = normalizeText(message);
+  return (
+    text.includes('me urge vender') ||
+    text.includes('necesito vender rapido') ||
+    text.includes('necesito vender rápido') ||
+    text.includes('necesito liquidez') ||
+    text.includes('me voy de la ciudad')
+  );
+}
+
+function detectSellBuyBridge(message) {
+  const text = normalizeText(message);
+  return (
+    text.includes('vender mi casa y comprar otra') ||
+    text.includes('vender para comprar') ||
+    text.includes('quiero vender y comprar') ||
+    text.includes('quiero cambiarme de casa') ||
+    text.includes('necesito vender para comprar')
+  );
+}
+
+function detectInvestorProfile(message) {
+  const text = normalizeText(message);
+  return (
+    text.includes('invertir') ||
+    text.includes('rentabilidad') ||
+    text.includes('comprar para rentar') ||
+    text.includes('oportunidad de inversion') ||
+    text.includes('oportunidad de inversión')
+  );
+}
+
+function detectRemoteClient(message) {
+  const text = normalizeText(message);
+  return (
+    text.includes('vivo fuera de monterrey') ||
+    text.includes('vivo en estados unidos') ||
+    text.includes('estoy en estados unidos') ||
+    text.includes('estoy en usa') ||
+    text.includes('no puedo ir') ||
+    text.includes('videollamada') ||
+    text.includes('video llamada')
+  );
+}
+
+function detectComplaintFollowup(message) {
+  const text = normalizeText(message);
+  return (
+    text.includes('no me han contestado') ||
+    text.includes('ya deje mis datos') ||
+    text.includes('ya dejé mis datos') ||
+    text.includes('nadie me llamo') ||
+    text.includes('nadie me llamó') ||
+    text.includes('me dejaron en visto')
+  );
+}
+
+function detectLowInfoCampaignMessage(message) {
+  const raw = cleanSpaces(message || '');
+  const text = normalizeText(message);
+
+  if (!text) return false;
+
+  const lowInfoSet = new Set([
+    'info',
+    'me interesa',
+    'vi su anuncio',
+    'quiero informes',
+    'hola',
+  ]);
+
+  if (lowInfoSet.has(text)) return true;
+
+  const words = raw.split(/\s+/).filter(Boolean);
+  const hasRealEstateDetail =
+    text.includes('casa') ||
+    text.includes('departamento') ||
+    text.includes('depa') ||
+    text.includes('terreno') ||
+    text.includes('renta') ||
+    text.includes('venta') ||
+    text.includes('comprar') ||
+    text.includes('vender') ||
+    text.includes('m2') ||
+    text.includes('metros');
+
+  return words.length <= 3 && !hasRealEstateDetail && (text.includes('info') || text.includes('informes'));
+}
+
+function detectNonRealEstateOrProvider(message) {
+  const text = normalizeText(message);
+  const terms = [
+    'soy proveedor',
+    'ofrezco servicio',
+    'factura pendiente',
+    'cotizacion de servicio',
+    'cotización de servicio',
+    'bolsa de trabajo',
+    'vacante',
+    'reclutamiento',
+  ];
+  return terms.some((term) => text.includes(term));
+}
+
+function detectLegalSensitive(message) {
+  const text = normalizeText(message);
+  const terms = [
+    'ocupada',
+    'ocupado',
+    'invadida',
+    'invadido',
+    'sin contrato',
+    'sucesion',
+    'sucesión',
+    'intestado',
+    'heredero',
+    'herederos',
+    'poder notarial',
+    'registro publico',
+    'registro público',
+    'infonavit',
+    'desalojo',
+    'sentencia',
+    'albacea',
+    'usucapion',
+    'usucapión',
+    'arrendatario',
+    'arrendatarios',
+    'juicio',
+    'embargo',
+  ];
+  return terms.some((term) => text.includes(term));
+}
+
+function extractMunicipality(message) {
+  const text = normalizeText(message);
+  const municipalities = [
+    'monterrey',
+    'san pedro garza garcia',
+    'san pedro garza garcía',
+    'garcia',
+    'garcía',
+    'guadalupe',
+    'apodaca',
+    'san nicolas',
+    'san nicolás',
+    'santa catarina',
+  ];
+
+  for (const municipality of municipalities) {
+    if (text.includes(municipality)) return municipality;
+  }
+
+  return null;
+}
+
+function extractNeighborhood(message) {
+  const raw = cleanSpaces(message || '');
+  const patterns = [
+    /colonia\s+([a-záéíóúñ0-9\s]+)/i,
+    /fraccionamiento\s+([a-záéíóúñ0-9\s]+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (match?.[1]) return cleanSpaces(match[1]).replace(/[.,!?]+$/g, '');
+  }
+
   return null;
 }
 
@@ -536,13 +977,27 @@ function detectContextualSignals(message, prevState) {
   const text = normalizeText(message);
   const awaitingField = prevState?.awaiting_field || null;
 
+  const shortAffirmatives = new Set([
+    'si',
+    'sí',
+    'ok',
+    'va',
+    'me parece',
+    'perfecto',
+    'claro',
+    'dale',
+    '👍',
+    '👌',
+  ]);
+
+  const isAffirmative =
+    shortAffirmatives.has(text) ||
+    text.startsWith('si,') ||
+    text.startsWith('sí,') ||
+    text === 'correcto';
+
   const signals = {
-    answer_affirmative:
-      text === 'si' ||
-      text === 'sí' ||
-      text.startsWith('sí,') ||
-      text.startsWith('si,') ||
-      text === 'correcto',
+    answer_affirmative: isAffirmative,
     answer_negative: text === 'no',
     answer_any:
       text.includes('no importa') ||
@@ -582,7 +1037,7 @@ function inferUserGoal(leadFlow) {
   return null;
 }
 
-function parseMessageSignals(message, prevState = getDefaultAiState()) {
+function parseMessageSignals(message, prevState = getDefaultAiState(), messageContext = {}) {
   const intent = detectIntent(message, prevState);
   const contextual = detectContextualSignals(message, prevState);
   const commercial = detectCommercialSignals(message);
@@ -593,6 +1048,56 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
   const budgetCurrency = extractBudgetCurrency(message);
   const bedrooms = extractBedrooms(message);
   const bathrooms = extractBathrooms(message);
+  const terrainM2 = extractTerrainM2(message);
+  const constructionM2 = extractConstructionM2(message);
+  const floorsCount = extractFloorsCount(message);
+  const garageSpaces = extractGarageSpaces(message);
+  const hasTerracePatio = detectTerracePatio(message);
+  const occupancyStatus = detectOccupancyStatus(message);
+  const occupancyDurationText = extractOccupancyDurationText(message);
+  const occupancyEntryMode = detectOccupancyEntryMode(message);
+  const heirsRelation = detectHeirsRelation(message);
+  const canShareDocuments = detectCanShareDocuments(message);
+  const legalDeeded = detectLegalDeeded(message);
+  const hasMortgage = detectMortgage(message);
+  const mortgageBalanceText = extractMortgageBalanceText(message);
+  const worksWithRealtor = detectWorksWithRealtor(message);
+  const exclusivityType = detectExclusivityType(message);
+  const saleMotivation = detectSaleMotivation(message);
+  const urgencyLevel = detectUrgencyLevel(message);
+  const isExploringSale = detectIsExploringSale(message);
+  const acceptedVisit = detectAcceptedVisit(message);
+  const asksCommission = detectCommissionQuestion(message);
+  const asksOnlyValuation = detectOnlyValuationQuestion(message);
+  const asksValuation = detectValuationIntent(message);
+  const objectionHigherAgency = detectHigherOtherAgencyObjection(message);
+  const objectionNoExclusivity = detectNoExclusivityObjection(message);
+  const objectionExistingRealtor = detectExistingRealtorObjection(message);
+  const asksDirectPurchase = detectDirectPurchaseQuestion(message);
+  const urgentSaleSignal = detectUrgentSaleSignal(message);
+  const sellBuyBridge = detectSellBuyBridge(message);
+  const investorProfile = detectInvestorProfile(message);
+  const remoteClient = detectRemoteClient(message);
+  const complaintFollowup = detectComplaintFollowup(message);
+  const lowInfoCampaignMessage = detectLowInfoCampaignMessage(message);
+  const nonRealEstateOrProvider = detectNonRealEstateOrProvider(message);
+  const legalSensitive = detectLegalSensitive(message);
+  const municipalityText = extractMunicipality(message);
+  const neighborhoodText = extractNeighborhood(message);
+
+  const sellerScenario = classifySellerScenarios({
+    messageText: message,
+    aiState: {
+      ...prevState,
+      lead_flow: intent.leadType || prevState.lead_flow,
+      intent_type: intent.type || prevState.intent_type,
+      location_text: locationText || prevState.location_text,
+      works_with_realtor: worksWithRealtor ?? prevState.works_with_realtor,
+      occupancy_status: occupancyStatus || prevState.occupancy_status,
+      urgency_level: urgencyLevel || prevState.urgency_level,
+    },
+    media: messageContext?.media || null,
+  });
   const contactPreference = detectContactPreference(message);
   let fullName = extractPossibleName(message, prevState);
   const ownerRelation = detectOwnerRelation(message);
@@ -649,6 +1154,62 @@ function parseMessageSignals(message, prevState = getDefaultAiState()) {
     budget_currency: budgetCurrency,
     bedrooms,
     bathrooms,
+    terrain_m2: terrainM2,
+    construction_m2: constructionM2,
+    floors_count: floorsCount,
+    garage_spaces: garageSpaces,
+    has_terrace_patio: hasTerracePatio,
+    occupancy_status: occupancyStatus,
+    occupancy_duration_text: occupancyDurationText,
+    occupancy_entry_mode: occupancyEntryMode,
+    heirs_relation: heirsRelation,
+    can_share_documents: canShareDocuments,
+    legal_deeded: legalDeeded,
+    has_mortgage: hasMortgage,
+    mortgage_balance_text: mortgageBalanceText,
+    works_with_realtor: worksWithRealtor,
+    exclusivity_type: exclusivityType,
+    expected_price: budgetMax,
+    sale_motivation: saleMotivation,
+    urgency_level: urgencyLevel,
+    is_exploring_sale: isExploringSale,
+    accepted_visit: acceptedVisit,
+    asks_commission: asksCommission,
+    asks_only_valuation: asksOnlyValuation,
+    asks_valuation: asksValuation,
+    objection_higher_other_agency: objectionHigherAgency,
+    objection_no_exclusivity: objectionNoExclusivity,
+    objection_existing_realtor: objectionExistingRealtor,
+    asks_direct_purchase: asksDirectPurchase,
+    urgent_sale_signal: urgentSaleSignal,
+    sell_buy_bridge: sellBuyBridge,
+    investor_profile: investorProfile,
+    remote_client: remoteClient,
+    complaint_followup: complaintFollowup,
+    low_info_campaign_message: lowInfoCampaignMessage,
+    non_real_estate_or_provider: nonRealEstateOrProvider,
+    legal_sensitive: legalSensitive || sellerScenario.legalSensitive,
+    seller_scenarios: sellerScenario.scenarios,
+    primary_seller_scenario: sellerScenario.primaryScenario,
+    already_listed:
+      sellerScenario.alreadyListed === true
+        ? true
+        : sellerScenario.alreadyListed === false
+        ? false
+        : null,
+    listing_duration_days: sellerScenario.listingDurationDays,
+    has_documents:
+      sellerScenario.hasDocuments === true
+        ? true
+        : sellerScenario.hasDocuments === false
+        ? false
+        : null,
+    municipality_text: municipalityText,
+    neighborhood_text: neighborhoodText,
+    needs_specialized_review: legalSensitive || sellerScenario.legalSensitive,
+    risk_flags: Object.entries(sellerScenario.sellerSummaryFlags || {})
+      .filter(([, enabled]) => !!enabled)
+      .map(([key]) => key),
     contact_preference: contactPreference,
     full_name: fullName,
     owner_relation: ownerRelation,
@@ -678,6 +1239,42 @@ module.exports = {
   extractMaxPrice,
   extractBedrooms,
   extractBathrooms,
+  extractTerrainM2,
+  extractConstructionM2,
+  extractFloorsCount,
+  extractGarageSpaces,
+  detectTerracePatio,
+  detectOccupancyStatus,
+  extractOccupancyDurationText,
+  detectOccupancyEntryMode,
+  detectHeirsRelation,
+  detectCanShareDocuments,
+  detectLegalDeeded,
+  detectMortgage,
+  extractMortgageBalanceText,
+  detectWorksWithRealtor,
+  detectExclusivityType,
+  detectSaleMotivation,
+  detectUrgencyLevel,
+  detectIsExploringSale,
+  detectAcceptedVisit,
+  detectCommissionQuestion,
+  detectOnlyValuationQuestion,
+  detectValuationIntent,
+  detectHigherOtherAgencyObjection,
+  detectNoExclusivityObjection,
+  detectExistingRealtorObjection,
+  detectDirectPurchaseQuestion,
+  detectUrgentSaleSignal,
+  detectSellBuyBridge,
+  detectInvestorProfile,
+  detectRemoteClient,
+  detectComplaintFollowup,
+  detectLowInfoCampaignMessage,
+  detectNonRealEstateOrProvider,
+  detectLegalSensitive,
+  extractMunicipality,
+  extractNeighborhood,
   detectContactPreference,
   extractPossibleName,
   detectOwnerRelation,

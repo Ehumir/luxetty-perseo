@@ -10,6 +10,14 @@ function normalizePhoneNumber(input) {
 
   if (!digits) return null;
 
+  // Prefijos internacionales comunes enviados por distintos orígenes.
+  if (digits.startsWith('00')) digits = digits.slice(2);
+
+  // Prefijos legacy MX en telefonía móvil.
+  if (digits.startsWith('044') || digits.startsWith('045') || digits.startsWith('01')) {
+    digits = digits.replace(/^(044|045|01)/, '');
+  }
+
   // Caso MX local: 10 dígitos → WhatsApp México con prefijo 521.
   if (digits.length === 10) {
     return `521${digits}`;
@@ -25,7 +33,36 @@ function normalizePhoneNumber(input) {
     return digits;
   }
 
+  // Caso WA_ID con +521 o 521 enmascarado entre caracteres.
+  if (digits.length > 13 && digits.includes('521')) {
+    const idx = digits.indexOf('521');
+    const candidate = digits.slice(idx, idx + 13);
+    if (/^521\d{10}$/.test(candidate)) return candidate;
+  }
+
   return digits.length >= 8 && digits.length <= 15 ? digits : null;
+}
+
+function isUsefulContactName(value) {
+  const normalized = normalizeName(value);
+  if (!normalized) return false;
+
+  const lowered = normalized.toLowerCase();
+  const invalidTokens = [
+    'cliente whatsapp',
+    'cliente',
+    'usuario',
+    'sin nombre',
+    'unknown',
+    'desconocido',
+    'n/a',
+  ];
+
+  if (invalidTokens.includes(lowered)) return false;
+  if (/^\d+$/.test(normalized)) return false;
+  if (normalized.length < 3) return false;
+
+  return true;
 }
 
 function normalizeWhatsApp(input) {
@@ -445,6 +482,7 @@ module.exports = {
   normalizeWhatsApp,
   normalizePhoneNumber,
   normalizeName,
+  isUsefulContactName,
   extractFirstName,
   findContactByWhatsApp,
   createContactFromConversation,

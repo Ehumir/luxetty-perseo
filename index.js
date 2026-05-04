@@ -17,7 +17,10 @@ const {
   SEARCH_BUDGET_FALLBACK_MULTIPLIER,
 } = require('./config/constants');
 
-const { SYSTEM_PROMPT } = require('./config/prompts');
+const {
+  PERSEO_CONSULTANT_SYSTEM_PROMPT,
+  buildPerseoConsultantContext,
+} = require('./conversation/perseoConsultantPrompt');
 
 const { supabase } = require('./services/supabaseService');
 const { openai } = require('./services/openaiService');
@@ -27,12 +30,17 @@ const {
   detectLeadCreationOpportunity,
   extractCampaignReferralContext,
   buildLeadContextFromConversation,
+  buildStructuredSellerCrmSummary,
 } = require('./services/leadAutomation');
 const { runInactivityFollowups } = require('./services/followupAutomation');
 const { persistConversationReferral } = require('./services/referralService');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
 const { parseMessageSignals } = require('./conversation/parsers');
+const {
+  buildInboundMessageContext,
+  buildMediaAcknowledgementReply,
+} = require('./conversation/mediaSignals');
 const { getNextStep } = require('./conversation/nextStep');
 const {
   getNextPlaybookStep,
@@ -47,6 +55,7 @@ const {
 } = require('./conversation/searchRules');
 const {
   buildAiSummary,
+  buildLowInfoCampaignReply,
   buildDemandReply,
   buildOfferReply,
   buildFallbackOpenAIReply,
@@ -61,6 +70,7 @@ const {
   sanitizeReply,
   safeJsonStringify,
   normalizePhoneNumber,
+  isUsefulContactName,
   extractWhatsAppReferral,
   normalizeOutboundMessages,
 } = require('./utils/helpers');
@@ -1283,12 +1293,20 @@ function getPhoneLookupValues(phone) {
   return Array.from(values).filter(Boolean);
 }
 
-async function upsertContactForConversation(conversationRow, state, phone) {
+async function ensureContactForConversation({
+  conversationRow,
+  state,
+  phone,
+  waName = null,
+  source = 'whatsapp',
+  rawPayload = null,
+}) {
   try {
     if (!conversationRow?.id || !phone) return null;
 
     const normalizedPhone = normalizePhoneNumber(phone) || phone;
-    const contactName = state.full_name || null;
+    const candidateNames = [state?.full_name, waName].filter(Boolean);
+    const usefulName = candidateNames.find((name) => isUsefulContactName(name)) || null;
 
     let existingContact = null;
 
@@ -1299,6 +1317,26 @@ async function upsertContactForConversation(conversationRow, state, phone) {
         .eq('id', conversationRow.contact_id)
         .maybeSingle();
       existingContact = data || null;
+    }
+
+    if (!existingContact) {
+      const { data: byWhatsapp } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('whatsapp', normalizedPhone)
+        .limit(1);
+
+      existingContact = byWhatsapp?.[0] || null;
+    }
+
+    if (!existingContact) {
+      const { data: byPhone } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('phone', normalizedPhone)
+        .limit(1);
+
+      existingContact = byPhone?.[0] || null;
     }
 
     if (!existingContact) {
@@ -1316,7 +1354,9 @@ async function upsertContactForConversation(conversationRow, state, phone) {
 
     if (existingContact) {
       const payload = {};
-      if (contactName && !existingContact.full_name) payload.full_name = contactName;
+      if (usefulName && !isUsefulContactName(existingContact.full_name)) {
+        payload.full_name = usefulName;
+      }
       if (!existingContact.phone) payload.phone = normalizedPhone;
       if (!existingContact.whatsapp) payload.whatsapp = normalizedPhone;
 
@@ -1324,11 +1364,17 @@ async function upsertContactForConversation(conversationRow, state, phone) {
         await supabase.from('contacts').update(payload).eq('id', existingContact.id);
       }
 
-      if (!conversationRow.contact_id) {
+      if (!conversationRow.contact_id || conversationRow.contact_id !== existingContact.id) {
         await updateConversationMeta(conversationRow.id, {
           contact_id: existingContact.id,
         });
       }
+
+      await saveConversationEvent(conversationRow.id, 'contact_reused', {
+        contact_id: existingContact.id,
+        source,
+        normalized_phone: normalizedPhone,
+      });
 
       return existingContact.id;
     }
@@ -1337,7 +1383,8 @@ async function upsertContactForConversation(conversationRow, state, phone) {
       phone: normalizedPhone,
       whatsapp: normalizedPhone,
     };
-    if (contactName) createPayload.full_name = contactName;
+    if (usefulName) createPayload.full_name = usefulName;
+    else createPayload.full_name = 'Cliente';
 
     const { data: created, error } = await supabase
       .from('contacts')
@@ -1354,11 +1401,23 @@ async function upsertContactForConversation(conversationRow, state, phone) {
       contact_id: created.id,
     });
 
+    await saveConversationEvent(conversationRow.id, 'contact_created', {
+      contact_id: created.id,
+      source,
+      normalized_phone: normalizedPhone,
+      has_useful_name: !!usefulName,
+      raw_payload_meta_message_id: rawPayload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id || null,
+    });
+
     return created.id;
   } catch (err) {
-    console.error('FATAL upsertContactForConversation:', err);
+    console.error('FATAL ensureContactForConversation:', err);
     return null;
   }
+}
+
+async function upsertContactForConversation(conversationRow, state, phone) {
+  return ensureContactForConversation({ conversationRow, state, phone });
 }
 
 function shouldEscalateDemand(state, properties, text) {
@@ -1540,17 +1599,9 @@ app.post('/webhook', async (req, res) => {
 
       from = normalizePhoneNumber(rawFrom) || rawFrom;
 
-      let text = '';
-
-      if (messageType === 'text') {
-        text = cleanSpaces(message.text?.body || '');
-      } else if (messageType === 'audio') {
-        text = 'El usuario envió un audio.';
-      } else if (messageType === 'image') {
-        text = 'El usuario envió una imagen.';
-      } else {
-        text = `El usuario envió un mensaje tipo ${messageType}.`;
-      }
+      const inboundContext = buildInboundMessageContext(message);
+      const text = inboundContext.messageText;
+      const transcriptionText = inboundContext.transcriptionText;
 
       console.log('--- NUEVO MENSAJE ---');
       console.log('From:', from);
@@ -1577,10 +1628,25 @@ app.post('/webhook', async (req, res) => {
             ? 'text'
             : messageType === 'audio'
             ? 'audio'
+            : messageType === 'voice'
+            ? 'voice'
             : messageType === 'image'
             ? 'image'
+            : messageType === 'document'
+            ? 'document'
+            : messageType === 'video'
+            ? 'video'
+            : messageType === 'sticker'
+            ? 'sticker'
+            : messageType === 'location'
+            ? 'location'
+            : messageType === 'contact'
+            ? 'contact'
+            : messageType === 'unsupported'
+            ? 'unsupported'
             : 'system',
         messageText: text,
+        transcriptionText,
         metaMessageId,
         rawPayload: inboundRawPayload,
       });
@@ -1609,8 +1675,26 @@ app.post('/webhook', async (req, res) => {
       }
 
       const previousAiState = normalizeAiState(conversationRow?.ai_state);
-      const incomingSignals = parseMessageSignals(text, previousAiState);
+      const incomingSignals = parseMessageSignals(text, previousAiState, inboundContext);
       const signals = incomingSignals;
+
+      if (inboundContext?.media && inboundContext.media.type !== 'text') {
+        await saveConversationEvent(conversationId, 'inbound_media_classified', {
+          conversation_message_id: inboundMessageRow?.id || null,
+          media_type: inboundContext.media.type || null,
+          media_category: inboundContext.media.category || null,
+          media_id: inboundContext.media.media_id || null,
+          is_forwarded: !!inboundContext.media.is_forwarded,
+          attachment_detected_not_processed: !!inboundContext.media.attachment_detected_not_processed,
+          unsupported_media: !!inboundContext.media.unsupported_media,
+          map_url: inboundContext.media.map_url || null,
+          file_name: inboundContext.media.file_name || null,
+          mime_type: inboundContext.media.mime_type || null,
+          property_image_candidate: !!inboundContext.media.property_image_candidate,
+          legal_or_property_document_candidate: !!inboundContext.media.legal_or_property_document_candidate,
+          has_transcription: !!inboundContext.transcriptionText,
+        });
+      }
 
     if (!signals.property_code) {
       const propertySlug = extractPropertySlugFromText(text);
@@ -1877,6 +1961,29 @@ app.post('/webhook', async (req, res) => {
 
     if (incomingSignals.better_phone) {
       nextAiState.contact_number_confirmed = true;
+    }
+
+    if (inboundContext?.media?.type) {
+      nextAiState.last_media_type = inboundContext.media.type;
+      nextAiState.last_media_category = inboundContext.media.category || null;
+      nextAiState.last_media_id = inboundContext.media.media_id || null;
+      nextAiState.last_media_mime_type = inboundContext.media.mime_type || null;
+      nextAiState.last_media_file_name = inboundContext.media.file_name || null;
+      nextAiState.last_media_map_url = inboundContext.media.map_url || null;
+      nextAiState.last_media_forwarded = !!inboundContext.media.is_forwarded;
+      nextAiState.last_media_detected_not_processed = !!inboundContext.media.attachment_detected_not_processed;
+      nextAiState.last_media_unsupported = !!inboundContext.media.unsupported_media;
+      nextAiState.property_image_candidate = !!inboundContext.media.property_image_candidate;
+      nextAiState.legal_or_property_document_candidate = !!inboundContext.media.legal_or_property_document_candidate;
+    }
+
+    if (inboundContext?.media?.audio_has_transcription && transcriptionText) {
+      nextAiState.last_audio_transcription = transcriptionText;
+      nextAiState.has_audio_without_transcription = false;
+    }
+
+    if (inboundContext?.media?.audio_without_transcription) {
+      nextAiState.has_audio_without_transcription = true;
     }
 
     if (incomingSignals.full_name) {
@@ -2190,6 +2297,21 @@ app.post('/webhook', async (req, res) => {
     }
 
     applyPlaybookProgress(nextAiState, { matchedProperties });
+
+    nextAiState.crm_structured_summary = buildStructuredSellerCrmSummary({
+      aiState: nextAiState,
+      conversation: conversationRow,
+      property: matchedProperties[0] || null,
+    });
+
+    nextAiState.missing_information = Array.isArray(nextAiState.crm_structured_summary?.missing_information)
+      ? nextAiState.crm_structured_summary.missing_information
+      : nextAiState.missing_information;
+
+    nextAiState.risk_flags = Array.isArray(nextAiState.crm_structured_summary?.risk_flags)
+      ? nextAiState.crm_structured_summary.risk_flags
+      : nextAiState.risk_flags;
+
     await maybeGenerateAiSummary(conversationId, nextAiState, matchedProperties);
 
     let reply = null;
@@ -2215,7 +2337,28 @@ app.post('/webhook', async (req, res) => {
       return shouldAskField(state, fieldName);
     }
 
-    if (isGreetingOnly(text) && !previousAiState.lead_flow && !incomingSignals.property_code) {
+    if (inboundContext?.media?.audio_without_transcription) {
+      reply = buildMediaAcknowledgementReply(inboundContext.media);
+    } else if (incomingSignals.non_real_estate_or_provider) {
+      reply = 'Gracias por tu mensaje. Este canal esta enfocado en compra, renta y venta de propiedades. Si tu solicitud es de otro tipo, con gusto la canalizo por la via interna correspondiente.';
+      nextAiState.lead_flow = null;
+      nextAiState.operation_type = null;
+      nextAiState.awaiting_field = null;
+    } else if (incomingSignals.complaint_followup) {
+      nextAiState.wants_human = true;
+      reply = 'Tienes razon, gracias por decirmelo. Te apoyo a retomarlo con prioridad y seguimiento humano. Para ubicar tu caso rapido, ¿me confirmas tu nombre y si era por compra, renta o venta?';
+      if (!nextAiState.full_name) {
+        nextAiState.awaiting_field = 'full_name';
+      }
+    } else if (incomingSignals.low_info_campaign_message && !incomingSignals.lead_flow) {
+      const campaignContext = extractCampaignReferralContext({
+        aiState: nextAiState,
+        referral: normalizedReferral,
+        rawPayload: inboundRawPayload,
+        messageText: text,
+      });
+      reply = buildLowInfoCampaignReply(campaignContext.hasCampaignContext);
+    } else if (isGreetingOnly(text) && !previousAiState.lead_flow && !incomingSignals.property_code) {
       reply =
         'Hola, bienvenido a Luxetty 😊\n¿En qué puedo orientarte hoy? ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
     } else if (nextAiState.handoff_sent && isClosureCheck(text)) {
@@ -2367,7 +2510,12 @@ app.post('/webhook', async (req, res) => {
         }
       }
     } else if (nextAiState.lead_flow === 'offer') {
-      reply = buildOfferReply(nextAiState, changeType);
+      const mediaReply = buildMediaAcknowledgementReply(inboundContext?.media);
+      if (mediaReply) {
+        reply = mediaReply;
+      } else {
+        reply = buildOfferReply(nextAiState, changeType, { signals: incomingSignals, text });
+      }
 
       if (
         nextAiState.capture_qualified === false &&
@@ -2402,12 +2550,28 @@ app.post('/webhook', async (req, res) => {
         reply = buildFinalHandoffReply(nextAiState);
       }
     } else {
+      const mediaReply = buildMediaAcknowledgementReply(inboundContext?.media);
+      if (mediaReply) {
+        reply = mediaReply;
+      }
+
+      if (reply) {
+        // Mantiene fallback de media sin transcripcion o imagen cuando no hay flujo definido.
+      } else {
       const prevMessages = conversations.get(from) || [];
+
+      const consultantContext = buildPerseoConsultantContext(nextAiState, prevMessages, {
+        userMessage: text,
+        changeType,
+        matchedPropertiesCount: 0,
+        locationCatalog: locationCatalog.rawNames,
+      });
 
       const response = await openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: PERSEO_CONSULTANT_SYSTEM_PROMPT },
+          { role: 'system', content: consultantContext },
           ...prevMessages,
           {
             role: 'system',
@@ -2428,6 +2592,7 @@ ${locationCatalog.rawNames.join(', ')}
       reply =
         response.choices?.[0]?.message?.content?.trim() ||
         '¿En qué puedo orientarte? ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
+      }
     }
 
     if (!reply) {
