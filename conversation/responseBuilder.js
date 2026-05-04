@@ -5,7 +5,10 @@ const {
   formatPropertyList,
 } = require('../utils/formatting');
 const { safeJsonStringify } = require('../utils/helpers');
-const { SYSTEM_PROMPT } = require('../config/prompts');
+const {
+  PERSEO_CONSULTANT_SYSTEM_PROMPT,
+  buildPerseoConsultantContext,
+} = require('./perseoConsultantPrompt');
 const { openai } = require('../services/openaiService');
 const { qualifiesDemandValue } = require('./searchRules');
 
@@ -66,6 +69,14 @@ function buildAiSummary(state, properties = []) {
   }
 
   return parts.join(' ').trim() || null;
+}
+
+function buildLowInfoCampaignReply(hasCampaignContext = false) {
+  if (hasCampaignContext) {
+    return 'Claro, con gusto te ayudo con el anuncio que viste. Para ubicarte bien, ¿buscas comprar, rentar, vender o poner en renta una propiedad?';
+  }
+
+  return 'Claro, con gusto te ayudo. Para ubicarte bien, ¿buscas comprar, rentar, vender o poner en renta una propiedad?';
 }
 
 function getChangeAcknowledgement(changeType, state) {
@@ -298,6 +309,10 @@ function buildDirectPropertyReply(state, changeType, properties = []) {
 }
 
 function buildDemandReply(state, changeType, properties, attemptUsed) {
+  if (state.complaint_followup) {
+    return 'Tienes razon, gracias por decirmelo. Te apoyo a retomarlo de inmediato con un asesor humano para dar continuidad puntual. Para ubicar tu seguimiento, ¿me confirmas tu nombre y si era por compra, renta o venta?';
+  }
+
   if (state.direct_property_reference && state.property_code) {
     return buildDirectPropertyReply(state, changeType, properties);
   }
@@ -309,6 +324,14 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
 
   if (!state.operation_type) {
     return 'Para orientarte mejor, ¿buscas comprar o rentar una propiedad?';
+  }
+
+  if (state.investor_profile) {
+    return 'Perfecto, para inversion conviene evaluar liquidez, demanda de renta y precio de entrada, sin prometer rendimientos fijos. ¿Buscas flujo por renta o plusvalia?';
+  }
+
+  if (state.remote_client) {
+    return 'Podemos avanzar totalmente en remoto con llamada y videollamada para que no dependas de estar en Monterrey. ¿Este WhatsApp es el mejor numero para contactarte?';
   }
 
   if (!state.location_text && !state.location_any) {
@@ -356,53 +379,176 @@ function buildDemandReply(state, changeType, properties, attemptUsed) {
   return `${noExact}\n¿Deseas ajustar la búsqueda o que un asesor de Luxetty te oriente hacia opciones más alineadas?`;
 }
 
-function buildOfferReply(state, changeType) {
+function buildOfferReply(state, changeType, context = {}) {
   const ack = getChangeAcknowledgement(changeType, state);
+  const signals = context?.signals || {};
 
-  if (!state.property_type) {
-    return `${ack}\n¿Qué tipo de propiedad quieres vender o poner en renta?`;
+  if (state.complaint_followup || signals.complaint_followup) {
+    return 'Tienes razon, gracias por comentarlo. Pauso lo comercial para retomar tu caso con prioridad y seguimiento humano. Para ubicarlo rapido, ¿me confirmas tu nombre y si era por compra, renta o venta?';
   }
 
-  if (!state.location_text) {
-    return `${ack}\n¿En qué zona está la propiedad?`;
+  if (state.sell_buy_bridge || signals.sell_buy_bridge) {
+    return 'Tiene mucho sentido. Cuando se vende para comprar otra propiedad conviene planear una estrategia puente: valor de salida real, tiempos de venta y busqueda de reposicion. ¿Primero necesitas vender para poder comprar?';
+  }
+
+  if (state.remote_client || signals.remote_client) {
+    return 'Perfecto, podemos llevar este proceso de forma remota con llamada o videollamada y apoyo de un asesor local para ejecucion en campo. ¿Este WhatsApp es el mejor numero para contactarte?';
+  }
+
+  if (state.asks_valuation || signals.asks_valuation || signals.asks_only_valuation) {
+    return 'Claro. Para valuar de forma responsable usamos comparativo de mercado (cierres reales, oferta competidora y absorcion), no un numero al aire. Podemos hacer una revision inicial y, si tiene sentido, agendar una visita breve para darte una referencia mas precisa. ¿La propiedad esta en Cumbres, Garcia, San Pedro, Carretera Nacional u otra zona?';
+  }
+
+  if (state.accepted_visit === true) {
+    if (!state.full_name) {
+      return 'Perfecto. Para coordinarlo, ¿me compartes tu nombre completo?';
+    }
+
+    if (!state.contact_preference) {
+      return 'Perfecto. ¿Prefieres que te contacten por WhatsApp o por llamada?';
+    }
+
+    if (state.contact_number_confirmed == null) {
+      return '¿Este es el mejor número para contactarte y coordinar la visita?';
+    }
+  }
+
+  if (state.urgent_sale_signal || signals.urgent_sale_signal || state.urgency_level === 'high') {
+    return 'Entiendo la urgencia. Cuando se necesita vender rapido, lo clave es salir con precio y estrategia correctos desde el inicio, junto con papeleria clara y buena exposicion comercial. ¿La propiedad ya tiene papeleria lista o todavia habria que revisarla?';
+  }
+
+  if (signals.asks_direct_purchase) {
+    return 'Entiendo perfecto. Nosotros no compramos propiedades directamente, pero sí podemos ayudarte a buscar al comprador adecuado con una estrategia comercial sólida.\n\n¿Me confirmas qué tipo de propiedad es y en qué zona se encuentra?';
+  }
+
+  if (signals.asks_commission) {
+    return 'Buena pregunta. Normalmente la comisión se maneja como un porcentaje sobre el precio final de venta, pero más que una comisión aislada, lo importante es cuánto neto te queda y en cuánto tiempo se puede cerrar con buena estrategia, filtrado, promoción y negociación. ¿La propiedad ya está publicada o apenas estás evaluando vender?';
+  }
+
+  if (signals.asks_only_valuation) {
+    return 'Claro. Para valuar con criterio comercial revisamos cierres reales, comparables y ritmo de absorcion de la zona. Si tiene sentido, coordinamos una visita breve para afinar el rango. ¿En que zona se encuentra tu propiedad?';
+  }
+
+  if (signals.objection_higher_other_agency) {
+    return 'Puede pasar. La diferencia está en si ese valor está basado en oferta publicada o en cierres reales. Lo importante es evitar ponerla arriba del mercado y que se quede detenida. Por eso revisamos comparables y absorción actual.\n\n¿Te parece si revisamos primero los datos base de la propiedad para orientarte con números responsables?';
+  }
+
+  if (signals.objection_no_exclusivity) {
+    return 'Es valido y totalmente entendible. En estos casos conviene revisar como evitar duplicidad, sobreexposicion y mensajes cruzados para cuidar la negociacion. ¿Actualmente ya la estas promoviendo con alguien?';
+  }
+
+  if (signals.objection_existing_realtor) {
+    return 'Perfecto. ¿La están manejando en exclusiva o de forma abierta? Te pregunto porque eso cambia la forma en que podríamos apoyarte sin interferir con lo que ya tienes.';
+  }
+
+  if (state.legal_sensitive) {
+    const pendingLegalQuestions = [];
+    if (!state.occupancy_duration_text) pendingLegalQuestions.push('¿Hace cuánto tiempo está ocupada?');
+    if (!state.occupancy_entry_mode) pendingLegalQuestions.push('¿La persona entró con permiso o fue despojo?');
+    if (state.legal_deeded == null && state.has_documents == null) {
+      pendingLegalQuestions.push('¿Cuentas con escritura, predial o registro público?');
+    }
+    if (!state.heirs_relation) {
+      pendingLegalQuestions.push('¿Qué relación tienes con los herederos o con quien tiene poder?');
+    }
+    if (state.can_share_documents == null) {
+      pendingLegalQuestions.push('¿Tienes documentos que puedas anexar para revisión inicial?');
+    }
+
+    if (pendingLegalQuestions.length > 0) {
+      return `Gracias por explicarme tan bien. Este caso sí vale la pena revisarlo con cuidado; puede ser viable, pero hay que revisar documentación, ocupación y estrategia antes de definir la ruta. Lo correcto es revisarlo con enfoque comercial y jurídico.\n\n${pendingLegalQuestions.slice(0, 2).join(' ')}`;
+    }
+
+    return 'Entiendo perfecto. Con la información que compartiste, se ve como un caso sensible que requiere revisión comercial y jurídica antes de salir a mercado. Nosotros no compramos directamente, pero sí podemos ayudarte a buscar el comprador adecuado, incluso perfil inversionista, dependiendo del análisis.\n\n¿Me autorizas que una asesora especialista te contacte para revisar la ruta más viable?';
+  }
+
+  if (state.has_mortgage === true && !state.mortgage_balance_text) {
+    return 'Sí se puede revisar aún con crédito vigente, pero sin definir estrategia final hasta revisar el saldo del crédito, banco y tiempos de liberación. ¿El crédito está al corriente?';
   }
 
   if (state.geo_qualified === false || state.value_qualified === false) {
     return buildOfferRejectedReply(state);
   }
 
-  if (state.budget_max == null) {
-    return `${ack}\n¿En cuánto te gustaría venderla o rentarla aproximadamente?`;
+  if (state.already_listed === true && (state.listing_duration_days || 0) >= 30) {
+    return 'Gracias por explicarme tan bien. Cuando una propiedad ya estuvo publicada varias semanas sin resultados, normalmente no es por falta de difusión, sino por estrategia de precio y posicionamiento frente a su competencia real. Para darte una mejor orientación, conviene revisar valor de mercado, comparables y absorción de la zona.\n\n¿Me autorizas que lo revise contigo una asesora especialista para proponer una ruta de venta clara?';
   }
 
-  if (!state.budget_currency) {
-    return `${ack}\n¿Ese monto es en MXN o USD?`;
+  if (state.primary_seller_scenario === 'seller_senior_downsizing' && !state.accepted_visit) {
+    return 'Entiendo perfecto. Si la idea es que el matrimonio se cambie a una casa más chica, lo importante es definir una estrategia que dé salida real, no solo publicación. Para darte una recomendación seria, necesitamos validar comparables y recorrido en sitio.\n\n¿Te parece si coordinamos una visita rápida de 20 minutos con una asesora de esa zona?';
   }
 
   if (state.owner_relation == null) {
     return `${ack}\n¿La propiedad es tuya o estás apoyando a alguien?`;
   }
 
-  if (!state.full_name) {
-    return `${ack}\n¿Me compartes tu nombre completo?`;
+  if (!state.location_text) {
+    return `${ack}\n¿En qué zona o colonia se encuentra la propiedad?`;
   }
 
-  if (!state.contact_preference) {
-    return `${ack}\n¿Prefieres que te contacten por WhatsApp o por llamada?`;
+  if (!state.property_type) {
+    return `${ack}\n¿Es casa, departamento, terreno o local?`;
   }
 
-  if (state.contact_number_confirmed == null) {
-    return `${ack}\n¿Este es el mejor número para contactarte?`;
+  if (state.terrain_m2 == null && state.construction_m2 == null) {
+    return 'Perfecto, gracias por la información. Para ubicar mejor el valor, ¿cuántos m² de terreno y construcción tiene aproximadamente?';
   }
 
-  return 'Todo listo. Un asesor de Luxetty te contactará para revisar los detalles contigo.';
+  if (state.bedrooms == null || state.bathrooms == null || !state.occupancy_status) {
+    return 'Con eso ya me doy una mejor idea. ¿Cuántas recámaras y baños tiene? ¿Actualmente está habitada o desocupada?';
+  }
+
+  if (state.floors_count == null || state.garage_spaces == null || state.has_terrace_patio == null) {
+    return 'Entiendo. ¿Cuántas plantas y espacios de cochera tiene? ¿Cuenta con terraza o patio?';
+  }
+
+  if (state.legal_deeded == null) {
+    return 'Para la parte comercial, ¿la propiedad está escriturada?';
+  }
+
+  if (state.has_mortgage == null) {
+    return '¿Actualmente tiene crédito hipotecario o está libre de gravamen?';
+  }
+
+  if (state.has_mortgage === true && !state.mortgage_balance_text) {
+    return 'Perfecto, entonces solo habría que revisar el saldo del crédito para calcular números correctos. ¿Tienes un saldo aproximado pendiente?';
+  }
+
+  if (state.works_with_realtor == null) {
+    return '¿Actualmente ya estás trabajando con alguna inmobiliaria o apenas estás revisando opciones?';
+  }
+
+  if (!state.exclusivity_type) {
+    return '¿La estarías manejando en exclusiva o de forma abierta?';
+  }
+
+  if (state.expected_price == null && state.budget_max == null) {
+    return '¿Qué precio esperas para tu propiedad? Te lo pregunto para compararlo con cierres reales y absorción de la zona.';
+  }
+
+  if (!state.sale_motivation) {
+    return 'Tiene sentido lo que comentas. ¿La idea de vender es porque piensas cambiarte, invertir en otra propiedad o simplemente estás explorando vender?';
+  }
+
+  if (!state.urgency_level && !state.timeline_text) {
+    return '¿En qué tiempo te gustaría venderla? Esto ayuda a definir la estrategia comercial correcta.';
+  }
+
+  return 'Para darte un número responsable, revisamos cierres reales, comparables activos, absorción y posicionamiento de la zona. Más que solo publicar, lo importante es posicionarla bien y evitar sobreprecio para que no se quede detenida.\n\nLo ideal sería verla físicamente para darte una recomendación más precisa. Podemos agendar una visita rápida de 20 minutos. ¿Te queda mejor entre semana o fin de semana?';
 }
 
 async function buildFallbackOpenAIReply(text, state, changeType) {
+  const consultantContext = buildPerseoConsultantContext(state, [], {
+    userMessage: text,
+    changeType,
+    matchedPropertiesCount: 0,
+  });
+
   const response = await openai.chat.completions.create({
     model: process.env.OPENAI_MODEL || 'gpt-5-mini',
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: PERSEO_CONSULTANT_SYSTEM_PROMPT },
+      { role: 'system', content: consultantContext },
       {
         role: 'system',
         content: `Estado actual:
@@ -433,6 +579,7 @@ IMPORTANTE:
 
 module.exports = {
   buildAiSummary,
+  buildLowInfoCampaignReply,
   getChangeAcknowledgement,
   buildDemandLowValueReply,
   buildOfferRejectedReply,

@@ -1,5 +1,9 @@
 const { normalizeAiState, getDefaultAiState } = require('./aiState');
 
+function mergeUnique(listA = [], listB = []) {
+  return Array.from(new Set([...(Array.isArray(listA) ? listA : []), ...(Array.isArray(listB) ? listB : [])]));
+}
+
 function getIntentFamily(intentType, leadFlow) {
   if (intentType === 'supply' || leadFlow === 'offer') return 'supply';
   if (intentType === 'demand' || intentType === 'property_interest' || leadFlow === 'demand') return 'demand';
@@ -80,6 +84,96 @@ function buildNextState(prevState, signals, changeType) {
         signals.bathrooms !== null && signals.bathrooms !== undefined
           ? signals.bathrooms
           : null,
+      terrain_m2:
+        signals.terrain_m2 !== null && signals.terrain_m2 !== undefined
+          ? signals.terrain_m2
+          : null,
+      construction_m2:
+        signals.construction_m2 !== null && signals.construction_m2 !== undefined
+          ? signals.construction_m2
+          : null,
+      floors_count:
+        signals.floors_count !== null && signals.floors_count !== undefined
+          ? signals.floors_count
+          : null,
+      garage_spaces:
+        signals.garage_spaces !== null && signals.garage_spaces !== undefined
+          ? signals.garage_spaces
+          : null,
+      has_terrace_patio:
+        signals.has_terrace_patio !== null && signals.has_terrace_patio !== undefined
+          ? signals.has_terrace_patio
+          : null,
+      occupancy_status: signals.occupancy_status || null,
+      occupancy_duration_text: signals.occupancy_duration_text || null,
+      occupancy_entry_mode: signals.occupancy_entry_mode || null,
+      heirs_relation: signals.heirs_relation || null,
+      can_share_documents:
+        signals.can_share_documents !== null && signals.can_share_documents !== undefined
+          ? signals.can_share_documents
+          : null,
+      legal_deeded:
+        signals.legal_deeded !== null && signals.legal_deeded !== undefined
+          ? signals.legal_deeded
+          : null,
+      has_mortgage:
+        signals.has_mortgage !== null && signals.has_mortgage !== undefined
+          ? signals.has_mortgage
+          : null,
+      mortgage_balance_text: signals.mortgage_balance_text || null,
+      works_with_realtor:
+        signals.works_with_realtor !== null && signals.works_with_realtor !== undefined
+          ? signals.works_with_realtor
+          : null,
+      exclusivity_type: signals.exclusivity_type || null,
+      expected_price:
+        signals.expected_price !== null && signals.expected_price !== undefined
+          ? signals.expected_price
+          : null,
+      sale_motivation: signals.sale_motivation || null,
+      urgency_level: signals.urgency_level || null,
+      is_exploring_sale:
+        signals.is_exploring_sale !== null && signals.is_exploring_sale !== undefined
+          ? signals.is_exploring_sale
+          : null,
+      accepted_visit:
+        signals.accepted_visit !== null && signals.accepted_visit !== undefined
+          ? signals.accepted_visit
+          : null,
+      asks_commission: !!signals.asks_commission,
+      asks_only_valuation: !!signals.asks_only_valuation,
+      asks_valuation: !!signals.asks_valuation,
+      objection_higher_other_agency: !!signals.objection_higher_other_agency,
+      objection_no_exclusivity: !!signals.objection_no_exclusivity,
+      objection_existing_realtor: !!signals.objection_existing_realtor,
+      asks_direct_purchase: !!signals.asks_direct_purchase,
+      urgent_sale_signal: !!signals.urgent_sale_signal,
+      sell_buy_bridge: !!signals.sell_buy_bridge,
+      investor_profile: !!signals.investor_profile,
+      remote_client: !!signals.remote_client,
+      complaint_followup: !!signals.complaint_followup,
+      low_info_campaign_message: !!signals.low_info_campaign_message,
+      non_real_estate_or_provider: !!signals.non_real_estate_or_provider,
+      seller_scenarios: Array.isArray(signals.seller_scenarios) ? signals.seller_scenarios : [],
+      primary_seller_scenario: signals.primary_seller_scenario || null,
+      legal_sensitive: !!signals.legal_sensitive,
+      already_listed:
+        signals.already_listed !== null && signals.already_listed !== undefined
+          ? signals.already_listed
+          : null,
+      listing_duration_days:
+        signals.listing_duration_days !== null && signals.listing_duration_days !== undefined
+          ? signals.listing_duration_days
+          : null,
+      has_documents:
+        signals.has_documents !== null && signals.has_documents !== undefined
+          ? signals.has_documents
+          : null,
+      municipality_text: signals.municipality_text || null,
+      neighborhood_text: signals.neighborhood_text || null,
+      risk_flags: Array.isArray(signals.risk_flags) ? signals.risk_flags : [],
+      missing_information: Array.isArray(signals.missing_information) ? signals.missing_information : [],
+      needs_specialized_review: !!signals.needs_specialized_review,
       location_any: !!signals.location_any,
       bedrooms_any: !!signals.bedrooms_any,
       wants_human: !!signals.wants_human,
@@ -128,6 +222,108 @@ function buildNextState(prevState, signals, changeType) {
         signals.bathrooms !== null && signals.bathrooms !== undefined
           ? signals.bathrooms
           : prev.bathrooms,
+      terrain_m2:
+        signals.terrain_m2 !== null && signals.terrain_m2 !== undefined
+          ? signals.terrain_m2
+          : prev.terrain_m2,
+      construction_m2:
+        signals.construction_m2 !== null && signals.construction_m2 !== undefined
+          ? signals.construction_m2
+          : prev.construction_m2,
+      floors_count:
+        signals.floors_count !== null && signals.floors_count !== undefined
+          ? signals.floors_count
+          : prev.floors_count,
+      garage_spaces:
+        signals.garage_spaces !== null && signals.garage_spaces !== undefined
+          ? signals.garage_spaces
+          : prev.garage_spaces,
+      has_terrace_patio:
+        signals.has_terrace_patio !== null && signals.has_terrace_patio !== undefined
+          ? signals.has_terrace_patio
+          : prev.has_terrace_patio,
+      occupancy_status: signals.occupancy_status || prev.occupancy_status,
+      occupancy_duration_text: signals.occupancy_duration_text || prev.occupancy_duration_text,
+      occupancy_entry_mode: signals.occupancy_entry_mode || prev.occupancy_entry_mode,
+      heirs_relation: signals.heirs_relation || prev.heirs_relation,
+      can_share_documents:
+        signals.can_share_documents !== null && signals.can_share_documents !== undefined
+          ? signals.can_share_documents
+          : prev.can_share_documents,
+      legal_deeded:
+        signals.legal_deeded !== null && signals.legal_deeded !== undefined
+          ? signals.legal_deeded
+          : prev.legal_deeded,
+      has_mortgage:
+        signals.has_mortgage !== null && signals.has_mortgage !== undefined
+          ? signals.has_mortgage
+          : prev.has_mortgage,
+      mortgage_balance_text: signals.mortgage_balance_text || prev.mortgage_balance_text,
+      works_with_realtor:
+        signals.works_with_realtor !== null && signals.works_with_realtor !== undefined
+          ? signals.works_with_realtor
+          : prev.works_with_realtor,
+      exclusivity_type: signals.exclusivity_type || prev.exclusivity_type,
+      expected_price:
+        signals.expected_price !== null && signals.expected_price !== undefined
+          ? signals.expected_price
+          : prev.expected_price,
+      sale_motivation: signals.sale_motivation || prev.sale_motivation,
+      urgency_level: signals.urgency_level || prev.urgency_level,
+      is_exploring_sale:
+        signals.is_exploring_sale !== null && signals.is_exploring_sale !== undefined
+          ? signals.is_exploring_sale
+          : prev.is_exploring_sale,
+      accepted_visit:
+        signals.accepted_visit !== null && signals.accepted_visit !== undefined
+          ? signals.accepted_visit
+          : prev.accepted_visit,
+      asks_commission: prev.asks_commission || !!signals.asks_commission,
+      asks_only_valuation: prev.asks_only_valuation || !!signals.asks_only_valuation,
+      asks_valuation: prev.asks_valuation || !!signals.asks_valuation,
+      objection_higher_other_agency:
+        prev.objection_higher_other_agency || !!signals.objection_higher_other_agency,
+      objection_no_exclusivity:
+        prev.objection_no_exclusivity || !!signals.objection_no_exclusivity,
+      objection_existing_realtor:
+        prev.objection_existing_realtor || !!signals.objection_existing_realtor,
+      asks_direct_purchase:
+        prev.asks_direct_purchase || !!signals.asks_direct_purchase,
+      urgent_sale_signal:
+        prev.urgent_sale_signal || !!signals.urgent_sale_signal,
+      sell_buy_bridge:
+        prev.sell_buy_bridge || !!signals.sell_buy_bridge,
+      investor_profile:
+        prev.investor_profile || !!signals.investor_profile,
+      remote_client:
+        prev.remote_client || !!signals.remote_client,
+      complaint_followup:
+        prev.complaint_followup || !!signals.complaint_followup,
+      low_info_campaign_message:
+        prev.low_info_campaign_message || !!signals.low_info_campaign_message,
+      non_real_estate_or_provider:
+        prev.non_real_estate_or_provider || !!signals.non_real_estate_or_provider,
+      seller_scenarios: mergeUnique(prev.seller_scenarios, signals.seller_scenarios),
+      primary_seller_scenario: signals.primary_seller_scenario || prev.primary_seller_scenario,
+      legal_sensitive: prev.legal_sensitive || !!signals.legal_sensitive,
+      already_listed:
+        signals.already_listed !== null && signals.already_listed !== undefined
+          ? signals.already_listed
+          : prev.already_listed,
+      listing_duration_days:
+        signals.listing_duration_days !== null && signals.listing_duration_days !== undefined
+          ? signals.listing_duration_days
+          : prev.listing_duration_days,
+      has_documents:
+        signals.has_documents !== null && signals.has_documents !== undefined
+          ? signals.has_documents
+          : prev.has_documents,
+      municipality_text: signals.municipality_text || prev.municipality_text,
+      neighborhood_text: signals.neighborhood_text || prev.neighborhood_text,
+      risk_flags: mergeUnique(prev.risk_flags, signals.risk_flags),
+      missing_information: mergeUnique(prev.missing_information, signals.missing_information),
+      needs_specialized_review:
+        prev.needs_specialized_review || !!signals.needs_specialized_review,
       full_name: signals.full_name || prev.full_name,
       owner_relation: signals.owner_relation || prev.owner_relation,
       contact_preference: signals.contact_preference || prev.contact_preference,

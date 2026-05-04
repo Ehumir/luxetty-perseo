@@ -369,6 +369,10 @@ function extractCampaignReferralContext({ aiState = {}, referral = null, rawPayl
 
 function detectLeadCreationOpportunity({ aiState = {}, propertyId = null, propertyCode = null, messageText = '', hasCampaignContext = false } = {}) {
   const text = normalizeText(messageText || '');
+  if (aiState?.non_real_estate_or_provider) {
+    return { shouldCreate: false, reason: 'non_real_estate_or_provider' };
+  }
+
   const leadType = resolveLeadType(aiState);
   const hasPropertyReference = !!(
     propertyId ||
@@ -467,6 +471,26 @@ function buildNotesSummary(aiState = {}, property = null) {
   if (aiState.property_type) parts.push(`Tipo: ${aiState.property_type}.`);
   if (aiState.location_text) parts.push(`Zona: ${aiState.location_text}.`);
   if (aiState.budget_max != null) parts.push(`Presupuesto max: ${aiState.budget_max} ${aiState.budget_currency || 'MXN'}.`);
+  if (aiState.terrain_m2 != null) parts.push(`Terreno: ${aiState.terrain_m2} m2.`);
+  if (aiState.construction_m2 != null) parts.push(`Construccion: ${aiState.construction_m2} m2.`);
+  if (aiState.floors_count != null) parts.push(`Plantas: ${aiState.floors_count}.`);
+  if (aiState.bedrooms != null) parts.push(`Recamaras: ${aiState.bedrooms}.`);
+  if (aiState.bathrooms != null) parts.push(`Banos: ${aiState.bathrooms}.`);
+  if (aiState.garage_spaces != null) parts.push(`Cochera: ${aiState.garage_spaces}.`);
+  if (aiState.has_terrace_patio === true) parts.push('Con terraza/patio.');
+  if (aiState.has_terrace_patio === false) parts.push('Sin terraza/patio.');
+  if (aiState.occupancy_status === 'occupied') parts.push('Propiedad habitada.');
+  if (aiState.occupancy_status === 'vacant') parts.push('Propiedad desocupada.');
+  if (aiState.legal_deeded === true) parts.push('Escriturada.');
+  if (aiState.has_mortgage === true) parts.push('Con credito hipotecario.');
+  if (aiState.works_with_realtor === true) parts.push('Ya trabaja con inmobiliaria.');
+  if (aiState.works_with_realtor === false) parts.push('No trabaja con inmobiliaria actualmente.');
+  if (aiState.exclusivity_type === 'exclusive') parts.push('Esquema en exclusiva.');
+  if (aiState.exclusivity_type === 'open') parts.push('Esquema abierto/sin exclusividad.');
+  if (aiState.expected_price != null) parts.push(`Precio esperado: ${aiState.expected_price} ${aiState.budget_currency || 'MXN'}.`);
+  if (aiState.sale_motivation) parts.push(`Motivacion: ${aiState.sale_motivation}.`);
+  if (aiState.urgency_level) parts.push(`Urgencia: ${aiState.urgency_level}.`);
+  if (aiState.accepted_visit === true) parts.push('Acepto visita de asesor.');
   if (aiState.wants_visit) parts.push('Quiere visita.');
   if (aiState.asks_property_details) parts.push('Pidio detalles.');
   if (aiState.wants_human) parts.push('Pidio asesor humano.');
@@ -483,7 +507,83 @@ function summarizeRelevantMessageSignals(aiState = {}) {
   if (aiState.location_text) signals.push(`zona:${aiState.location_text}`);
   if (aiState.budget_max != null) signals.push(`presupuesto_max:${aiState.budget_max}`);
   if (aiState.property_type) signals.push(`tipo:${aiState.property_type}`);
+  if (aiState.terrain_m2 != null) signals.push(`terreno_m2:${aiState.terrain_m2}`);
+  if (aiState.construction_m2 != null) signals.push(`construccion_m2:${aiState.construction_m2}`);
+  if (aiState.occupancy_status) signals.push(`ocupacion:${aiState.occupancy_status}`);
+  if (aiState.has_mortgage === true) signals.push('con_credito_hipotecario');
+  if (aiState.works_with_realtor === true) signals.push('ya_tiene_inmobiliaria');
+  if (aiState.exclusivity_type) signals.push(`exclusividad:${aiState.exclusivity_type}`);
+  if (aiState.accepted_visit === true) signals.push('acepto_visita');
+  if (aiState.has_audio_without_transcription) signals.push('audio_sin_transcripcion');
+  if (aiState.last_media_type) signals.push(`ultimo_media:${aiState.last_media_type}`);
   return signals;
+}
+
+function buildStructuredSellerCrmSummary({ aiState = {}, conversation = {}, property = null } = {}) {
+  const sellerIntent = resolveLeadType(aiState) === 'supply';
+  const riskFlags = [];
+
+  if (aiState.legal_sensitive) riskFlags.push('legal_sensitive');
+  if (aiState.occupancy_status === 'occupied') riskFlags.push('occupied_property');
+  if (aiState.primary_seller_scenario) riskFlags.push(aiState.primary_seller_scenario);
+  if (Array.isArray(aiState.risk_flags)) {
+    aiState.risk_flags.forEach((flag) => {
+      if (!riskFlags.includes(flag)) riskFlags.push(flag);
+    });
+  }
+
+  const missingInformation = [];
+
+  if (!aiState.property_type) missingInformation.push('property_type');
+  if (!aiState.location_text) missingInformation.push('zone');
+  if (!aiState.neighborhood_text) missingInformation.push('neighborhood');
+  if (aiState.expected_price == null && aiState.budget_max == null) missingInformation.push('expected_price');
+  if (!aiState.sale_motivation) missingInformation.push('motivation_to_sell');
+  if (aiState.has_documents == null) missingInformation.push('has_documents');
+  if (!aiState.occupancy_status) missingInformation.push('occupancy_status');
+
+  const recommendedNextStep = aiState.legal_sensitive
+    ? 'Revision especializada comercial-juridica antes de salida comercial normal'
+    : aiState.accepted_visit === true || aiState.wants_visit
+    ? 'Agendar visita con asesora especialista'
+    : 'Completar datos clave y proponer llamada/visita de 20 minutos';
+
+  const propertyDescriptionParts = [
+    aiState.property_type ? `Tipo: ${aiState.property_type}` : null,
+    aiState.terrain_m2 != null ? `Terreno: ${aiState.terrain_m2} m2` : null,
+    aiState.construction_m2 != null ? `Construccion: ${aiState.construction_m2} m2` : null,
+    aiState.floors_count != null ? `Niveles: ${aiState.floors_count}` : null,
+    aiState.bedrooms != null ? `Recamaras: ${aiState.bedrooms}` : null,
+    aiState.bathrooms != null ? `Banos: ${aiState.bathrooms}` : null,
+    aiState.has_terrace_patio === true ? 'Con terraza/patio' : null,
+    aiState.occupancy_status === 'occupied' ? 'Habitada/ocupada' : null,
+  ].filter(Boolean);
+
+  const summary = {
+    contact_name: aiState.full_name || null,
+    phone: conversation?.phone || null,
+    seller_intent: sellerIntent,
+    property_type: aiState.property_type || null,
+    zone: aiState.location_text || null,
+    municipality: aiState.municipality_text || null,
+    neighborhood: aiState.neighborhood_text || null,
+    property_description: propertyDescriptionParts.join('. ') || null,
+    motivation_to_sell: aiState.sale_motivation || null,
+    already_listed: aiState.already_listed ?? null,
+    listing_duration: aiState.listing_duration_days || null,
+    has_documents: aiState.has_documents ?? aiState.legal_deeded ?? null,
+    occupancy_status: aiState.occupancy_status || null,
+    legal_sensitive: !!aiState.legal_sensitive,
+    estimated_price: property?.price || null,
+    expected_price: aiState.expected_price ?? aiState.budget_max ?? null,
+    recommended_next_step: recommendedNextStep,
+    assigned_agent_suggestion: aiState.assigned_agent_profile_id || null,
+    conversation_summary: buildNotesSummary(aiState, property),
+    risk_flags: riskFlags,
+    missing_information: missingInformation,
+  };
+
+  return summary;
 }
 
 function buildDetailedNotesSummary({ aiState = {}, conversation = {}, property = null, contactOwnerAssigned = false }) {
@@ -524,6 +624,15 @@ function buildDetailedNotesSummary({ aiState = {}, conversation = {}, property =
 
   const baseSummary = buildNotesSummary(aiState, property);
   if (baseSummary) parts.push(`Resumen caso: ${baseSummary}`);
+
+  const structuredSummary =
+    aiState?.crm_structured_summary && typeof aiState.crm_structured_summary === 'object'
+      ? aiState.crm_structured_summary
+      : buildStructuredSellerCrmSummary({ aiState, conversation, property });
+
+  if (structuredSummary && typeof structuredSummary === 'object') {
+    parts.push(`CRM estructurado: ${JSON.stringify(structuredSummary)}.`);
+  }
 
   return parts.filter(Boolean).join(' ').slice(0, 1500);
 }
@@ -676,6 +785,31 @@ async function findCompatibleLeadByPhoneAndProperty(supabase, { normalizedPhone,
   return data?.[0] || null;
 }
 
+async function findCompatibleLeadByWhatsapp(supabase, { normalizedWhatsapp, leadType, operation, propertyId }) {
+  if (!normalizedWhatsapp) return null;
+
+  let query = supabase
+    .from('leads')
+    .select('*')
+    .eq('whatsapp', normalizedWhatsapp)
+    .eq('lead_type', leadType)
+    .eq('is_active', true)
+    .eq('is_archived', false)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (operation) query = query.eq('interested_in_operation', operation);
+  if (propertyId) query = query.eq('interested_property_id', propertyId);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('LEAD_AUTOMATION_FIND_COMPATIBLE_WHATSAPP_ERROR', { error: error.message });
+    return null;
+  }
+
+  return data?.[0] || null;
+}
+
 async function insertLeadWithSourceFallback(supabase, payload) {
   const { data, error } = await supabase
     .from('leads')
@@ -735,11 +869,271 @@ async function syncConversation(supabase, conversationId, payload) {
   if (error) console.error('LEAD_AUTOMATION_CONVERSATION_SYNC_ERROR', { error: error.message });
 }
 
-async function assignLead(supabase, leadId, conversationId, logger) {
+async function createAssignmentAuditLog(supabase, payload = {}) {
+  if (!supabase || !payload?.lead_id) return;
+
+  const insertPayload = {
+    lead_id: payload.lead_id,
+    conversation_id: payload.conversation_id || null,
+    assigned_agent_profile_id: payload.assigned_agent_profile_id || null,
+    strategy: payload.strategy || null,
+    reason: payload.reason || null,
+    payload: payload.payload || null,
+    created_at: nowIso(),
+  };
+
+  try {
+    await supabase.from('assignment_logs').insert(insertPayload);
+  } catch (_err) {
+    // best-effort audit table
+  }
+}
+
+async function upsertCurrentLeadAssignment(supabase, {
+  leadId,
+  conversationId,
+  assignedAgentProfileId,
+  strategy,
+  reason,
+}) {
+  if (!leadId || !assignedAgentProfileId) return;
+
+  try {
+    const { data: currentRows } = await supabase
+      .from('lead_assignments')
+      .select('*')
+      .eq('lead_id', leadId)
+      .eq('is_current', true)
+      .limit(5);
+
+    const hasSameCurrent = Array.isArray(currentRows)
+      ? currentRows.some((row) => row.assigned_agent_profile_id === assignedAgentProfileId)
+      : false;
+
+    if (!hasSameCurrent) {
+      await supabase
+        .from('lead_assignments')
+        .update({
+          is_current: false,
+          ended_at: nowIso(),
+        })
+        .eq('lead_id', leadId)
+        .eq('is_current', true);
+
+      await supabase
+        .from('lead_assignments')
+        .insert({
+          lead_id: leadId,
+          conversation_id: conversationId || null,
+          assigned_agent_profile_id: assignedAgentProfileId,
+          is_current: true,
+          assigned_at: nowIso(),
+          strategy: strategy || null,
+          reason: reason || null,
+        });
+    }
+  } catch (_err) {
+    // best-effort assignment trail
+  }
+}
+
+async function applyAgentAssignment({
+  supabase,
+  leadId,
+  conversationId,
+  assignedAgentProfileId,
+  strategy,
+  reason,
+  logger,
+}) {
+  if (!assignedAgentProfileId) {
+    return {
+      assignedAgentProfileId: null,
+      assignmentResult: { success: false, reason: reason || 'no_assignment_available' },
+    };
+  }
+
+  const { data: updatedLead, error } = await supabase
+    .from('leads')
+    .update({
+      assigned_agent_profile_id: assignedAgentProfileId,
+    })
+    .eq('id', leadId)
+    .select()
+    .single();
+
+  if (error) {
+    logWarn(logger, 'LEAD_AUTOMATION_ASSIGNMENT_FAILED', {
+      lead_id: leadId,
+      assigned_agent_profile_id: assignedAgentProfileId,
+      reason,
+      error: error.message,
+    });
+
+    await saveConversationEvent(supabase, conversationId, 'lead_assignment_failed', {
+      lead_id: leadId,
+      reason: 'lead_assignment_update_failed',
+      error: error.message,
+      strategy,
+      source: 'ai_agent',
+    });
+
+    await createAssignmentAuditLog(supabase, {
+      lead_id: leadId,
+      conversation_id: conversationId,
+      assigned_agent_profile_id: assignedAgentProfileId,
+      strategy,
+      reason: 'lead_assignment_update_failed',
+      payload: { error: error.message, requested_reason: reason },
+    });
+
+    return {
+      assignedAgentProfileId: null,
+      assignmentResult: {
+        success: false,
+        reason: 'lead_assignment_update_failed',
+        error: error.message,
+      },
+    };
+  }
+
+  await syncConversation(supabase, conversationId, {
+    assigned_agent_profile_id: assignedAgentProfileId,
+  });
+
+  await upsertCurrentLeadAssignment(supabase, {
+    leadId,
+    conversationId,
+    assignedAgentProfileId,
+    strategy,
+    reason,
+  });
+
+  await saveConversationEvent(supabase, conversationId, 'lead_assigned', {
+    lead_id: leadId,
+    assigned_agent_profile_id: assignedAgentProfileId,
+    strategy,
+    reason,
+    source: 'ai_agent',
+  });
+
+  await createAssignmentAuditLog(supabase, {
+    lead_id: leadId,
+    conversation_id: conversationId,
+    assigned_agent_profile_id: assignedAgentProfileId,
+    strategy,
+    reason,
+    payload: null,
+  });
+
+  log(logger, 'LEAD_AUTOMATION_ASSIGNED', {
+    lead_id: leadId,
+    assigned_agent_profile_id: assignedAgentProfileId,
+    strategy,
+    reason,
+  });
+
+  return {
+    assignedAgentProfileId: assignedAgentProfileId,
+    assignmentResult: {
+      success: true,
+      strategy,
+      reason,
+      assigned_agent_profile_id: assignedAgentProfileId,
+    },
+    lead: updatedLead || null,
+  };
+}
+
+function ruleMatchesContext(rule = {}, ctx = {}) {
+  const operation = ctx.operationType || null;
+  const propertyType = ctx.propertyType || null;
+  const budget = Number(ctx.budgetMax || ctx.budgetMin || 0) || null;
+
+  if (rule?.operation_type && operation && rule.operation_type !== operation) return false;
+  if (rule?.property_type && propertyType && rule.property_type !== propertyType) return false;
+  if (rule?.min_budget != null && budget != null && budget < Number(rule.min_budget)) return false;
+  if (rule?.max_budget != null && budget != null && budget > Number(rule.max_budget)) return false;
+
+  return true;
+}
+
+async function assignLead(supabase, leadId, conversationId, logger, context = {}) {
   await saveConversationEvent(supabase, conversationId, 'lead_assignment_attempted', {
     lead_id: leadId,
     source: 'ai_agent',
   });
+
+  const propertyAgentId =
+    context?.property?.agent_profile_id ||
+    context?.property?.assigned_agent_profile_id ||
+    null;
+
+  if (propertyAgentId) {
+    return applyAgentAssignment({
+      supabase,
+      leadId,
+      conversationId,
+      assignedAgentProfileId: propertyAgentId,
+      strategy: 'property_owner_agent',
+      reason: 'assigned_by_property_owner_agent',
+      logger,
+    });
+  }
+
+  const { data: godModes } = await supabase
+    .from('assignment_god_modes')
+    .select('*')
+    .eq('is_active', true)
+    .order('priority', { ascending: true })
+    .limit(1);
+
+  const godMode = Array.isArray(godModes) ? godModes[0] : null;
+  if (godMode?.target_agent_profile_id) {
+    return applyAgentAssignment({
+      supabase,
+      leadId,
+      conversationId,
+      assignedAgentProfileId: godMode.target_agent_profile_id,
+      strategy: 'god_mode',
+      reason: 'assigned_by_god_mode',
+      logger,
+    });
+  }
+
+  const { data: rules } = await supabase
+    .from('assignment_rules')
+    .select('*')
+    .eq('is_active', true)
+    .order('priority', { ascending: true })
+    .limit(25);
+
+  if (Array.isArray(rules) && rules.length > 0) {
+    for (const rule of rules) {
+      if (!ruleMatchesContext(rule, context)) continue;
+
+      const { data: ruleAgents } = await supabase
+        .from('assignment_rule_agents')
+        .select('*')
+        .eq('assignment_rule_id', rule.id)
+        .eq('is_active', true)
+        .order('priority', { ascending: true })
+        .limit(5);
+
+      const selectedAgent = Array.isArray(ruleAgents) ? ruleAgents[0] : null;
+      if (selectedAgent?.agent_profile_id) {
+        return applyAgentAssignment({
+          supabase,
+          leadId,
+          conversationId,
+          assignedAgentProfileId: selectedAgent.agent_profile_id,
+          strategy: 'assignment_rule',
+          reason: 'assigned_by_rule',
+          logger,
+        });
+      }
+    }
+  }
 
   const { data, error } = await supabase.rpc('assign_lead_via_engine', {
     p_lead_id: leadId,
@@ -765,33 +1159,63 @@ async function assignLead(supabase, leadId, conversationId, logger) {
     null;
 
   if (assignedAgentProfileId) {
-    log(logger, 'LEAD_AUTOMATION_ASSIGNED', {
-      lead_id: leadId,
-      assigned_agent_profile_id: assignedAgentProfileId,
-      strategy: data?.strategy || null,
-      reason: data?.reason || null,
-    });
-    await saveConversationEvent(supabase, conversationId, 'lead_assigned', {
-      lead_id: leadId,
-      assigned_agent_profile_id: assignedAgentProfileId,
-      strategy: data?.strategy || null,
-      reason: data?.reason || null,
-      source: 'ai_agent',
-    });
-  } else {
-    logWarn(logger, 'LEAD_AUTOMATION_ASSIGNMENT_FAILED', {
-      lead_id: leadId,
-      reason: data?.reason || 'no_assignment_match',
-    });
-    await saveConversationEvent(supabase, conversationId, 'lead_assignment_failed', {
-      lead_id: leadId,
-      reason: data?.reason || 'no_assignment_match',
-      strategy: data?.strategy || null,
-      source: 'ai_agent',
+    return applyAgentAssignment({
+      supabase,
+      leadId,
+      conversationId,
+      assignedAgentProfileId,
+      strategy: data?.strategy || 'assignment_engine',
+      reason: data?.reason || 'assigned_by_engine',
+      logger,
     });
   }
 
-  return { assignedAgentProfileId, assignmentResult: data };
+  const { data: settings } = await supabase
+    .from('assignment_settings')
+    .select('*')
+    .eq('is_active', true)
+    .limit(1);
+
+  const fallbackAgentProfileId = Array.isArray(settings)
+    ? settings[0]?.fallback_agent_profile_id || null
+    : null;
+
+  if (fallbackAgentProfileId) {
+    return applyAgentAssignment({
+      supabase,
+      leadId,
+      conversationId,
+      assignedAgentProfileId: fallbackAgentProfileId,
+      strategy: 'fallback',
+      reason: 'assigned_by_fallback_agent',
+      logger,
+    });
+  }
+
+  await saveConversationEvent(supabase, conversationId, 'lead_assignment_failed', {
+    lead_id: leadId,
+    reason: 'no_assignment_available',
+    strategy: data?.strategy || null,
+    source: 'ai_agent',
+  });
+
+  await createAssignmentAuditLog(supabase, {
+    lead_id: leadId,
+    conversation_id: conversationId,
+    assigned_agent_profile_id: null,
+    strategy: data?.strategy || null,
+    reason: 'no_assignment_available',
+    payload: { engine_reason: data?.reason || null },
+  });
+
+  return {
+    assignedAgentProfileId: null,
+    assignmentResult: {
+      success: false,
+      reason: 'no_assignment_available',
+      strategy: data?.strategy || null,
+    },
+  };
 }
 
 async function assignLeadToContactOwner({
@@ -966,6 +1390,7 @@ async function createOrReuseLeadFromConversation({
 
     const leadType = resolveLeadType(aiState);
     const operation = resolveOperation(aiState, property);
+    const normalizedConversationPhone = normalizePhoneNumber(conversation?.phone) || conversation?.phone || null;
     const contact = await findContactById(supabase, contactId);
     const contactOwner = resolveContactAssignedAgentField(contact || {});
     const hasContactOwnerAssignedAgent = !!contactOwner.assignedAgentProfileId;
@@ -1077,7 +1502,6 @@ async function createOrReuseLeadFromConversation({
     }
 
     if (!lead && !contactId) {
-      const normalizedConversationPhone = normalizePhoneNumber(conversation?.phone) || conversation?.phone || null;
       lead = await findCompatibleLeadByPhoneAndProperty(supabase, {
         normalizedPhone: normalizedConversationPhone,
         leadType,
@@ -1100,9 +1524,30 @@ async function createOrReuseLeadFromConversation({
     }
 
     if (!lead) {
+      lead = await findCompatibleLeadByWhatsapp(supabase, {
+        normalizedWhatsapp: normalizedConversationPhone,
+        leadType,
+        operation,
+        propertyId: propertyId || null,
+      });
+
+      if (lead) {
+        log(logger, 'LEAD_AUTOMATION_REUSE_BY_WHATSAPP', {
+          conversation_id: conversationId,
+          lead_id: lead.id,
+          whatsapp: normalizedConversationPhone,
+        });
+        await saveConversationEvent(supabase, conversationId, 'lead_reused', {
+          lead_id: lead.id,
+          reason: 'compatible_active_lead_by_whatsapp',
+          source: 'ai_agent',
+        });
+      }
+    }
+
+    if (!lead) {
       const pipelineStageId = await getInitialPipelineStageId(supabase, leadType);
 
-      const normalizedConversationPhone = normalizePhoneNumber(conversation?.phone) || conversation?.phone || null;
       const payload = {
         contact_id: contactId,
         lead_type: leadType,
@@ -1202,7 +1647,7 @@ async function createOrReuseLeadFromConversation({
     let assignmentResult = null;
     let handoffTriggered = false;
 
-    if (hasContactOwnerAssignedAgent) {
+    if (hasContactOwnerAssignedAgent && !propertyId) {
       const ownerAssignment = await assignLeadToContactOwner({
         supabase,
         lead,
@@ -1227,16 +1672,46 @@ async function createOrReuseLeadFromConversation({
         reason: 'contact_already_has_assigned_agent',
         source: 'ai_agent',
       });
-    } else if (shouldHandoff) {
+    } else if (shouldHandoff && !aiState?.legal_sensitive) {
       const assignment = await assignLead(
         supabase,
         lead.id,
         conversationId,
-        logger
+        logger,
+        {
+          property,
+          propertyId,
+          contactId,
+          intent: aiState?.intent_type || null,
+          operationType: operation,
+          propertyType: aiState?.property_type || null,
+          budgetMin: aiState?.budget_min ?? null,
+          budgetMax: aiState?.budget_max ?? null,
+        }
       );
       assignedAgentProfileId = assignment.assignedAgentProfileId;
       assignmentResult = assignment.assignmentResult;
       handoffTriggered = !!assignedAgentProfileId;
+    } else if (shouldHandoff && aiState?.legal_sensitive) {
+      assignmentResult = {
+        success: false,
+        reason: 'legal_sensitive_review_required',
+      };
+
+      await saveConversationEvent(supabase, conversationId, 'lead_requires_specialized_review', {
+        lead_id: lead.id,
+        reason: 'legal_sensitive_review_required',
+        source: 'ai_agent',
+      });
+
+      await saveConversationEvent(supabase, conversationId, 'lead_handoff_deferred', {
+        lead_id: lead.id,
+        lead_score: lead.lead_score ?? leadScoring.lead_score,
+        lead_temperature: lead.lead_temperature || leadScoring.lead_temperature,
+        intent_type: handoffCandidate.intent_type,
+        reason: 'legal_sensitive_review_required',
+        source: 'ai_agent',
+      });
     } else {
       await saveConversationEvent(supabase, conversationId, 'lead_handoff_deferred', {
         lead_id: lead.id,
@@ -1492,12 +1967,18 @@ async function createPautaAbandonedLead({
   }
 }
 
+async function ensureLeadForConversation(args) {
+  return createOrReuseLeadFromConversation(args);
+}
+
 module.exports = {
   calculateLeadScore,
   shouldTriggerHandoff,
   detectLeadCreationOpportunity,
   extractCampaignReferralContext,
   buildLeadContextFromConversation,
+  buildStructuredSellerCrmSummary,
+  ensureLeadForConversation,
   createOrReuseLeadFromConversation,
   createPautaAbandonedLead,
 };

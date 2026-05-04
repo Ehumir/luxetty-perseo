@@ -6,6 +6,7 @@ const {
   detectLeadCreationOpportunity,
   extractCampaignReferralContext,
 } = require('../services/leadAutomation');
+const { normalizePhoneNumber } = require('../utils/helpers');
 
 function makeQuery(table, db, filters = []) {
   const api = {
@@ -104,12 +105,18 @@ function makeQuery(table, db, filters = []) {
 }
 
 function buildMockSupabase(db) {
+  let rpcCalls = 0;
+
   return {
+    _getRpcCalls() {
+      return rpcCalls;
+    },
     from(table) {
       if (!db[table]) db[table] = [];
       return makeQuery(table, db);
     },
     async rpc(name, args) {
+      rpcCalls += 1;
       if (name !== 'assign_lead_via_engine') {
         return { data: null, error: { message: `unexpected_rpc:${name}` } };
       }
@@ -306,4 +313,202 @@ test('detectLeadCreationOpportunity accepts explicit property interest when prop
   });
 
   assert.equal(opportunity.shouldCreate, true);
+});
+
+test('property owner agent assignment has priority and bypasses fallback engine', async () => {
+  const db = {
+    leads: [],
+    contacts: [{ id: 'contact-x', whatsapp: '5218111111111' }],
+    conversations: [{ id: 'conv-x', phone: '5218111111111', channel: 'whatsapp', lead_id: null, contact_id: 'contact-x' }],
+    conversation_events: [],
+    lead_assignments: [],
+    assignment_logs: [],
+    pipeline_stages: [{ id: 'stage-new', code: 'new', lead_type: 'demand', is_active: true, stage_order: 1 }],
+  };
+
+  const supabase = buildMockSupabase(db);
+
+  const result = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'demand',
+      operation_type: 'sale',
+      direct_property_reference: true,
+      property_code: 'LUX-A0453',
+      asks_property_details: true,
+      intent_type: 'property_interest',
+    },
+    contactId: 'contact-x',
+    propertyId: 'prop-x',
+    property: { id: 'prop-x', listing_id: 'LUX-A0453', operation_type: 'sale', agent_profile_id: 'agent-owner-1' },
+    logger: console,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.assignedAgentProfileId, 'agent-owner-1');
+  assert.equal(db.leads[0].assigned_agent_profile_id, 'agent-owner-1');
+  assert.equal(db.conversations[0].assigned_agent_profile_id, 'agent-owner-1');
+  assert.equal(db.lead_assignments.filter((row) => row.is_current).length, 1);
+  assert.equal(db.assignment_logs.some((row) => row.reason === 'assigned_by_property_owner_agent'), true);
+  assert.equal(supabase._getRpcCalls(), 0);
+});
+
+test('property without owner agent uses assignment rule before fallback', async () => {
+  const db = {
+    leads: [],
+    contacts: [{ id: 'contact-r', whatsapp: '5218111111111' }],
+    conversations: [{ id: 'conv-r', phone: '5218111111111', channel: 'whatsapp', lead_id: null, contact_id: 'contact-r' }],
+    conversation_events: [],
+    lead_assignments: [],
+    assignment_logs: [],
+    assignment_rules: [{ id: 'rule-1', is_active: true, priority: 1, operation_type: 'sale' }],
+    assignment_rule_agents: [{ id: 'rule-agent-1', assignment_rule_id: 'rule-1', agent_profile_id: 'agent-rule-1', is_active: true, priority: 1 }],
+    assignment_settings: [{ id: 'settings-1', is_active: true, fallback_agent_profile_id: 'agent-fallback-1' }],
+    pipeline_stages: [{ id: 'stage-new', code: 'new', lead_type: 'demand', is_active: true, stage_order: 1 }],
+  };
+
+  const supabase = buildMockSupabase(db);
+
+  const result = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'demand',
+      operation_type: 'sale',
+      direct_property_reference: true,
+      property_code: 'LUX-B0001',
+      asks_property_details: true,
+      intent_type: 'property_interest',
+    },
+    contactId: 'contact-r',
+    propertyId: 'prop-r',
+    property: { id: 'prop-r', listing_id: 'LUX-B0001', operation_type: 'sale' },
+    logger: console,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.assignedAgentProfileId, 'agent-rule-1');
+  assert.equal(db.assignment_logs.some((row) => row.reason === 'assigned_by_rule'), true);
+});
+
+test('seller generic flow creates supply lead and no property id invention', async () => {
+  const db = {
+    leads: [],
+    contacts: [{ id: 'contact-s', whatsapp: '5218111111111' }],
+    conversations: [{ id: 'conv-s', phone: '5218111111111', channel: 'whatsapp', lead_id: null, contact_id: 'contact-s' }],
+    conversation_events: [],
+    assignment_settings: [{ id: 'settings-1', is_active: true, fallback_agent_profile_id: 'agent-fallback-1' }],
+    pipeline_stages: [{ id: 'stage-new', code: 'new', lead_type: 'supply', is_active: true, stage_order: 1 }],
+  };
+
+  const supabase = buildMockSupabase(db);
+
+  const result = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'offer',
+      operation_type: 'sale',
+      location_text: 'Cumbres',
+      property_type: 'house',
+      budget_max: 4500000,
+      confidence: 'high',
+    },
+    contactId: 'contact-s',
+    propertyId: null,
+    property: null,
+    logger: console,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(db.leads[0].lead_type, 'supply');
+  assert.equal(db.leads[0].interested_property_id, null);
+});
+
+test('duplicate processing does not create duplicate current lead assignments', async () => {
+  const db = {
+    leads: [],
+    contacts: [{ id: 'contact-d', whatsapp: '5218111111111' }],
+    conversations: [{ id: 'conv-d', phone: '5218111111111', channel: 'whatsapp', lead_id: null, contact_id: 'contact-d' }],
+    conversation_events: [],
+    lead_assignments: [],
+    assignment_logs: [],
+    pipeline_stages: [{ id: 'stage-new', code: 'new', lead_type: 'demand', is_active: true, stage_order: 1 }],
+  };
+
+  const supabase = buildMockSupabase(db);
+  const payload = {
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'demand',
+      operation_type: 'sale',
+      direct_property_reference: true,
+      property_code: 'LUX-D0101',
+      asks_property_details: true,
+      intent_type: 'property_interest',
+    },
+    contactId: 'contact-d',
+    propertyId: 'prop-d',
+    property: { id: 'prop-d', listing_id: 'LUX-D0101', operation_type: 'sale', agent_profile_id: 'agent-owner-2' },
+    logger: console,
+  };
+
+  const first = await createOrReuseLeadFromConversation(payload);
+  db.conversations[0].lead_id = first.leadId;
+  await createOrReuseLeadFromConversation(payload);
+
+  const currentAssignments = db.lead_assignments.filter((row) => row.is_current);
+  assert.equal(currentAssignments.length, 1);
+});
+
+test('normalization prevents duplicates across mexican phone formats', () => {
+  assert.equal(normalizePhoneNumber('+52 81 1234 5678'), '5218112345678');
+  assert.equal(normalizePhoneNumber('52-81-1234-5678'), '5218112345678');
+  assert.equal(normalizePhoneNumber('5218112345678'), '5218112345678');
+  assert.equal(normalizePhoneNumber('(81) 1234 5678'), '5218112345678');
+});
+
+test('no rule and no fallback does not crash and leaves assignment pending', async () => {
+  const db = {
+    leads: [],
+    contacts: [{ id: 'contact-n', whatsapp: '5218111111111' }],
+    conversations: [{ id: 'conv-n', phone: '5218111111111', channel: 'whatsapp', lead_id: null, contact_id: 'contact-n' }],
+    conversation_events: [],
+    assignment_rules: [],
+    assignment_rule_agents: [],
+    assignment_settings: [{ id: 'settings-1', is_active: true, fallback_agent_profile_id: null }],
+    assignment_god_modes: [],
+    pipeline_stages: [{ id: 'stage-new', code: 'new', lead_type: 'demand', is_active: true, stage_order: 1 }],
+  };
+
+  const supabase = buildMockSupabase(db);
+
+  // Forzamos RPC sin asignación para simular ausencia total.
+  supabase.rpc = async () => ({ data: { success: false, reason: 'no_assignment_match' }, error: null });
+
+  const result = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'demand',
+      operation_type: 'sale',
+      location_text: 'Monterrey',
+      budget_max: 5000000,
+      direct_property_reference: true,
+      property_code: 'LUX-N0001',
+      asks_property_details: true,
+      confidence: 'high',
+      intent_type: 'property_interest',
+    },
+    contactId: 'contact-n',
+    propertyId: 'prop-n',
+    property: { id: 'prop-n', listing_id: 'LUX-N0001', operation_type: 'sale' },
+    logger: console,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.assignedAgentProfileId, null);
+  assert.equal(db.conversation_events.some((event) => event.type === 'lead_assignment_failed'), true);
 });
