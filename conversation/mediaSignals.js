@@ -141,14 +141,14 @@ function buildImageVisionContextPrefix(media = {}, aiState = {}) {
   if (!vision?.ok) return null;
 
   if (aiState?.lead_flow === 'offer') {
-    return 'Perfecto, esta imagen me ayuda como referencia de la propiedad que quieres vender o rentar.';
+    return 'Perfecto, esta imagen me ayuda como referencia de la propiedad que quieres vender o rentar. Con una revisión automática preliminar puedo orientarte, pero la validación final la confirma un asesor.';
   }
 
   if (aiState?.lead_flow === 'demand') {
-    return 'Perfecto, esta imagen me ayuda como referencia de la propiedad que estas buscando.';
+    return 'Perfecto, esta imagen me ayuda como referencia. Con una revisión automática preliminar puedo orientarte, pero disponibilidad y detalles finales los confirma un asesor.';
   }
 
-  return 'Perfecto, esta imagen me ayuda como referencia para orientarte mejor.';
+  return 'Perfecto, esta imagen me ayuda como referencia preliminar para orientarte mejor.';
 }
 
 function buildInboundMessageContext(message = {}) {
@@ -376,10 +376,10 @@ function buildMediaAcknowledgementReply(media = {}, options = {}) {
 
   if (media?.audio_without_transcription) {
     if (media?.audio_without_transcription_repeat) {
-      return 'Gracias, sigo recibiendo tus audios, pero en este momento no estoy logrando transcribirlos con claridad. Para no atrasarte, ¿me confirmas en texto solo el dato clave (venta, renta, compra o visita) o prefieres que te contacte un asesor?';
+      return 'Gracias, sigo recibiendo tus audios, pero no puedo interpretarlos correctamente en este momento. Para no atrasarte, ¿me confirmas en texto solo el dato clave (venta, renta, compra o visita)? También voy a canalizar tu caso con un asesor de Luxetty.';
     }
 
-    return 'Gracias, recibí tu audio. Tuve un problema para transcribirlo completo y no quiero malinterpretarlo. ¿Me puedes compartir en una frase si buscas vender, rentar, comprar o agendar una visita? Si prefieres, también puedo pedir que un asesor te contacte.';
+    return 'Recibí tu audio. Para no interpretar mal, ¿me puedes escribir en una frase si buscas vender, comprar, rentar o valuar una propiedad? Si prefieres, también puedo pedir que un asesor te contacte.';
   }
 
   if (media?.type === 'image' || media?.type === 'document') {
@@ -389,18 +389,10 @@ function buildMediaAcknowledgementReply(media = {}, options = {}) {
     }
 
     if (media.category === 'document') {
-      return 'Gracias, recibí el documento. Por ahora lo puedo registrar como referencia, pero necesito que me confirmes por mensaje el punto principal para avanzar correctamente.';
+      return 'Recibí el documento. Lo puedo registrar como referencia, pero por seguridad no voy a analizar datos sensibles por aquí. Para avanzar correctamente, necesito que me confirmes por mensaje el punto principal y, si lo prefieres, un asesor puede revisarlo contigo directamente.';
     }
 
-    if (media.category === 'land') {
-      return 'Gracias, recibí la imagen. La voy a tomar como referencia, pero para orientarte bien necesito confirmar algunos datos de la propiedad. ¿Buscas venderla, rentarla o estás buscando una propiedad similar?';
-    }
-
-    if (media.category === 'house') {
-      return 'Gracias, recibí la imagen. La voy a tomar como referencia, pero para orientarte bien necesito confirmar algunos datos de la propiedad. ¿Buscas venderla, rentarla o estás buscando una propiedad similar?';
-    }
-
-    return 'Gracias, recibí la imagen. La voy a tomar como referencia, pero para orientarte bien necesito confirmar algunos datos de la propiedad. ¿Buscas venderla, rentarla o estás buscando una propiedad similar?';
+    return 'Recibí la imagen. La voy a tomar como referencia y para orientarte bien necesito confirmar algunos datos: ¿buscas venderla, rentarla o estás buscando una propiedad similar?';
   }
 
   if (media?.category === 'location_link') {

@@ -1,4 +1,14 @@
 const playbooks = {
+  rent_search: [
+    'ask_rent_property_type',
+    'ask_rent_zone',
+    'ask_rent_budget',
+    'ask_rent_move_in_date',
+    'ask_rent_people_count',
+    'ask_rent_pets',
+    'ask_rent_special_requirements',
+    'offer_options_or_agent',
+  ],
   demand: [
     'ask_budget',
     'ask_zone',
@@ -27,6 +37,8 @@ function getPlaybookTypeFromIntent(intent = {}) {
 function getPlaybookTypeFromState(state = {}) {
   if (state.playbook_type && playbooks[state.playbook_type]) return state.playbook_type;
 
+  if (state.lead_flow === 'demand' && state.operation_type === 'rent') return 'rent_search';
+
   if (
     state.direct_property_reference ||
     state.property_code ||
@@ -51,6 +63,14 @@ function getPlaybookForIntent(intent = {}) {
 
 function isPlaybookStepComplete(step, state = {}, context = {}) {
   const hasResults = Array.isArray(context.matchedProperties) && context.matchedProperties.length > 0;
+
+  if (step === 'ask_rent_property_type') return !!state.property_type;
+  if (step === 'ask_rent_zone') return !!state.location_text || !!state.location_any;
+  if (step === 'ask_rent_budget') return state.budget_max != null;
+  if (step === 'ask_rent_move_in_date') return !!state.rental_move_in_date || !!state.timeline_text;
+  if (step === 'ask_rent_people_count') return state.rental_people_count != null;
+  if (step === 'ask_rent_pets') return state.rental_pets != null;
+  if (step === 'ask_rent_special_requirements') return !!state.rental_special_requirements;
 
   if (step === 'ask_budget') return state.budget_max != null;
   if (step === 'ask_zone') return !!state.location_text || !!state.location_any;
@@ -90,6 +110,13 @@ function getNextPlaybookStep(state = {}, context = {}) {
 }
 
 function getPlaybookAwaitingField(step) {
+  if (step === 'ask_rent_property_type') return 'property_type';
+  if (step === 'ask_rent_zone') return 'location_text';
+  if (step === 'ask_rent_budget') return 'budget_max';
+  if (step === 'ask_rent_move_in_date') return 'rental_move_in_date';
+  if (step === 'ask_rent_people_count') return 'rental_people_count';
+  if (step === 'ask_rent_pets') return 'rental_pets';
+  if (step === 'ask_rent_special_requirements') return 'rental_special_requirements';
   if (step === 'ask_budget' || step === 'ask_price_expectation') return 'budget_max';
   if (step === 'ask_zone' || step === 'ask_location') return 'location_text';
   if (step === 'ask_property_type') return 'property_type';
@@ -99,6 +126,14 @@ function getPlaybookAwaitingField(step) {
 
 function buildPlaybookReply(step, state = {}) {
   const operationType = state.operation_type;
+
+  if (step === 'ask_rent_property_type') return 'Para orientarte mejor, ¿buscas casa completa, departamento, cuarto u otra opción?';
+  if (step === 'ask_rent_zone') return '¿En qué zona te interesa rentar?';
+  if (step === 'ask_rent_budget') return '¿Cuál es tu presupuesto mensual aproximado para renta?';
+  if (step === 'ask_rent_move_in_date') return '¿Para qué fecha te gustaría mudarte?';
+  if (step === 'ask_rent_people_count') return '¿Para cuántas personas sería la renta?';
+  if (step === 'ask_rent_pets') return '¿Tienes mascotas o necesitas una opción pet-friendly?';
+  if (step === 'ask_rent_special_requirements') return '¿Tienes algún requisito especial para la renta?';
 
   if (step === 'ask_budget') return '¿Cuál es tu presupuesto aproximado?';
   if (step === 'ask_zone') return '¿En qué zona te interesa buscar?';

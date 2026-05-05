@@ -604,6 +604,142 @@ function detectNonRealEstateOrProvider(message) {
   return terms.some((term) => text.includes(term));
 }
 
+function detectExternalBroker(message) {
+  const text = normalizeText(message);
+  const terms = [
+    'broker',
+    'bróker',
+    'comision para brokers',
+    'comisión para brokers',
+    'soy asesor inmobiliario',
+    'soy agente inmobiliario',
+    'tengo desarrollo para comercializar',
+    'invitacion a evento broker',
+    'invitación a evento broker',
+  ];
+  return terms.some((term) => text.includes(term));
+}
+
+function detectProvider(message) {
+  const text = normalizeText(message);
+  const terms = [
+    'soy proveedor',
+    'ofrezco servicio',
+    'servicio de marketing',
+    'servicio de fotografia',
+    'servicio de fotografía',
+    'cotizacion de servicio',
+    'cotización de servicio',
+    'venta de leads',
+  ];
+  return terms.some((term) => text.includes(term));
+}
+
+function detectSuspiciousSpam(message) {
+  const raw = cleanSpaces(message || '');
+  const text = normalizeText(raw);
+  if (!text) return false;
+
+  const hasSuspiciousLink = /(bit\.ly|tinyurl|t\.me|wa\.me\/join|http:\/\/)/i.test(raw);
+  const spamTerms = [
+    'gana dinero rapido',
+    'gana dinero rápido',
+    'multiplica tus ingresos',
+    'cripto',
+    'apuesta',
+    'casino',
+  ];
+
+  return hasSuspiciousLink || spamTerms.some((term) => text.includes(term));
+}
+
+function detectWrongContext(message) {
+  const text = normalizeText(message);
+  const terms = [
+    'como consigo el zapatero',
+    'cómo consigo el zapatero',
+    'plomero',
+    'dentista',
+    'receta de cocina',
+    'soporte de computadora',
+  ];
+  return terms.some((term) => text.includes(term));
+}
+
+function classifyInboundBusinessCategory(message, intent = {}) {
+  const text = normalizeText(message);
+  const hasRealEstateKeywords =
+    text.includes('casa') ||
+    text.includes('depa') ||
+    text.includes('departamento') ||
+    text.includes('terreno') ||
+    text.includes('propiedad') ||
+    text.includes('renta') ||
+    text.includes('venta') ||
+    text.includes('valu') ||
+    text.includes('comprar') ||
+    text.includes('vender');
+
+  const isBroker = detectExternalBroker(message);
+  const isProvider = detectProvider(message) || detectNonRealEstateOrProvider(message);
+  const isSpam = detectSuspiciousSpam(message);
+  const isWrongContext = detectWrongContext(message);
+
+  if (isSpam) return 'spam';
+  if (isBroker) return 'external_broker';
+  if (isProvider) return 'provider';
+  if (isWrongContext) return 'wrong_context';
+
+  if (!intent?.leadType && !hasRealEstateKeywords) {
+    return text ? 'unclear_non_real_estate' : 'wrong_context';
+  }
+
+  return 'real_estate_client';
+}
+
+function extractRentalMoveInDate(message) {
+  const raw = cleanSpaces(message || '');
+  const text = normalizeText(raw);
+  if (!text) return null;
+
+  const monthMatch = raw.match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/i);
+  if (monthMatch) return cleanSpaces(monthMatch[0]);
+
+  if (text.includes('inmediato') || text.includes('de inmediato')) return 'inmediato';
+  if (text.includes('proximo mes') || text.includes('próximo mes')) return 'próximo mes';
+  if (text.includes('en dos meses')) return 'en dos meses';
+
+  return null;
+}
+
+function extractRentalPeopleCount(message) {
+  const text = normalizeText(message);
+  const match = text.match(/(\d+)\s*(personas|adultos|integrantes)/i);
+  if (match?.[1]) return Number(match[1]);
+  return null;
+}
+
+function detectRentalPets(message) {
+  const text = normalizeText(message);
+  if (text.includes('con mascota') || text.includes('tenemos mascota') || text.includes('aceptan mascotas')) {
+    return true;
+  }
+  if (text.includes('sin mascota') || text.includes('no tenemos mascota')) {
+    return false;
+  }
+  return null;
+}
+
+function extractRentalSpecialRequirements(message) {
+  const raw = cleanSpaces(message || '');
+  const text = normalizeText(raw);
+  const tokens = ['amueblado', 'amueblada', 'planta baja', 'cerca de', 'con cochera', 'pet friendly'];
+  if (tokens.some((token) => text.includes(token))) {
+    return raw.slice(0, 180);
+  }
+  return null;
+}
+
 function detectLegalSensitive(message) {
   const text = normalizeText(message);
   const terms = [
@@ -1090,6 +1226,11 @@ function parseMessageSignals(message, prevState = getDefaultAiState(), messageCo
   const municipalityText = extractMunicipality(message);
   const neighborhoodText = extractNeighborhood(message);
 
+  const rentalMoveInDate = extractRentalMoveInDate(message);
+  const rentalPeopleCount = extractRentalPeopleCount(message);
+  const rentalPets = detectRentalPets(message);
+  const rentalSpecialRequirements = extractRentalSpecialRequirements(message);
+
   const sellerScenario = classifySellerScenarios({
     messageText: message,
     aiState: {
@@ -1103,6 +1244,12 @@ function parseMessageSignals(message, prevState = getDefaultAiState(), messageCo
     },
     media: messageContext?.media || null,
   });
+  const inboundBusinessCategory = classifyInboundBusinessCategory(message, intent);
+  const externalBroker = inboundBusinessCategory === 'external_broker';
+  const provider = inboundBusinessCategory === 'provider';
+  const spamDetected = inboundBusinessCategory === 'spam';
+  const wrongContext = inboundBusinessCategory === 'wrong_context';
+  const unclearNonRealEstate = inboundBusinessCategory === 'unclear_non_real_estate';
   const contactPreference = detectContactPreference(message);
   let fullName = extractPossibleName(message, prevState);
   const ownerRelation = detectOwnerRelation(message);
@@ -1193,6 +1340,12 @@ function parseMessageSignals(message, prevState = getDefaultAiState(), messageCo
     complaint_followup: complaintFollowup,
     low_info_campaign_message: lowInfoCampaignMessage,
     non_real_estate_or_provider: nonRealEstateOrProvider,
+    inbound_business_category: inboundBusinessCategory,
+    external_broker: externalBroker,
+    provider,
+    spam_detected: spamDetected,
+    wrong_context: wrongContext,
+    unclear_non_real_estate: unclearNonRealEstate,
     legal_sensitive: legalSensitive || sellerScenario.legalSensitive,
     seller_scenarios: sellerScenario.scenarios,
     primary_seller_scenario: sellerScenario.primaryScenario,
@@ -1211,6 +1364,10 @@ function parseMessageSignals(message, prevState = getDefaultAiState(), messageCo
         : null,
     municipality_text: municipalityText,
     neighborhood_text: neighborhoodText,
+    rental_move_in_date: rentalMoveInDate,
+    rental_people_count: rentalPeopleCount,
+    rental_pets: rentalPets,
+    rental_special_requirements: rentalSpecialRequirements,
     needs_specialized_review: legalSensitive || sellerScenario.legalSensitive,
     risk_flags: Object.entries(sellerScenario.sellerSummaryFlags || {})
       .filter(([, enabled]) => !!enabled)

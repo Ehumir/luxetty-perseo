@@ -71,12 +71,23 @@ function buildAiSummary(state, properties = []) {
   return parts.join(' ').trim() || null;
 }
 
-function buildLowInfoCampaignReply(hasCampaignContext = false) {
-  if (hasCampaignContext) {
-    return 'Claro, con gusto te ayudo con el anuncio que viste. Para ubicarte bien, ¿buscas comprar, rentar, vender o poner en renta una propiedad?';
+function buildLowInfoCampaignReply(hasCampaignContext = false, campaignContext = null) {
+  if (!hasCampaignContext) {
+    return 'Claro, con gusto te ayudo. Para ubicarte bien, ¿buscas comprar, rentar, vender o poner en renta una propiedad?';
   }
 
-  return 'Claro, con gusto te ayudo. Para ubicarte bien, ¿buscas comprar, rentar, vender o poner en renta una propiedad?';
+  const campaignType = campaignContext?.campaign_type || 'unknown';
+  const propertyCode = campaignContext?.property_code || null;
+
+  if (campaignType === 'seller_capture' || campaignType === 'valuation') {
+    return 'Vi que llegas por el anuncio para propietarios. ¿Buscas vender una propiedad o quieres una valuación inicial?';
+  }
+
+  if (campaignType === 'property_listing' && propertyCode) {
+    return `Claro. Te comparto la información de esta propiedad ${propertyCode}. ¿Quieres que un asesor confirme disponibilidad, precio y opción de visita?`;
+  }
+
+  return 'Claro, con gusto te ayudo con el anuncio que viste. Te puedo apoyar con venta, compra, renta o valuación de propiedades. ¿Qué necesitas revisar?';
 }
 
 function getChangeAcknowledgement(changeType, state) {
@@ -269,7 +280,7 @@ function buildPropertyInterestReply(property, state = {}) {
   return [
     `Con gusto. Te comparto la liga de la propiedad ${code}${locationText}.`,
     url,
-    buildPropertyAdvisorCta(state, code),
+    `${buildPropertyAdvisorCta(state, code)} También puedo pedir que confirmen disponibilidad y precio actual.`,
   ];
 }
 
