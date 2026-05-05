@@ -17,6 +17,11 @@ const IMAGE_VISION_MODEL = process.env.IMAGE_VISION_MODEL || 'gpt-4o-mini';
 const IMAGE_VISION_TIMEOUT_MS = Number(process.env.IMAGE_VISION_TIMEOUT_MS || 30000);
 const IMAGE_VISION_MAX_BYTES = Number(process.env.IMAGE_VISION_MAX_BYTES || MEDIA_DOWNLOAD_MAX_BYTES);
 
+// QA: números de WhatsApp autorizados para comandos internos de prueba
+// Formato: lista separada por comas. Dejar vacío en producción si no hay testers.
+// Ejemplo: QA_ALLOWED_WHATSAPP_NUMBERS=5218111111111,5218119999999
+const QA_ALLOWED_WHATSAPP_NUMBERS = process.env.QA_ALLOWED_WHATSAPP_NUMBERS || '';
+
 module.exports = {
   PORT,
   VERIFY_TOKEN,
@@ -34,4 +39,5 @@ module.exports = {
   IMAGE_VISION_MODEL,
   IMAGE_VISION_TIMEOUT_MS,
   IMAGE_VISION_MAX_BYTES,
+  QA_ALLOWED_WHATSAPP_NUMBERS,
 };

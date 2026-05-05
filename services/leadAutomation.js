@@ -1361,6 +1361,11 @@ async function assignLead(supabase, leadId, conversationId, logger, context = {}
     : null;
 
   if (fallbackAgentProfileId) {
+    await saveConversationEvent(supabase, conversationId, 'assignment_fallback_used', {
+      lead_id: leadId,
+      fallback_agent_profile_id: fallbackAgentProfileId,
+      source: 'ai_agent',
+    });
     const fallbackAttempt = await applyAgentAssignment({
       supabase,
       leadId,
@@ -2003,7 +2008,7 @@ async function createOrReuseLeadFromConversation({
       conversation_id: conversationId,
       error: err?.message || String(err),
     });
-    await saveConversationEvent(supabase, conversationId, 'lead_assignment_failed', {
+    await saveConversationEvent(supabase, conversationId, 'crm_creation_failed', {
       reason: 'lead_automation_error',
       error: err?.message || String(err),
       source: 'ai_agent',

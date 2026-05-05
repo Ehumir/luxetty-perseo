@@ -4,7 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "lint": "node scripts/lint.js",
     "test": "node --test",
+    "test:regression": "node --test test/perseoRegression.test.js",
+    "test:qa": "node --test test/qaCommands.test.js",
+    "test:perseo": "node --test test/perseoRegression.test.js test/conversationRegression.test.js test/crmFlowRegression.test.js test/inboundReliability.test.js test/sprint3Playbooks.test.js",
+    "test:crm": "node --test test/crmLeadIntegrity.test.js",
+    "gate:no-regression": "bash scripts/gate-no-regression.sh",
     "smoke:referral-persist": "node scripts/smoke-referral-persist.js"
   },
   "keywords": [],

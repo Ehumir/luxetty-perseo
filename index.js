@@ -92,6 +92,12 @@ const {
   normalizeOutboundMessages,
 } = require('./utils/helpers');
 const { isGreetingOnly } = require('./utils/messageChecks');
+const {
+  parseQaCommand,
+  isQaCommandAllowed,
+  handleQaCommand,
+  isQaLeadBlocked,
+} = require('./conversation/qaCommands');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -713,6 +719,15 @@ async function maybeCreateOrReuseLeadWithEngine({
   unifiedContext = null,
 }) {
   try {
+    // Bloquear creación de leads durante sesión de prueba QA
+    if (isQaLeadBlocked(nextAiState)) {
+      await saveConversationEvent(conversationId, 'lead_creation_skipped_qa_session', {
+        qa_test_session_id: nextAiState.qa_test_session_id || null,
+        qa_test_case_name: nextAiState.qa_test_case_name || null,
+      });
+      return { success: false, reason: 'qa_session_active' };
+    }
+
     if (isNonRealEstateCategory(nextAiState)) {
       await saveConversationEvent(conversationId, 'lead_creation_skipped_non_real_estate_category', {
         inbound_business_category: nextAiState.inbound_business_category || null,
@@ -1883,6 +1898,33 @@ app.post('/webhook', async (req, res) => {
       if (processingMode === 'respond' && cleanSpaces(burstCombinedText || '')) {
         text = cleanSpaces(burstCombinedText);
       }
+
+      // ─── Guard: Comandos internos QA ──────────────────────────────────────
+      // Intercepta ANTES del procesamiento de media/señales para no contaminar
+      // el pipeline productivo. Solo actúa para números en la allowlist.
+      const qaCommand = parseQaCommand(text);
+      if (qaCommand) {
+        if (isQaCommandAllowed(from)) {
+          await handleQaCommand({
+            command: qaCommand.command,
+            args: qaCommand.args,
+            from,
+            conversationId,
+            conversationRow,
+            supabase,
+            conversations,
+            sendReplyFn: sendWhatsAppMessages,
+            saveEventFn: saveConversationEvent,
+            saveStateFn: saveConversationState,
+            getDefaultState: getDefaultAiState,
+            nowIso,
+            metaMessageId,
+          });
+          return; // No continuar con el pipeline normal
+        }
+        // Número no autorizado: trata como mensaje normal (sin revelar que existe el comando)
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       const inboundMediaMetadata = extractInboundMediaMetadata(message, {
         conversationId,
