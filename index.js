@@ -93,9 +93,7 @@ const {
 } = require('./utils/helpers');
 const { isGreetingOnly } = require('./utils/messageChecks');
 const {
-  parseQaCommand,
-  isQaCommandAllowed,
-  handleQaCommand,
+  interceptQaCommand,
   isQaLeadBlocked,
 } = require('./conversation/qaCommands');
 
@@ -1900,29 +1898,25 @@ app.post('/webhook', async (req, res) => {
       }
 
       // ─── Guard: Comandos internos QA ──────────────────────────────────────
-      // Intercepta ANTES del procesamiento de media/señales para no contaminar
-      // el pipeline productivo. Solo actúa para números en la allowlist.
-      const qaCommand = parseQaCommand(text);
-      if (qaCommand) {
-        if (isQaCommandAllowed(from)) {
-          await handleQaCommand({
-            command: qaCommand.command,
-            args: qaCommand.args,
-            from,
-            conversationId,
-            conversationRow,
-            supabase,
-            conversations,
-            sendReplyFn: sendWhatsAppMessages,
-            saveEventFn: saveConversationEvent,
-            saveStateFn: saveConversationState,
-            getDefaultState: getDefaultAiState,
-            nowIso,
-            metaMessageId,
-          });
-          return; // No continuar con el pipeline normal
-        }
-        // Número no autorizado: trata como mensaje normal (sin revelar que existe el comando)
+      // Intercepta ANTES del pipeline conversacional para evitar intent/fallback/CRM/OpenAI.
+      const qaIntercept = await interceptQaCommand({
+        text,
+        from,
+        conversationId,
+        conversationRow,
+        supabase,
+        conversations,
+        sendReplyFn: sendWhatsAppMessages,
+        saveEventFn: saveConversationEvent,
+        saveStateFn: saveConversationState,
+        getDefaultState: getDefaultAiState,
+        nowIso,
+        metaMessageId,
+        logger: console,
+      });
+
+      if (qaIntercept?.handled) {
+        return; // No continuar con el pipeline normal
       }
       // ─────────────────────────────────────────────────────────────────────
 

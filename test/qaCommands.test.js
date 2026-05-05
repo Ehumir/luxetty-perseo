@@ -17,6 +17,7 @@ const {
   parseQaCommand,
   isQaCommandAllowed,
   handleQaCommand,
+  interceptQaCommand,
   isActiveQaSession,
   isClosedQaSession,
   isQaLeadBlocked,
@@ -216,7 +217,7 @@ test('handleQaCommand !reset · limpia estado, registra evento, responde OK', as
 
   // Reply enviado
   assert.ok(replyLog.length > 0, 'debe enviar respuesta');
-  assert.match(String(replyLog[0].messages), /reiniciado|reset/i, 'reply debe confirmar reset');
+  assert.equal(String(replyLog[0].messages), 'Contexto reiniciado para prueba.');
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -264,7 +265,7 @@ test('handleQaCommand !close · marca sesión cerrada, bloquea lead, registra ev
   assert.ok(closeEvent, 'debe persistir evento qa_command_close');
 
   // Reply
-  assert.match(String(replyLog[0].messages), /cerrado|close/i);
+  assert.equal(String(replyLog[0].messages), 'Caso cerrado para prueba.');
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -307,7 +308,7 @@ test('handleQaCommand !case comprador_cumbres · etiqueta sesión, registra nomb
   assert.match(caseEvent.payload.qa_test_case_name, /comprador_cumbres/i);
 
   // Reply incluye el nombre
-  assert.match(String(replyLog[0].messages), /comprador_cumbres/i, 'reply debe incluir nombre del caso');
+  assert.equal(String(replyLog[0].messages), 'Caso de prueba registrado: comprador_cumbres.');
 });
 
 test('handleQaCommand !case sin nombre · responde con instrucción de uso', async () => {
@@ -472,4 +473,168 @@ test('parseQaCommand · !case con caracteres especiales los sanitiza correctamen
   // El nombre guardado no debe contener < > ni / (que forman tags HTML)
   assert.doesNotMatch(String(stateHolder.qa_test_case_name || ''), /[<>\/]/,
     'caracteres HTML peligrosos (<, >, /) deben sanitizarse antes de persistir');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Reproducción runtime: guardia temprana e interrupción de pipeline
+// ═════════════════════════════════════════════════════════════════════════════
+
+test('interceptQaCommand · comando con espacios "  !reset  " funciona', async () => {
+  const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '5218111111111';
+
+  const eventLog = [];
+  const stateHolder = {};
+  const replyLog = [];
+  const logger = { log() {}, warn() {}, info() {} };
+
+  const result = await interceptQaCommand({
+    text: '  !reset  ',
+    from: '5218111111111',
+    conversationId: 'conv-qa-001',
+    conversationRow: buildConversationRow(),
+    supabase: mockSupabase,
+    conversations: new Map(),
+    sendReplyFn: buildMockSendReply(replyLog),
+    saveEventFn: buildMockSaveEvent(eventLog),
+    saveStateFn: buildMockSaveState(stateHolder),
+    getDefaultState,
+    nowIso,
+    metaMessageId: 'wamid-space-reset',
+    logger,
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(String(replyLog[0].messages), 'Contexto reiniciado para prueba.');
+
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
+});
+
+test('interceptQaCommand · comando en mayúsculas "!RESET" funciona', async () => {
+  const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '5218111111111';
+
+  const replyLog = [];
+  const result = await interceptQaCommand({
+    text: '!RESET',
+    from: '5218111111111',
+    conversationId: 'conv-qa-001',
+    conversationRow: buildConversationRow(),
+    supabase: mockSupabase,
+    conversations: new Map(),
+    sendReplyFn: buildMockSendReply(replyLog),
+    saveEventFn: buildMockSaveEvent([]),
+    saveStateFn: buildMockSaveState({}),
+    getDefaultState,
+    nowIso,
+    metaMessageId: 'wamid-upper-reset',
+    logger: { log() {} },
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(String(replyLog[0].messages), 'Contexto reiniciado para prueba.');
+
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
+});
+
+test('interceptQaCommand · número no autorizado no ejecuta QA', async () => {
+  const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '5218111111111';
+
+  const eventLog = [];
+  const stateHolder = {};
+  const replyLog = [];
+
+  const result = await interceptQaCommand({
+    text: '!reset',
+    from: '5218120000099',
+    conversationId: 'conv-qa-001',
+    conversationRow: buildConversationRow(),
+    supabase: mockSupabase,
+    conversations: new Map(),
+    sendReplyFn: buildMockSendReply(replyLog),
+    saveEventFn: buildMockSaveEvent(eventLog),
+    saveStateFn: buildMockSaveState(stateHolder),
+    getDefaultState,
+    nowIso,
+    metaMessageId: 'wamid-unauth-reset',
+    logger: { log() {} },
+  });
+
+  assert.equal(result.handled, false);
+  assert.equal(replyLog.length, 0, 'no debe enviar reply QA');
+  assert.equal(Object.keys(stateHolder).length, 0, 'no debe modificar estado QA');
+  assert.ok(eventLog.some((e) => e.type === 'qa_command_denied'));
+
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
+});
+
+test('interceptQaCommand · !close autorizado responde solo QA y corta pipeline', async () => {
+  const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '5218111111111';
+
+  const replyLog = [];
+  const guard = await interceptQaCommand({
+    text: '!close',
+    from: '5218111111111',
+    conversationId: 'conv-qa-001',
+    conversationRow: buildConversationRow({ qa_test_active: true }),
+    supabase: mockSupabase,
+    conversations: new Map(),
+    sendReplyFn: buildMockSendReply(replyLog),
+    saveEventFn: buildMockSaveEvent([]),
+    saveStateFn: buildMockSaveState({}),
+    getDefaultState,
+    nowIso,
+    metaMessageId: 'wamid-close-1',
+    logger: { log() {} },
+  });
+
+  let openAiCalls = 0;
+  let fallbackCalls = 0;
+  let contactCalls = 0;
+  let leadCalls = 0;
+
+  if (!guard.handled) {
+    openAiCalls += 1;
+    fallbackCalls += 1;
+    contactCalls += 1;
+    leadCalls += 1;
+  }
+
+  assert.equal(guard.handled, true);
+  assert.equal(String(replyLog[0].messages), 'Caso cerrado para prueba.');
+  assert.equal(openAiCalls, 0, 'QA autorizado no debe llamar OpenAI');
+  assert.equal(fallbackCalls, 0, 'QA autorizado no debe ejecutar fallback');
+  assert.equal(contactCalls, 0, 'QA autorizado no debe crear contacto');
+  assert.equal(leadCalls, 0, 'QA autorizado no debe crear lead');
+
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
+});
+
+test('interceptQaCommand · !case captacion_cumbres autorizado responde solo QA', async () => {
+  const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '5218111111111';
+
+  const replyLog = [];
+  const result = await interceptQaCommand({
+    text: '!case captacion_cumbres',
+    from: '5218111111111',
+    conversationId: 'conv-qa-001',
+    conversationRow: buildConversationRow(),
+    supabase: mockSupabase,
+    conversations: new Map(),
+    sendReplyFn: buildMockSendReply(replyLog),
+    saveEventFn: buildMockSaveEvent([]),
+    saveStateFn: buildMockSaveState({}),
+    getDefaultState,
+    nowIso,
+    metaMessageId: 'wamid-case-1',
+    logger: { log() {} },
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(String(replyLog[0].messages), 'Caso de prueba registrado: captacion_cumbres.');
+
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });

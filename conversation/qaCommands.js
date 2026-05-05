@@ -25,6 +25,20 @@ const QA_COMMAND_PATTERN = /^!(reset|close|case)\s*(.*)?$/i;
 const VALID_COMMANDS = new Set(['reset', 'close', 'case']);
 const CASE_NAME_MAX_LENGTH = 120;
 
+function normalizeQaInput(text) {
+  return String(text || '')
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '')
+    .trim();
+}
+
+function maskPhoneForLog(phone) {
+  const value = normalizePhoneForAllowlist(phone);
+  if (!value) return null;
+  if (value.length <= 4) return `***${value}`;
+  return `***${value.slice(-4)}`;
+}
+
 /**
  * Parsea un texto de entrada e identifica si es un comando QA.
  *
@@ -32,7 +46,7 @@ const CASE_NAME_MAX_LENGTH = 120;
  * @returns {{ command: string, args: string } | null}
  */
 function parseQaCommand(text) {
-  const raw = (text || '').trim();
+  const raw = normalizeQaInput(text);
 
   // Protección: rechaza si es muy largo (evita bypasses con texto largo)
   if (raw.length > 200) return null;
@@ -75,7 +89,7 @@ function isQaCommandAllowed(phone) {
   if (!normalized) return false;
 
   const allowlist = raw
-    .split(',')
+    .split(/[\n,;]+/)
     .map((n) => normalizePhoneForAllowlist(n))
     .filter(Boolean);
 
@@ -161,7 +175,7 @@ async function handleQaCommand({
       previous_intent_type: conversationRow?.ai_state?.intent_type || null,
     });
 
-    reply = '✅ Contexto reiniciado para prueba.';
+    reply = 'Contexto reiniciado para prueba.';
 
   } else if (command === 'close') {
     // Marca la sesión de prueba como cerrada en el estado
@@ -198,7 +212,7 @@ async function handleQaCommand({
       qa_test_session_id: closedState.qa_test_session_id,
     });
 
-    reply = '✅ Caso cerrado para prueba.';
+    reply = 'Caso cerrado para prueba.';
 
   } else if (command === 'case') {
     if (!safeArgs) {
@@ -223,7 +237,7 @@ async function handleQaCommand({
         qa_test_session_id: testSessionId,
       });
 
-      reply = `✅ Caso de prueba registrado: ${safeArgs}.`;
+      reply = `Caso de prueba registrado: ${safeArgs}.`;
     }
   }
 
@@ -245,6 +259,89 @@ async function handleQaCommand({
   });
 
   return { handled: true, command, reply };
+}
+
+async function interceptQaCommand({
+  text,
+  from,
+  conversationId,
+  conversationRow,
+  supabase,
+  conversations,
+  sendReplyFn,
+  saveEventFn,
+  saveStateFn,
+  getDefaultState,
+  nowIso,
+  metaMessageId = null,
+  logger = console,
+}) {
+  const parsed = parseQaCommand(text);
+  if (!parsed) return { handled: false, isQaCommand: false, reason: 'not_qa_command' };
+
+  const logBase = {
+    conversation_id: conversationId || null,
+    from: maskPhoneForLog(from),
+    command: parsed.command,
+    meta_message_id: metaMessageId || null,
+  };
+
+  logger.log('qa_command_detected', logBase);
+
+  const allowed = isQaCommandAllowed(from);
+  if (!allowed) {
+    logger.log('qa_command_denied', logBase);
+    if (saveEventFn && conversationId) {
+      await saveEventFn(conversationId, 'qa_command_denied', {
+        ...logBase,
+        reason: 'phone_not_authorized',
+      });
+    }
+    return { handled: false, isQaCommand: true, reason: 'qa_command_denied' };
+  }
+
+  logger.log('qa_command_authorized', logBase);
+  if (saveEventFn && conversationId) {
+    await saveEventFn(conversationId, 'qa_command_authorized', {
+      ...logBase,
+      reason: 'phone_authorized',
+    });
+  }
+
+  const result = await handleQaCommand({
+    command: parsed.command,
+    args: parsed.args,
+    from,
+    conversationId,
+    conversationRow,
+    supabase,
+    conversations,
+    sendReplyFn,
+    saveEventFn,
+    saveStateFn,
+    getDefaultState,
+    nowIso,
+    metaMessageId,
+  });
+
+  logger.log('qa_command_completed', {
+    ...logBase,
+    handled: !!result?.handled,
+  });
+
+  if (saveEventFn && conversationId) {
+    await saveEventFn(conversationId, 'qa_command_completed', {
+      ...logBase,
+      handled: !!result?.handled,
+    });
+  }
+
+  return {
+    handled: true,
+    isQaCommand: true,
+    command: parsed.command,
+    reply: result?.reply || null,
+  };
 }
 
 // ─── Utilidades de verificación de estado QA ─────────────────────────────────
@@ -275,6 +372,7 @@ module.exports = {
   parseQaCommand,
   isQaCommandAllowed,
   handleQaCommand,
+  interceptQaCommand,
   isActiveQaSession,
   isClosedQaSession,
   isQaLeadBlocked,
