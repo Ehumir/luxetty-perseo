@@ -53,6 +53,9 @@ function detectIntent(message, prevState = null) {
   const wantsRent =
     text.includes('quiero rentar') ||
     text.includes('busco renta') ||
+    text.includes('busco casa de renta') ||
+    text.includes('busco depa de renta') ||
+    text.includes('busco departamento de renta') ||
     text.includes('busco casa en renta') ||
     text.includes('busco depa en renta') ||
     text.includes('busco departamento en renta') ||

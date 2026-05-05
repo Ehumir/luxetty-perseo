@@ -132,6 +132,16 @@ function buildNextState(prevState, signals, changeType) {
           : null,
       sale_motivation: signals.sale_motivation || null,
       urgency_level: signals.urgency_level || null,
+      rental_move_in_date: signals.rental_move_in_date || null,
+      rental_people_count:
+        signals.rental_people_count !== null && signals.rental_people_count !== undefined
+          ? signals.rental_people_count
+          : null,
+      rental_pets:
+        signals.rental_pets !== null && signals.rental_pets !== undefined
+          ? signals.rental_pets
+          : null,
+      rental_special_requirements: signals.rental_special_requirements || null,
       is_exploring_sale:
         signals.is_exploring_sale !== null && signals.is_exploring_sale !== undefined
           ? signals.is_exploring_sale
@@ -154,6 +164,12 @@ function buildNextState(prevState, signals, changeType) {
       complaint_followup: !!signals.complaint_followup,
       low_info_campaign_message: !!signals.low_info_campaign_message,
       non_real_estate_or_provider: !!signals.non_real_estate_or_provider,
+      inbound_business_category: signals.inbound_business_category || null,
+      external_broker: !!signals.external_broker,
+      provider: !!signals.provider,
+      spam_detected: !!signals.spam_detected,
+      wrong_context: !!signals.wrong_context,
+      unclear_non_real_estate: !!signals.unclear_non_real_estate,
       seller_scenarios: Array.isArray(signals.seller_scenarios) ? signals.seller_scenarios : [],
       primary_seller_scenario: signals.primary_seller_scenario || null,
       legal_sensitive: !!signals.legal_sensitive,
@@ -270,6 +286,17 @@ function buildNextState(prevState, signals, changeType) {
           : prev.expected_price,
       sale_motivation: signals.sale_motivation || prev.sale_motivation,
       urgency_level: signals.urgency_level || prev.urgency_level,
+      rental_move_in_date: signals.rental_move_in_date || prev.rental_move_in_date,
+      rental_people_count:
+        signals.rental_people_count !== null && signals.rental_people_count !== undefined
+          ? signals.rental_people_count
+          : prev.rental_people_count,
+      rental_pets:
+        signals.rental_pets !== null && signals.rental_pets !== undefined
+          ? signals.rental_pets
+          : prev.rental_pets,
+      rental_special_requirements:
+        signals.rental_special_requirements || prev.rental_special_requirements,
       is_exploring_sale:
         signals.is_exploring_sale !== null && signals.is_exploring_sale !== undefined
           ? signals.is_exploring_sale
@@ -303,6 +330,14 @@ function buildNextState(prevState, signals, changeType) {
         prev.low_info_campaign_message || !!signals.low_info_campaign_message,
       non_real_estate_or_provider:
         prev.non_real_estate_or_provider || !!signals.non_real_estate_or_provider,
+      inbound_business_category:
+        signals.inbound_business_category || prev.inbound_business_category,
+      external_broker: prev.external_broker || !!signals.external_broker,
+      provider: prev.provider || !!signals.provider,
+      spam_detected: prev.spam_detected || !!signals.spam_detected,
+      wrong_context: prev.wrong_context || !!signals.wrong_context,
+      unclear_non_real_estate:
+        prev.unclear_non_real_estate || !!signals.unclear_non_real_estate,
       seller_scenarios: mergeUnique(prev.seller_scenarios, signals.seller_scenarios),
       primary_seller_scenario: signals.primary_seller_scenario || prev.primary_seller_scenario,
       legal_sensitive: prev.legal_sensitive || !!signals.legal_sensitive,

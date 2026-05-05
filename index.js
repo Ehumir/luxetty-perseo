@@ -71,6 +71,14 @@ const {
   buildFinalHandoffReply,
   buildPropertyPriceReply,
 } = require('./conversation/responseBuilder');
+const {
+  DEFAULT_BURST_WINDOW_MS,
+  consolidateInboundBurst,
+  applyConversationIntentMemory,
+  buildConversationContextSnapshot,
+  chooseSingleUsefulQuestion,
+  evaluateCommercialCloseDecision,
+} = require('./conversation/inboundReliability');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -97,6 +105,64 @@ console.log('ENV CHECK:', {
 });
 
 const conversations = new Map();
+const inboundBurstQueues = new Map();
+const conversationProcessingChains = new Map();
+
+function runWithConversationLock(lockKey, task) {
+  const previousChain = conversationProcessingChains.get(lockKey) || Promise.resolve();
+
+  const nextChain = previousChain
+    .catch(() => null)
+    .then(() => task());
+
+  conversationProcessingChains.set(lockKey, nextChain);
+
+  return nextChain.finally(() => {
+    if (conversationProcessingChains.get(lockKey) === nextChain) {
+      conversationProcessingChains.delete(lockKey);
+    }
+  });
+}
+
+function enqueueInboundBurst({ lockKey, item, processor, windowMs = DEFAULT_BURST_WINDOW_MS }) {
+  return new Promise((resolve, reject) => {
+    const key = cleanSpaces(lockKey || '');
+    if (!key) {
+      reject(new Error('missing_burst_lock_key'));
+      return;
+    }
+
+    let queue = inboundBurstQueues.get(key);
+    if (!queue) {
+      queue = {
+        items: [],
+        resolvers: [],
+        rejecters: [],
+        timer: null,
+      };
+      inboundBurstQueues.set(key, queue);
+
+      queue.timer = setTimeout(async () => {
+        const drainingQueue = inboundBurstQueues.get(key);
+        inboundBurstQueues.delete(key);
+        if (!drainingQueue) return;
+
+        try {
+          await runWithConversationLock(key, async () => {
+            await processor(drainingQueue.items);
+          });
+          drainingQueue.resolvers.forEach((done) => done(true));
+        } catch (error) {
+          drainingQueue.rejecters.forEach((fail) => fail(error));
+        }
+      }, Math.max(2000, Number(windowMs) || DEFAULT_BURST_WINDOW_MS));
+    }
+
+    queue.items.push(item);
+    queue.resolvers.push(resolve);
+    queue.rejecters.push(reject);
+  });
+}
 
 const locationCatalog = {
   loadedAt: 0,
@@ -589,6 +655,37 @@ function getDemandFollowupPriority(state, properties = []) {
   return 'medium';
 }
 
+function isNonRealEstateCategory(state = {}) {
+  return (
+    !!state.external_broker ||
+    !!state.provider ||
+    !!state.spam_detected ||
+    !!state.wrong_context ||
+    !!state.unclear_non_real_estate ||
+    !!state.non_real_estate_or_provider
+  );
+}
+
+function buildNonRealEstateCategoryReply(state = {}) {
+  if (state.spam_detected) {
+    return 'Gracias por tu mensaje. Este canal atiende únicamente solicitudes inmobiliarias de compra, venta, renta y valuación.';
+  }
+
+  if (state.external_broker) {
+    return 'Gracias por escribir. Este canal está enfocado en atención directa a clientes de Luxetty. Si gustas, puedo canalizarte con el área comercial interna.';
+  }
+
+  if (state.provider) {
+    return 'Gracias por contactarnos. Este chat está enfocado en clientes inmobiliarios; para temas de proveedores te canalizamos por el medio interno correspondiente.';
+  }
+
+  if (state.wrong_context || state.unclear_non_real_estate) {
+    return 'Gracias por escribir. Para ayudarte bien, este canal atiende compra, venta, renta y valuación de propiedades.';
+  }
+
+  return 'Gracias por tu mensaje. Este canal atiende únicamente solicitudes inmobiliarias de compra, venta, renta y valuación.';
+}
+
 async function saveConversationEvent(conversationId, type, payload = {}, createdBy = null) {
   try {
     if (!conversationId) return;
@@ -616,6 +713,22 @@ async function maybeCreateOrReuseLeadWithEngine({
   unifiedContext = null,
 }) {
   try {
+    if (isNonRealEstateCategory(nextAiState)) {
+      await saveConversationEvent(conversationId, 'lead_creation_skipped_non_real_estate_category', {
+        inbound_business_category: nextAiState.inbound_business_category || null,
+        external_broker: !!nextAiState.external_broker,
+        provider: !!nextAiState.provider,
+        spam_detected: !!nextAiState.spam_detected,
+        wrong_context: !!nextAiState.wrong_context,
+        unclear_non_real_estate: !!nextAiState.unclear_non_real_estate,
+      });
+
+      return {
+        success: false,
+        reason: 'non_real_estate_category',
+      };
+    }
+
     const propertyId = property?.id || null;
     const propertyCode =
       nextAiState?.property_code || nextAiState?.direct_property_code || property?.listing_id || null;
@@ -632,6 +745,8 @@ async function maybeCreateOrReuseLeadWithEngine({
         conversation_id: conversationId,
         property_id: propertyId,
         has_referral: !!campaignExtraction.referralContext,
+        campaign_type: campaignExtraction.campaignContext?.campaign_type || null,
+        campaign_property_code: campaignExtraction.campaignContext?.property_code || null,
       });
     } else {
       console.log('campaign_context_missing', {
@@ -695,6 +810,7 @@ async function maybeCreateOrReuseLeadWithEngine({
       source_channel: leadContext.sourceChannel,
       has_campaign_context: !!leadContext.campaignContext,
       has_referral: !!leadContext.referralContext,
+      campaign_type: leadContext.campaignContext?.campaign_type || null,
     });
 
     const aiStateForLead = {
@@ -842,6 +958,23 @@ async function saveConversationMessage({
   try {
     if (!conversationId) return null;
 
+    if (direction === 'inbound' && metaMessageId) {
+      const alreadyProcessed = await inboundMessageAlreadyProcessed(metaMessageId);
+      if (alreadyProcessed) {
+        const { data: existing } = await supabase
+          .from('conversation_messages')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .eq('direction', 'inbound')
+          .eq('meta_message_id', metaMessageId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        return existing || null;
+      }
+    }
+
     const { data, error } = await supabase
       .from('conversation_messages')
       .insert({
@@ -896,6 +1029,30 @@ async function inboundMessageAlreadyProcessed(metaMessageId) {
   } catch (err) {
     console.error('FATAL inboundMessageAlreadyProcessed:', err);
     return false;
+  }
+}
+
+async function fetchRecentConversationMessages(conversationId, limit = 20) {
+  try {
+    if (!conversationId) return [];
+    const safeLimit = Math.max(1, Math.min(50, Number(limit) || 20));
+
+    const { data, error } = await supabase
+      .from('conversation_messages')
+      .select('id, direction, sender_type, message_type, message_text, meta_message_id, created_at')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(safeLimit);
+
+    if (error) {
+      console.warn('fetchRecentConversationMessages warning:', error?.message || error);
+      return [];
+    }
+
+    return Array.isArray(data) ? [...data].reverse() : [];
+  } catch (error) {
+    console.warn('FATAL fetchRecentConversationMessages:', error?.message || error);
+    return [];
   }
 }
 
@@ -1636,7 +1793,17 @@ app.post('/webhook', async (req, res) => {
   try {
     await refreshLocationCatalog();
 
-    async function processInboundWhatsAppMessage({ entry, change, value, message }) {
+    async function processInboundWhatsAppMessage({
+      entry,
+      change,
+      value,
+      message,
+      webhookBody,
+      processingMode = 'respond',
+      burstCombinedText = null,
+      inboundBatch = [],
+      burstSize = 1,
+    }) {
       let from = null;
 
       if (!message || typeof message !== 'object') return;
@@ -1685,15 +1852,17 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
+      const payloadSnapshot = webhookBody && typeof webhookBody === 'object' ? webhookBody : req.body;
+
       const inboundRawPayload = normalizedReferral
         ? {
-            ...(req.body || {}),
+            ...(payloadSnapshot || {}),
             perseo_metadata: {
-              ...((req.body && req.body.perseo_metadata) || {}),
+              ...((payloadSnapshot && payloadSnapshot.perseo_metadata) || {}),
               whatsapp_referral: normalizedReferral,
             },
           }
-        : req.body;
+        : payloadSnapshot;
 
       from = normalizePhoneNumber(rawFrom) || rawFrom;
 
@@ -1709,6 +1878,10 @@ app.post('/webhook', async (req, res) => {
       const signalText = extractInboundSignalText(message);
       if (signalText) {
         text = cleanSpaces(signalText);
+      }
+
+      if (processingMode === 'respond' && cleanSpaces(burstCombinedText || '')) {
+        text = cleanSpaces(burstCombinedText);
       }
 
       const inboundMediaMetadata = extractInboundMediaMetadata(message, {
@@ -1912,6 +2085,13 @@ app.post('/webhook', async (req, res) => {
               should_ask_one_more_question: !!unifiedContext?.shouldAskOneMoreQuestion,
               suggested_next_question: unifiedContext?.suggestedNextQuestion || null,
             },
+            inbound_batch: {
+              processing_mode: processingMode,
+              burst_size: burstSize,
+              message_ids: Array.isArray(inboundBatch)
+                ? inboundBatch.map((item) => item?.meta_message_id).filter(Boolean)
+                : [],
+            },
           },
         },
       });
@@ -1941,6 +2121,26 @@ app.post('/webhook', async (req, res) => {
 
       const incomingSignals = parseMessageSignals(text, previousAiState, inboundContext);
       const signals = incomingSignals;
+
+      const normalizedInboundText = normalizeText(text);
+      const campaignPropertyCode = campaignContextForFusion?.campaignContext?.property_code || null;
+      const referencesCampaignProperty =
+        normalizedInboundText.includes('la propiedad') ||
+        normalizedInboundText.includes('precio') ||
+        normalizedInboundText.includes('disponibilidad') ||
+        normalizedInboundText.includes('quiero verla') ||
+        normalizedInboundText.includes('me interesa');
+
+      if (!signals.property_code && campaignPropertyCode && referencesCampaignProperty) {
+        signals.property_code = campaignPropertyCode;
+        signals.direct_property_reference = true;
+        signals.lead_flow = 'demand';
+        signals.operation_type = signals.operation_type || 'sale';
+        await saveConversationEvent(conversationId, 'direct_property_resolved_from_campaign_context', {
+          property_code: campaignPropertyCode,
+          source: 'campaign_referral',
+        });
+      }
 
       if (inboundContext?.media && inboundContext.media.type !== 'text') {
         await saveConversationEvent(conversationId, 'inbound_media_classified', {
@@ -1998,6 +2198,15 @@ app.post('/webhook', async (req, res) => {
           image_vision_error_code: inboundMediaMetadata.image_vision?.error_code || null,
           image_vision_error_message: inboundMediaMetadata.image_vision?.error_message || null,
         });
+      }
+
+      if (processingMode === 'persist_only') {
+        await saveConversationEvent(conversationId, 'inbound_message_buffered', {
+          meta_message_id: metaMessageId,
+          burst_size: burstSize,
+          message_type: messageType || null,
+        });
+        return;
       }
 
     if (!signals.property_code) {
@@ -2373,6 +2582,31 @@ app.post('/webhook', async (req, res) => {
       };
     }
 
+    if (campaignContextForFusion?.campaignContext) {
+      nextAiState.campaign_context = campaignContextForFusion.campaignContext;
+    } else if (previousAiState?.campaign_context && !nextAiState.campaign_context) {
+      nextAiState.campaign_context = previousAiState.campaign_context;
+    }
+
+    const reliabilityFlags = applyConversationIntentMemory({
+      text,
+      previousAiState,
+      incomingSignals,
+      nextAiState,
+    });
+
+    if (nextAiState.context_fusion) {
+      nextAiState.context_fusion.reliability = {
+        ...(nextAiState.context_fusion.reliability || {}),
+        has_critical_sale_intent: reliabilityFlags.hasCriticalSaleIntent,
+        explicit_rent_switch: reliabilityFlags.explicitRentSwitch,
+        complaint_correction: reliabilityFlags.isComplaintCorrection,
+      };
+    }
+
+    nextAiState.pending_question =
+      nextAiState.context_fusion?.pending_question || nextAiState.pending_question || null;
+
     if (incomingSignals.full_name) {
       nextAiState.full_name = incomingSignals.full_name;
     }
@@ -2423,7 +2657,8 @@ app.post('/webhook', async (req, res) => {
 
     if (
       (incomingSignals.wants_human || incomingSignals.wants_visit || incomingSignals.shows_high_interest) &&
-      !previousAiState.direct_property_reference
+      !previousAiState.direct_property_reference &&
+      !isNonRealEstateCategory(incomingSignals)
     ) {
       const { createAgentFollowup } = require('./utils/helpers');
 
@@ -2701,6 +2936,33 @@ app.post('/webhook', async (req, res) => {
 
     await maybeGenerateAiSummary(conversationId, nextAiState, matchedProperties);
 
+    const recentMessages = await fetchRecentConversationMessages(conversationId, 20);
+    const conversationContext = buildConversationContextSnapshot({
+      recentMessages,
+      inboundBatch,
+      aiState: nextAiState,
+      campaignContext: campaignContextForFusion?.campaignContext || null,
+      propertyContext: unifiedContext?.propertyOffer || unifiedContext?.propertyDemand || null,
+      contactContext: linkedEntities.existingContact || null,
+      leadContext: linkedEntities.existingLead || null,
+    });
+
+    if (nextAiState.context_fusion) {
+      nextAiState.context_fusion.conversation_context = conversationContext;
+    }
+
+    const closeDecision = evaluateCommercialCloseDecision({
+      text,
+      state: nextAiState,
+      campaignContext: campaignContextForFusion?.campaignContext || null,
+      hasPropertyContext: !!(
+        nextAiState.direct_property_reference ||
+        nextAiState.property_code ||
+        nextAiState.direct_property_code ||
+        campaignContextForFusion?.campaignContext?.property_code
+      ),
+    });
+
     let reply = null;
 
     function shouldAskField(state, fieldName) {
@@ -2729,24 +2991,59 @@ app.post('/webhook', async (req, res) => {
     } else if (inboundContext?.media?.audio_low_confidence) {
       reply = 'Gracias, recibí tu audio y pude transcribir una parte. Para evitar errores, ¿me confirmas en una frase el dato más importante? Si prefieres, también puedo pedir que un asesor te contacte.';
     } else if (inboundContext?.media?.audio_without_transcription) {
+      if (inboundContext?.media?.audio_without_transcription_repeat) {
+        nextAiState.wants_human = true;
+        nextAiState.handoff_ready = true;
+        await saveConversationEvent(conversationId, 'audio_non_transcribable_escalated', {
+          source: 'ai_agent',
+          repeated_audio_without_transcription: true,
+        });
+      }
       reply = buildMediaAcknowledgementReply(inboundContext.media, { aiState: nextAiState });
-    } else if (incomingSignals.non_real_estate_or_provider) {
-      reply = 'Gracias por tu mensaje. Este canal esta enfocado en compra, renta y venta de propiedades. Si tu solicitud es de otro tipo, con gusto la canalizo por la via interna correspondiente.';
+    } else if (isNonRealEstateCategory(incomingSignals)) {
+      reply = buildNonRealEstateCategoryReply(incomingSignals);
       nextAiState.lead_flow = null;
       nextAiState.operation_type = null;
       nextAiState.awaiting_field = null;
+    } else if (closeDecision.shouldClarify) {
+      reply = closeDecision.clarificationQuestion;
+    } else if (closeDecision.shouldClose) {
+      if (/quiero verla|agendame|agéndame/i.test(normalizedText)) {
+        nextAiState.wants_visit = true;
+      }
+      if (/ese es mi numero|ese es mi número/i.test(normalizedText)) {
+        nextAiState.contact_number_confirmed = true;
+        nextAiState.confirmed_phone = true;
+      }
+      if (
+        previousAiState.awaiting_field === 'contact_number_confirmed' &&
+        /^(si|sí|correcto)$/.test(normalizedText)
+      ) {
+        nextAiState.contact_number_confirmed = true;
+        nextAiState.confirmed_phone = true;
+      }
+
+      nextAiState.wants_human = true;
+      nextAiState.handoff_ready = true;
+      nextAiState.awaiting_field = null;
+
+      await saveConversationEvent(conversationId, 'commercial_close_triggered', {
+        reason: closeDecision.reason,
+        text,
+        source: 'ai_agent',
+      });
+
+      reply = 'Perfecto, ya tengo confirmado tu WhatsApp. Voy a canalizar tu solicitud con un asesor de Luxetty para que te apoye con la información y próximos pasos.';
     } else if (incomingSignals.complaint_followup) {
       nextAiState.wants_human = true;
-      const complaintOperationPrompt =
+      const oneUsefulQuestion = chooseSingleUsefulQuestion(nextAiState);
+      const operationPrompt =
         nextAiState.operation_type === 'sale'
           ? 'venta'
           : nextAiState.operation_type === 'rent'
           ? 'renta'
-          : 'compra, renta o venta';
-      reply = `Tienes razon, gracias por decirmelo. Te apoyo a retomarlo con prioridad y seguimiento humano. Para ubicar tu caso rapido, ¿me confirmas tu nombre y si era por ${complaintOperationPrompt}?`;
-      if (!nextAiState.full_name) {
-        nextAiState.awaiting_field = 'full_name';
-      }
+          : 'tu solicitud';
+      reply = `Tienes razón, me equivoqué. Retomo correctamente: vamos por ${operationPrompt}. ${oneUsefulQuestion}`;
     } else if (incomingSignals.low_info_campaign_message && !incomingSignals.lead_flow) {
       const campaignContext = extractCampaignReferralContext({
         aiState: nextAiState,
@@ -2754,7 +3051,10 @@ app.post('/webhook', async (req, res) => {
         rawPayload: inboundRawPayload,
         messageText: text,
       });
-      reply = buildLowInfoCampaignReply(campaignContext.hasCampaignContext);
+      reply = buildLowInfoCampaignReply(
+        campaignContext.hasCampaignContext,
+        campaignContext.campaignContext
+      );
     } else if (isGreetingOnly(text) && !previousAiState.lead_flow && !incomingSignals.property_code) {
       reply =
         'Hola, bienvenido a Luxetty 😊\n¿En qué puedo orientarte hoy? ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
@@ -3025,6 +3325,18 @@ ${locationCatalog.rawNames.join(', ')}
 
     reply = sanitizeReply(getReplyText(reply));
 
+    const saleOwnerLocked =
+      nextAiState.lead_flow === 'offer' &&
+      nextAiState.operation_type === 'sale' &&
+      nextAiState.intent_lock_sale_owner === true;
+
+    if (
+      saleOwnerLocked &&
+      /venderla o rentarla|comprar o rentar|poner en renta|si era por renta/i.test(reply)
+    ) {
+      reply = `Perfecto, seguimos con venta. ${chooseSingleUsefulQuestion(nextAiState)}`;
+    }
+
     // ✅ Anti-loop semántico: evitar preguntas ya resueltas
     if (
       reply &&
@@ -3095,6 +3407,7 @@ ${locationCatalog.rawNames.join(', ')}
 
     const shouldAttemptLeadAutomation =
       !isGreetingOnly(text) &&
+      !isNonRealEstateCategory(nextAiState) &&
       (
         nextAiState.lead_flow === 'demand' ||
         nextAiState.lead_flow === 'offer' ||
@@ -3175,7 +3488,28 @@ ${locationCatalog.rawNames.join(', ')}
 
     }
 
+    async function processInboundWhatsAppBatch(batchItems = []) {
+      const consolidated = consolidateInboundBurst(batchItems);
+      if (!Array.isArray(consolidated.items) || consolidated.items.length === 0) return;
+
+      const lastIndex = consolidated.items.length - 1;
+
+      for (let i = 0; i < consolidated.items.length; i += 1) {
+        const item = consolidated.items[i];
+        const shouldRespond = i === lastIndex;
+
+        await processInboundWhatsAppMessage({
+          ...item,
+          processingMode: shouldRespond ? 'respond' : 'persist_only',
+          burstCombinedText: shouldRespond ? consolidated.combinedText : null,
+          inboundBatch: consolidated.inboundBatch,
+          burstSize: consolidated.items.length,
+        });
+      }
+    }
+
     const entries = Array.isArray(req.body?.entry) ? req.body.entry : [];
+    const burstPromises = [];
 
     for (const entry of entries) {
       const changes = Array.isArray(entry?.changes) ? entry.changes : [];
@@ -3186,7 +3520,33 @@ ${locationCatalog.rawNames.join(', ')}
 
         for (const message of messages) {
           try {
-            await processInboundWhatsAppMessage({ entry, change, value, message });
+            const rawFrom = typeof message?.from === 'string' ? message.from : '';
+            const normalizedFrom = normalizePhoneNumber(rawFrom) || rawFrom;
+
+            if (!normalizedFrom) {
+              await processInboundWhatsAppMessage({
+                entry,
+                change,
+                value,
+                message,
+                webhookBody: req.body,
+              });
+              continue;
+            }
+
+            burstPromises.push(
+              enqueueInboundBurst({
+                lockKey: normalizedFrom,
+                item: {
+                  entry,
+                  change,
+                  value,
+                  message,
+                  webhookBody: req.body,
+                },
+                processor: processInboundWhatsAppBatch,
+              })
+            );
           } catch (messageError) {
             console.error('--- ERROR WEBHOOK MESSAGE ---');
             console.error(
@@ -3215,6 +3575,10 @@ ${locationCatalog.rawNames.join(', ')}
           }
         }
       }
+    }
+
+    if (burstPromises.length > 0) {
+      await Promise.allSettled(burstPromises);
     }
 
     return res.sendStatus(200);

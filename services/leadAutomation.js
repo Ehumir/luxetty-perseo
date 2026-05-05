@@ -130,6 +130,8 @@ function shouldTriggerHandoff(lead = {}) {
   if (!lead || typeof lead !== 'object') return false;
   if (lead.assigned_agent_profile_id) return false;
 
+  if (lead.wants_human || lead.wants_visit || lead.asks_property_details) return true;
+
   if (Number(lead.lead_score || 0) > 70) return true;
   if (
     lead.intent_type === 'property_interest' ||
@@ -298,6 +300,51 @@ function parseUtmFromUrl(rawUrl) {
   }
 }
 
+function inferPropertyCodeFromText(rawText = '') {
+  const text = String(rawText || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[–—−_./,#:;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!text) return null;
+
+  const fullMatch = text.match(/\bLUX\s*([A-Z])\s*(\d{4})\b/);
+  if (fullMatch) return `LUX-${fullMatch[1]}${fullMatch[2]}`;
+
+  const shortMatch = text.match(/\b([A-Z])\s*(\d{4})\b/);
+  if (shortMatch) return `LUX-${shortMatch[1]}${shortMatch[2]}`;
+
+  return null;
+}
+
+function classifyCampaignType({ campaignName, adName, adBody, headline, sourceUrl, operationHint, propertyCode }) {
+  const bag = normalizeText(
+    [campaignName, adName, adBody, headline, sourceUrl, operationHint].filter(Boolean).join(' ')
+  );
+
+  if (propertyCode) return 'property_listing';
+  if (/(valuacion|valuacion inicial|cuanto vale|cuánto vale|valor de tu propiedad|avaluo)/i.test(bag)) {
+    return 'valuation';
+  }
+  if (/(propietari|vende tu propiedad|vender tu casa|captacion|captación)/i.test(bag)) {
+    return 'seller_capture';
+  }
+  if (/(renta|rentar|alquiler)/i.test(bag) && !/(vender|venta tu propiedad)/i.test(bag)) {
+    return 'rental';
+  }
+  if (/(compra|comprar|busca casa|propiedades disponibles|inmueble)/i.test(bag)) {
+    return 'buyer_search';
+  }
+  if (/(luxetty|marca|branding|conocenos|conócenos)/i.test(bag)) {
+    return 'brand_generic';
+  }
+
+  return 'unknown';
+}
+
 function extractCampaignReferralContext({ aiState = {}, referral = null, rawPayload = null, messageText = '' } = {}) {
   const referralCandidate =
     (isPlainObject(referral) && referral) ||
@@ -338,7 +385,18 @@ function extractCampaignReferralContext({ aiState = {}, referral = null, rawPayl
       referralCandidate?.ad_title,
       referralCandidate?.ad?.name
     ),
+    headline: firstNonEmptyString(
+      referralCandidate?.headline,
+      referralCandidate?.ad_headline,
+      referralCandidate?.ad?.headline
+    ),
     ad_body: firstNonEmptyString(referralCandidate?.ad_body, referralCandidate?.body, referralCandidate?.text),
+    media_url: firstNonEmptyString(
+      referralCandidate?.media_url,
+      referralCandidate?.image_url,
+      referralCandidate?.video_url,
+      referralCandidate?.creative_url
+    ),
     adgroup_id: firstNonEmptyString(
       referralCandidate?.adgroup_id,
       referralCandidate?.adgroupId,
@@ -349,14 +407,59 @@ function extractCampaignReferralContext({ aiState = {}, referral = null, rawPayl
     campaign_id: firstNonEmptyString(referralCandidate?.campaign_id, referralCandidate?.campaignId, referralCandidate?.campaign?.id),
     campaign_name: firstNonEmptyString(referralCandidate?.campaign_name, referralCandidate?.campaignName, referralCandidate?.campaign?.name),
     ctwa_clid: firstNonEmptyString(referralCandidate?.ctwa_clid, referralCandidate?.ctwaClid, referralCandidate?.clid),
+    campaign_agent_profile_id: firstNonEmptyString(
+      referralCandidate?.agent_profile_id,
+      referralCandidate?.assigned_agent_profile_id,
+      referralCandidate?.campaign_agent_profile_id,
+      referralCandidate?.campaign?.agent_profile_id
+    ),
+    ad_text: firstNonEmptyString(referralCandidate?.ad_text, referralCandidate?.ad_copy),
     source_platform: sourcePlatform,
     utm: parseUtmFromUrl(sourceUrl),
   };
 
-  const hasCampaignContext = Object.values(campaignContext).some((value) => {
+  const inferredPropertyCode =
+    inferPropertyCodeFromText(
+      firstNonEmptyString(
+        referralCandidate?.property_code,
+        referralCandidate?.listing_id,
+        referralCandidate?.property?.listing_id,
+        referralCandidate?.source_url,
+        campaignContext.ad_body,
+        campaignContext.ad_name,
+        campaignContext.headline,
+        campaignContext.ad_text
+      )
+    );
+
+  if (inferredPropertyCode) {
+    campaignContext.property_code = inferredPropertyCode;
+  }
+
+  const campaignContextForPresence = { ...campaignContext };
+  const hasCampaignContext = Object.values(campaignContextForPresence).some((value) => {
     if (value == null) return false;
     if (typeof value === 'object') return Object.keys(value).length > 0;
     return String(value).trim() !== '';
+  });
+
+  if (!hasCampaignContext) {
+    return {
+      referralContext: referralCandidate,
+      campaignContext: null,
+      rawReferral: referralCandidate,
+      hasCampaignContext: false,
+    };
+  }
+
+  campaignContext.campaign_type = classifyCampaignType({
+    campaignName: campaignContext.campaign_name,
+    adName: campaignContext.ad_name,
+    adBody: campaignContext.ad_body,
+    headline: campaignContext.headline,
+    sourceUrl: campaignContext.source_url,
+    operationHint: messageText,
+    propertyCode: campaignContext.property_code,
   });
 
   return {
@@ -1107,17 +1210,55 @@ async function assignLead(supabase, leadId, conversationId, logger, context = {}
     context?.property?.agent_profile_id ||
     context?.property?.assigned_agent_profile_id ||
     null;
+  const campaignAgentId = context?.campaignAgentProfileId || null;
+  const contactAgentId = context?.contactAssignedAgentProfileId || null;
+  const conversationAgentId = context?.conversationAssignedAgentProfileId || null;
 
-  if (propertyAgentId) {
-    return applyAgentAssignment({
+  const priorityCandidates = [
+    propertyAgentId
+      ? {
+          agentId: propertyAgentId,
+          strategy: 'property_owner_agent',
+          reason: 'assigned_by_property_owner_agent',
+        }
+      : null,
+    campaignAgentId
+      ? {
+          agentId: campaignAgentId,
+          strategy: 'campaign_agent',
+          reason: 'assigned_by_campaign_context',
+        }
+      : null,
+    contactAgentId
+      ? {
+          agentId: contactAgentId,
+          strategy: 'contact_owner',
+          reason: 'assigned_by_contact_owner',
+        }
+      : null,
+    conversationAgentId
+      ? {
+          agentId: conversationAgentId,
+          strategy: 'conversation_owner',
+          reason: 'assigned_by_conversation_owner',
+        }
+      : null,
+  ].filter(Boolean);
+
+  for (const candidate of priorityCandidates) {
+    const attempt = await applyAgentAssignment({
       supabase,
       leadId,
       conversationId,
-      assignedAgentProfileId: propertyAgentId,
-      strategy: 'property_owner_agent',
-      reason: 'assigned_by_property_owner_agent',
+      assignedAgentProfileId: candidate.agentId,
+      strategy: candidate.strategy,
+      reason: candidate.reason,
       logger,
     });
+
+    if (attempt?.assignedAgentProfileId) {
+      return attempt;
+    }
   }
 
   const { data: godModes } = await supabase
@@ -1220,7 +1361,7 @@ async function assignLead(supabase, leadId, conversationId, logger, context = {}
     : null;
 
   if (fallbackAgentProfileId) {
-    return applyAgentAssignment({
+    const fallbackAttempt = await applyAgentAssignment({
       supabase,
       leadId,
       conversationId,
@@ -1229,6 +1370,24 @@ async function assignLead(supabase, leadId, conversationId, logger, context = {}
       reason: 'assigned_by_fallback_agent',
       logger,
     });
+
+    if (fallbackAttempt?.assignedAgentProfileId) {
+      return fallbackAttempt;
+    }
+
+    await saveConversationEvent(supabase, conversationId, 'lead_assignment_failed', {
+      lead_id: leadId,
+      reason: 'fallback_assignment_failed',
+      source: 'ai_agent',
+    });
+
+    return {
+      assignedAgentProfileId: null,
+      assignmentResult: {
+        success: false,
+        reason: 'fallback_assignment_failed',
+      },
+    };
   }
 
   await saveConversationEvent(supabase, conversationId, 'lead_assignment_failed', {
@@ -1460,6 +1619,13 @@ async function createOrReuseLeadFromConversation({
       propertyId: propertyId || null,
     };
 
+    const campaignAgentProfileId =
+      aiState?.campaign_context?.campaign_agent_profile_id ||
+      aiState?.campaign_context?.agent_profile_id ||
+      null;
+
+    const conversationAssignedAgentProfileId = conversation?.assigned_agent_profile_id || null;
+
     const detailedNotesSummary = buildDetailedNotesSummary({
       aiState,
       conversation,
@@ -1473,6 +1639,7 @@ async function createOrReuseLeadFromConversation({
       interested_property_id: propertyId || null,
       lead_score: leadScoring.lead_score,
       lead_temperature: leadScoring.lead_temperature,
+      campaign_type: aiState?.campaign_context?.campaign_type || null,
       source: 'ai_agent',
     });
 
@@ -1673,6 +1840,9 @@ async function createOrReuseLeadFromConversation({
       ...lead,
       intent_type: aiState?.intent_type || aiState?.playbook_type || null,
       property_type: aiState?.property_type || lead.property_type || null,
+      wants_human: !!aiState?.wants_human,
+      wants_visit: !!aiState?.wants_visit,
+      asks_property_details: !!aiState?.asks_property_details,
       property_interest:
         aiState?.intent_type === 'property_interest' ||
         aiState?.playbook_type === 'property_interest' ||
@@ -1726,6 +1896,9 @@ async function createOrReuseLeadFromConversation({
           propertyType: aiState?.property_type || null,
           budgetMin: aiState?.budget_min ?? null,
           budgetMax: aiState?.budget_max ?? null,
+          campaignAgentProfileId,
+          contactAssignedAgentProfileId: contactOwner.assignedAgentProfileId || null,
+          conversationAssignedAgentProfileId,
         }
       );
       assignedAgentProfileId = assignment.assignedAgentProfileId;
@@ -1797,6 +1970,20 @@ async function createOrReuseLeadFromConversation({
       contact_id: contactId,
       assigned_agent_profile_id: assignedAgentProfileId || lead.assigned_agent_profile_id || null,
       ai_state: nextAiState,
+    });
+
+    await saveConversationEvent(supabase, conversationId, 'crm_trace_snapshot', {
+      lead_id: lead.id,
+      contact_id: contactId || null,
+      property_id: propertyId || null,
+      lead_type: leadType,
+      operation_type: operation,
+      should_handoff: !!shouldHandoff,
+      handoff_triggered: !!handoffTriggered,
+      assignment_success: !!assignedAgentProfileId,
+      assigned_agent_profile_id: assignedAgentProfileId || null,
+      campaign_type: aiState?.campaign_context?.campaign_type || null,
+      source: 'ai_agent',
     });
 
     return {
