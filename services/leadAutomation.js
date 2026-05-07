@@ -208,6 +208,19 @@ function buildResetAiStateAfterLeadCreated(aiState = {}, lead, assignment = {}) 
       completed_at: nowIso(),
     },
     ai_context_reset_after_lead_created_at: nowIso(),
+    // Sprint 5B: preservar contexto de campaña e integration_contract tras reset
+    whatsapp_referral: aiState.whatsapp_referral || null,
+    campaign_context: aiState.campaign_context || null,
+    integration_contract: aiState.integration_contract
+      ? {
+          ...aiState.integration_contract,
+          lead_id: lead.id,
+          contact_id: lead.contact_id || null,
+          assigned_agent_profile_id:
+            assignment.assignedAgentProfileId || lead.assigned_agent_profile_id || null,
+          linked_at: aiState.integration_contract.linked_at || nowIso(),
+        }
+      : null,
   };
 }
 
@@ -1969,6 +1982,22 @@ async function createOrReuseLeadFromConversation({
       nextAiState.handoff_ready = true;
       nextAiState.handoff_sent = true;
     }
+
+      // Sprint 5B: enriquecer integration_contract con lead vinculado (caso reuse)
+      // Para wasCreated ya se actualiza en buildResetAiStateAfterLeadCreated.
+      if (!wasCreated && nextAiState.integration_contract) {
+        nextAiState.integration_contract = {
+          ...nextAiState.integration_contract,
+          lead_id: lead.id,
+          contact_id: contactId || nextAiState.integration_contract.contact_id || null,
+          assigned_agent_profile_id:
+            assignedAgentProfileId ||
+            lead.assigned_agent_profile_id ||
+            nextAiState.integration_contract.assigned_agent_profile_id ||
+            null,
+          linked_at: nextAiState.integration_contract.linked_at || nowIso(),
+        };
+      }
 
     await syncConversation(supabase, conversationId, {
       lead_id: lead.id,
