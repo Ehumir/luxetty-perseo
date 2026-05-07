@@ -88,6 +88,7 @@ const {
   safeJsonStringify,
   normalizePhoneNumber,
   isUsefulContactName,
+  splitContactName,
   extractWhatsAppReferral,
   normalizeOutboundMessages,
 } = require('./utils/helpers');
@@ -1623,10 +1624,19 @@ async function ensureContactForConversation({
     if (existingContact) {
       const payload = {};
       if (usefulName && !isUsefulContactName(existingContact.full_name)) {
-        payload.full_name = usefulName;
+        // Sprint 5C: usar first_name/last_name en lugar de full_name directo.
+        // full_name en ATENA es columna regular o mantenida por trigger;
+        // no escribir full_name directamente para no romper la lógica de ATENA.
+        const nameParts = splitContactName(usefulName);
+        payload.first_name = nameParts.firstName;
+        payload.last_name = nameParts.lastName;
+        payload.name_source = 'whatsapp_meta';
       }
       if (!existingContact.phone) payload.phone = normalizedPhone;
       if (!existingContact.whatsapp) payload.whatsapp = normalizedPhone;
+      // Sprint 5C: asegurar campos normalizados para búsqueda de deduplicación
+      if (!existingContact.phone_normalized) payload.phone_normalized = normalizedPhone;
+      if (!existingContact.whatsapp_normalized) payload.whatsapp_normalized = normalizedPhone;
 
       if (Object.keys(payload).length > 0) {
         await supabase.from('contacts').update(payload).eq('id', existingContact.id);
@@ -1647,12 +1657,23 @@ async function ensureContactForConversation({
       return existingContact.id;
     }
 
+    // Sprint 5C: usar first_name/last_name en lugar de full_name directo.
+    // ATENA requiere first_name/last_name; full_name puede ser columna regular
+    // o mantenida por trigger — no forzar full_name para no romper la lógica de ATENA.
+    const { firstName: newContactFirstName, lastName: newContactLastName } =
+      splitContactName(usefulName || 'Cliente');
     const createPayload = {
+      first_name: newContactFirstName,
+      last_name: newContactLastName,
       phone: normalizedPhone,
       whatsapp: normalizedPhone,
+      // Sprint 5C: campos normalizados para deduplicación (reglas ATENA)
+      phone_normalized: normalizedPhone,
+      whatsapp_normalized: normalizedPhone,
+      name_source: usefulName ? 'whatsapp_meta' : 'auto_placeholder',
+      created_source: 'ai_agent',
+      created_channel: 'whatsapp',
     };
-    if (usefulName) createPayload.full_name = usefulName;
-    else createPayload.full_name = 'Cliente';
 
     const { data: created, error } = await supabase
       .from('contacts')
