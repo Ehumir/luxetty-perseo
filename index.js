@@ -2624,6 +2624,48 @@ app.post('/webhook', async (req, res) => {
       nextAiState.campaign_context = previousAiState.campaign_context;
     }
 
+      // ─── Sprint 5B: integration_contract para trazabilidad campaña/propiedad ──
+      // Persiste en ai_state para que ATENA pueda leerlo desde el detalle de conversación.
+      const _contractReferral = nextAiState.whatsapp_referral || null;
+      const _contractCampaign = nextAiState.campaign_context || null;
+      const _hasContractContext = !!(_contractReferral || _contractCampaign);
+
+      if (_hasContractContext && !previousAiState.integration_contract) {
+        nextAiState.integration_contract = {
+          version: 'atena-perseo-5b',
+          producer: 'PERSEO',
+          wa_id: rawFrom || null,
+          phone: rawFrom || null,
+          normalized_phone: from || null,
+          property_public_code: _contractCampaign?.property_code || null,
+          campaign_context: _contractCampaign || null,
+          referral_context: _contractReferral || null,
+          initial_message: text || null,
+          created_at: nowIso(),
+        };
+        console.log('integration_contract_created', {
+          conversation_id: conversationId,
+          wa_id: rawFrom || null,
+          property_public_code: _contractCampaign?.property_code || null,
+          has_campaign: !!_contractCampaign,
+          has_referral: !!_contractReferral,
+        });
+      } else if (previousAiState.integration_contract) {
+        // Preservar contrato existente; actualizar si hay datos más ricos
+        nextAiState.integration_contract = {
+          ...previousAiState.integration_contract,
+          property_public_code:
+            _contractCampaign?.property_code ||
+            previousAiState.integration_contract.property_public_code ||
+            null,
+          campaign_context:
+            _contractCampaign || previousAiState.integration_contract.campaign_context || null,
+          referral_context:
+            _contractReferral || previousAiState.integration_contract.referral_context || null,
+        };
+      }
+      // ──────────────────────────────────────────────────────────────────────────
+
     const reliabilityFlags = applyConversationIntentMemory({
       text,
       previousAiState,
