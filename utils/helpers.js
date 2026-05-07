@@ -84,6 +84,22 @@ function extractFirstName(fullName) {
   return parts.length ? parts[0] : null;
 }
 
+/**
+ * Divide un nombre completo en first_name y last_name de forma conservadora.
+ * Nunca escribe full_name directamente — ATENA puede tenerlo como columna
+ * gestionada por trigger o mantenida manualmente.
+ * @param {string|null} fullName
+ * @returns {{ firstName: string|null, lastName: string|null }}
+ */
+function splitContactName(fullName) {
+  const normalized = normalizeName(fullName);
+  if (!normalized) return { firstName: null, lastName: null };
+  const parts = normalized.split(/\s+/).filter(Boolean);
+  const firstName = parts[0] ?? null;
+  const lastName = parts.slice(1).join(' ') || null;
+  return { firstName, lastName };
+}
+
 function isUuid(value) {
   if (!value || typeof value !== 'string') return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -484,6 +500,7 @@ module.exports = {
   normalizeName,
   isUsefulContactName,
   extractFirstName,
+  splitContactName,
   findContactByWhatsApp,
   createContactFromConversation,
   findOrCreateContact,
