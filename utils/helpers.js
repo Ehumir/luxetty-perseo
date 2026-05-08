@@ -69,6 +69,63 @@ function normalizeWhatsApp(input) {
   return normalizePhoneNumber(input);
 }
 
+function buildPhoneLookupValues(phone) {
+  const normalized = normalizePhoneNumber(phone) || (phone == null ? null : String(phone).trim());
+  const values = new Set([normalized, String(phone || '').trim()].filter(Boolean));
+
+  if (normalized) {
+    values.add(`+${normalized}`);
+    if (normalized.startsWith('521') && normalized.length === 13) {
+      const legacyMx = `52${normalized.slice(3)}`;
+      values.add(legacyMx);
+      values.add(`+${legacyMx}`);
+    }
+  }
+
+  return Array.from(values).filter(Boolean);
+}
+
+function isReusableConversationStatus(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (!normalized) return true;
+  return normalized !== 'closed';
+}
+
+function getConversationSortTimestamp(row) {
+  const candidate = row?.last_message_at || row?.updated_at || row?.created_at || null;
+  const ts = candidate ? new Date(candidate).getTime() : 0;
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function selectConversationReuseStrategy(rows = [], normalizedPhone = null) {
+  const candidates = Array.isArray(rows) ? [...rows] : [];
+  candidates.sort((a, b) => getConversationSortTimestamp(b) - getConversationSortTimestamp(a));
+
+  const reusableCandidates = candidates.filter((row) => isReusableConversationStatus(row?.status));
+  const reusableConversation = reusableCandidates[0] || null;
+  const latestConversation = candidates[0] || null;
+
+  return {
+    reusableConversation,
+    latestConversation,
+    hasMultipleReusableConversations: reusableCandidates.length > 1,
+    shouldNormalizeReusablePhone: !!(
+      reusableConversation &&
+      normalizedPhone &&
+      reusableConversation.phone &&
+      reusableConversation.phone !== normalizedPhone
+    ),
+    createSeed: latestConversation
+      ? {
+          contact_id: latestConversation.contact_id || null,
+          lead_id: latestConversation.lead_id || null,
+          assigned_agent_profile_id: latestConversation.assigned_agent_profile_id || null,
+          external_contact_id: latestConversation.external_contact_id || null,
+        }
+      : {},
+  };
+}
+
 function normalizeName(input) {
   if (input == null) return null;
 
@@ -497,6 +554,9 @@ async function lookupSpecialAgentProfileId(supabase) {
 module.exports = {
   normalizeWhatsApp,
   normalizePhoneNumber,
+  buildPhoneLookupValues,
+  isReusableConversationStatus,
+  selectConversationReuseStrategy,
   normalizeName,
   isUsefulContactName,
   extractFirstName,
