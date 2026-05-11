@@ -104,6 +104,7 @@ const { isGreetingOnly } = require('./utils/messageChecks');
 const {
   interceptQaCommand,
   isQaLeadBlocked,
+  parseQaCommand,
 } = require('./conversation/qaCommands');
 
 const app = express();
@@ -1570,6 +1571,21 @@ async function maybeCreateFollowupRequest({
   }
 }
 
+function extractWaProfileDisplayName(value = {}, rawFromPhone = '') {
+  if (!value || typeof value !== 'object') return null;
+  const normalizedFrom = normalizePhoneNumber(rawFromPhone) || String(rawFromPhone || '').replace(/[\s\-+()]/g, '');
+  const contacts = Array.isArray(value.contacts) ? value.contacts : [];
+  for (const c of contacts) {
+    const cw = normalizePhoneNumber(c?.wa_id) || String(c?.wa_id || '').replace(/[\s\-+()]/g, '');
+    if (!cw || !normalizedFrom) continue;
+    if (cw === normalizedFrom) {
+      const n = c?.profile?.name;
+      if (typeof n === 'string' && n.trim()) return n.trim();
+    }
+  }
+  return null;
+}
+
 async function ensureContactForConversation({
   conversationRow,
   state,
@@ -1631,7 +1647,15 @@ async function ensureContactForConversation({
 
     if (existingContact) {
       const payload = {};
-      if (usefulName && !isUsefulContactName(existingContact.full_name)) {
+      const existingDisplay =
+        [existingContact.first_name, existingContact.last_name].filter(Boolean).join(' ').trim() ||
+        existingContact.full_name ||
+        '';
+      const placeholderFirst = /^cliente$/i.test(String(existingContact.first_name || '').trim());
+      const shouldApplyName =
+        usefulName &&
+        (!isUsefulContactName(existingDisplay) || placeholderFirst);
+      if (shouldApplyName) {
         // Sprint 5C: usar first_name/last_name en lugar de full_name directo.
         // full_name en ATENA es columna regular o mantenida por trigger;
         // no escribir full_name directamente para no romper la lógica de ATENA.
@@ -1706,6 +1730,12 @@ async function ensureContactForConversation({
       raw_payload_meta_message_id: rawPayload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id || null,
     });
 
+    console.log('CONTACT_CREATED', {
+      conversation_id: conversationRow.id,
+      contact_id: created.id,
+      normalized_phone: normalizedPhone,
+    });
+
     return created.id;
   } catch (err) {
     console.error('FATAL ensureContactForConversation:', err);
@@ -1713,8 +1743,107 @@ async function ensureContactForConversation({
   }
 }
 
-async function upsertContactForConversation(conversationRow, state, phone) {
-  return ensureContactForConversation({ conversationRow, state, phone });
+async function upsertContactForConversation(conversationRow, state, phone, extra = {}) {
+  return ensureContactForConversation({
+    conversationRow,
+    state,
+    phone,
+    waName: extra.waName ?? null,
+    rawPayload: extra.rawPayload ?? null,
+    source: extra.source || 'whatsapp',
+  });
+}
+
+function hasLeadRetryPropertyContext(state = {}, property = null) {
+  return Boolean(
+    property?.id ||
+      state?.detected_property_id ||
+      state?.interested_property_id ||
+      state?.property_code ||
+      state?.direct_property_code
+  );
+}
+
+async function maybeRetryLeadAfterContactLinked({
+  conversationId,
+  conversationRow,
+  nextAiState,
+  contactId,
+  property = null,
+  messageText = '',
+  referralContext = null,
+  rawPayload = null,
+  unifiedContext = null,
+}) {
+  if (!contactId) {
+    console.log('LEAD_RETRY_SKIPPED_NO_CONTACT', {
+      conversation_id: conversationId,
+      lead_id: conversationRow?.lead_id || null,
+    });
+    return { success: false, reason: 'retry_skipped_no_contact' };
+  }
+
+  if (conversationRow?.lead_id) {
+    return { success: false, reason: 'retry_skipped_already_linked' };
+  }
+
+  if (nextAiState?.lead_retry_after_contact_linked_attempted_at) {
+    return { success: false, reason: 'retry_already_attempted' };
+  }
+
+  const hasPropertyContext = hasLeadRetryPropertyContext(nextAiState, property);
+  const hasCommercialIntent = nextAiState?.lead_flow === 'demand' || nextAiState?.intent_type === 'property_interest';
+  const hasDirectPropertyReference = nextAiState?.direct_property_reference === true;
+
+  if (!hasPropertyContext || !hasCommercialIntent || !hasDirectPropertyReference) {
+    console.log('LEAD_RETRY_SKIPPED_NO_PROPERTY_CONTEXT', {
+      conversation_id: conversationId,
+      has_property_context: hasPropertyContext,
+      has_commercial_intent: hasCommercialIntent,
+      has_direct_property_reference: hasDirectPropertyReference,
+    });
+    return { success: false, reason: 'retry_skipped_no_property_context' };
+  }
+
+  nextAiState.lead_retry_after_contact_linked_attempted_at = nowIso();
+  console.log('LEAD_RETRY_AFTER_CONTACT_LINKED', {
+    conversation_id: conversationId,
+    contact_id: contactId,
+    property_id: property?.id || nextAiState?.detected_property_id || nextAiState?.interested_property_id || null,
+    property_code: nextAiState?.property_code || nextAiState?.direct_property_code || null,
+  });
+
+  const result = await maybeCreateOrReuseLeadWithEngine({
+    conversationId,
+    conversationRow,
+    nextAiState,
+    contactId,
+    property,
+    messageText,
+    referralContext,
+    rawPayload,
+    unifiedContext,
+  });
+
+  if (result?.success) {
+    nextAiState.lead_retry_after_contact_linked_result = 'success';
+    nextAiState.lead_retry_after_contact_linked_success_at = nowIso();
+    console.log('LEAD_RETRY_SUCCESS', {
+      conversation_id: conversationId,
+      lead_id: result.leadId || null,
+      was_created: !!result.wasCreated,
+    });
+  } else {
+    nextAiState.lead_retry_after_contact_linked_result = 'failed';
+    nextAiState.lead_retry_after_contact_linked_failed_at = nowIso();
+    console.warn('LEAD_RETRY_FAILED', {
+      conversation_id: conversationId,
+      reason: result?.reason || 'unknown',
+      error: result?.error || null,
+    });
+  }
+
+  return result;
 }
 
 function shouldEscalateDemand(state, properties, text) {
@@ -1907,6 +2036,7 @@ app.post('/webhook', async (req, res) => {
         : payloadSnapshot;
 
       from = normalizePhoneNumber(rawFrom) || rawFrom;
+      const waProfileDisplayName = extractWaProfileDisplayName(value, rawFrom);
 
       const inboundContext = buildInboundMessageContext(message);
       let text = inboundContext.messageText;
@@ -1924,6 +2054,19 @@ app.post('/webhook', async (req, res) => {
 
       if (processingMode === 'respond' && cleanSpaces(burstCombinedText || '')) {
         text = cleanSpaces(burstCombinedText);
+      }
+
+      if (conversationId && parseQaCommand(text)) {
+        await saveConversationMessage({
+          conversationId,
+          direction: 'inbound',
+          senderType: 'lead',
+          messageType: mapInboundMessageType(messageType),
+          messageText: text,
+          transcriptionText,
+          metaMessageId,
+          rawPayload: inboundRawPayload || {},
+        });
       }
 
       // ─── Guard: Comandos internos QA ──────────────────────────────────────
@@ -1946,6 +2089,16 @@ app.post('/webhook', async (req, res) => {
 
       if (qaIntercept?.handled) {
         return; // No continuar con el pipeline normal
+      }
+
+      if (qaIntercept?.isQaCommand && !qaIntercept?.handled) {
+        if (conversationId) {
+          await saveConversationEvent(conversationId, 'qa_command_denied_user_notified', {
+            meta_message_id: metaMessageId || null,
+            reason: qaIntercept?.reason || 'qa_command_denied',
+          });
+        }
+        return;
       }
       // ─────────────────────────────────────────────────────────────────────
 
@@ -2079,19 +2232,24 @@ app.post('/webhook', async (req, res) => {
         inboundContext.media.audio_without_transcription_repeat = true;
       }
 
-      const propertyContextFromState =
-        previousAiState?.direct_property_reference && previousAiState?.property_code
-          ? {
-              listing_id: previousAiState.property_code,
-            }
-          : null;
-
       const campaignContextForFusion = extractCampaignReferralContext({
         aiState: previousAiState,
         referral: normalizedReferral,
         rawPayload: inboundRawPayload,
         messageText: text,
       });
+
+      const listingFromCampaignForFusion =
+        campaignContextForFusion?.campaignContext?.property_code || null;
+      const listingFromPrevDirect =
+        previousAiState?.direct_property_reference && previousAiState?.property_code
+          ? previousAiState.property_code
+          : null;
+      const propertyContextFromState = listingFromPrevDirect
+        ? { listing_id: listingFromPrevDirect }
+        : listingFromCampaignForFusion
+        ? { listing_id: listingFromCampaignForFusion }
+        : null;
 
       const unifiedContext = buildUnifiedConversationContext({
         inboundText: text,
@@ -2197,12 +2355,25 @@ app.post('/webhook', async (req, res) => {
       const incomingSignals = parseMessageSignals(text, previousAiState, inboundContext);
       const signals = incomingSignals;
 
+      if (waProfileDisplayName && !incomingSignals.full_name) {
+        incomingSignals.full_name = waProfileDisplayName;
+      }
+
       const normalizedInboundText = normalizeText(text);
       const campaignPropertyCode = campaignContextForFusion?.campaignContext?.property_code || null;
       const referencesCampaignProperty =
         normalizedInboundText.includes('la propiedad') ||
         normalizedInboundText.includes('precio') ||
         normalizedInboundText.includes('disponibilidad') ||
+        normalizedInboundText.includes('disponible') ||
+        normalizedInboundText.includes('sigue disponible') ||
+        normalizedInboundText.includes('informacion') ||
+        normalizedInboundText.includes('información') ||
+        normalizedInboundText.includes('info') ||
+        normalizedInboundText.includes('fotos') ||
+        normalizedInboundText.includes('video') ||
+        normalizedInboundText.includes('agendar') ||
+        normalizedInboundText.includes('visita') ||
         normalizedInboundText.includes('quiero verla') ||
         normalizedInboundText.includes('me interesa');
 
@@ -2446,8 +2617,11 @@ app.post('/webhook', async (req, res) => {
         await savePropertySuggestions(conversationId, directOutbound.rows[0].id, [property]);
       }
 
-      const contactId = await upsertContactForConversation(conversationRow, directState, from);
-      const leadAutomationResult = await maybeCreateOrReuseLeadWithEngine({
+      const contactId = await upsertContactForConversation(conversationRow, directState, from, {
+        waName: waProfileDisplayName,
+        rawPayload: inboundRawPayload,
+      });
+      const leadAutomationResult = await maybeRetryLeadAfterContactLinked({
         conversationId,
         conversationRow,
         nextAiState: directState,
@@ -3150,7 +3324,17 @@ app.post('/webhook', async (req, res) => {
         source: 'ai_agent',
       });
 
-      reply = 'Perfecto, ya tengo confirmado tu WhatsApp. Voy a canalizar tu solicitud con un asesor de Luxetty para que te apoye con la información y próximos pasos.';
+      const phoneExplicitlyConfirmed =
+        nextAiState.contact_number_confirmed === true ||
+        nextAiState.confirmed_phone === true ||
+        /ese es mi numero|ese es mi número|ese es mi whatsapp/i.test(normalizedText) ||
+        /correcto.*whatsapp|whatsapp.*correcto/i.test(normalizedText) ||
+        (previousAiState.awaiting_field === 'contact_number_confirmed' &&
+          /^(si|sí|correcto)$/.test(normalizedText));
+
+      reply = phoneExplicitlyConfirmed
+        ? 'Perfecto, ya tengo confirmado tu WhatsApp. Voy a canalizar tu solicitud con un asesor de Luxetty para que te apoye con la información y próximos pasos.'
+        : 'Perfecto. Voy a canalizar tu solicitud con un asesor de Luxetty para que te apoye con la información y próximos pasos.';
     } else if (incomingSignals.complaint_followup) {
       nextAiState.wants_human = true;
       const oneUsefulQuestion = chooseSingleUsefulQuestion(nextAiState);
@@ -3255,7 +3439,10 @@ app.post('/webhook', async (req, res) => {
         !nextAiState.handoff_sent;
 
       if (canCreateDemandHandoff) {
-        const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+        const contactId = await upsertContactForConversation(conversationRow, nextAiState, from, {
+        waName: waProfileDisplayName,
+        rawPayload: inboundRawPayload,
+      });
         const summary =
           buildAiSummary(nextAiState, matchedProperties) ||
           'Cliente buscando propiedad y requiere seguimiento humano.';
@@ -3285,7 +3472,10 @@ app.post('/webhook', async (req, res) => {
             return;
           }
 
-          const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+          const contactId = await upsertContactForConversation(conversationRow, nextAiState, from, {
+        waName: waProfileDisplayName,
+        rawPayload: inboundRawPayload,
+      });
           const summary =
             buildAiSummary(nextAiState, matchedProperties) ||
             'Cliente buscando propiedad y requiere seguimiento humano.';
@@ -3355,7 +3545,10 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (shouldEscalateOffer(nextAiState) && !nextAiState.handoff_sent) {
-        const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+        const contactId = await upsertContactForConversation(conversationRow, nextAiState, from, {
+        waName: waProfileDisplayName,
+        rawPayload: inboundRawPayload,
+      });
 
         const summary =
           buildAiSummary(nextAiState, matchedProperties) ||
@@ -3522,6 +3715,16 @@ ${locationCatalog.rawNames.join(', ')}
 
     conversations.set(from, updatedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
 
+    const campaignPropertyCodeForLead =
+      campaignContextForFusion?.campaignContext?.property_code || null;
+    const matchedListingForLead =
+      matchedProperties.length > 0 ? matchedProperties[0]?.listing_id || null : null;
+    const campaignMatchesTopProperty =
+      !!campaignPropertyCodeForLead &&
+      !!matchedListingForLead &&
+      String(campaignPropertyCodeForLead).toUpperCase().replace(/\s+/g, '') ===
+        String(matchedListingForLead).toUpperCase().replace(/\s+/g, '');
+
     const shouldAttemptLeadAutomation =
       !isGreetingOnly(text) &&
       !isNonRealEstateCategory(nextAiState) &&
@@ -3529,49 +3732,52 @@ ${locationCatalog.rawNames.join(', ')}
         nextAiState.lead_flow === 'demand' ||
         nextAiState.lead_flow === 'offer' ||
         nextAiState.direct_property_reference ||
-        nextAiState?.context_fusion?.should_create_or_update_lead
+        nextAiState?.context_fusion?.should_create_or_update_lead ||
+        (matchedProperties.length > 0 && campaignMatchesTopProperty)
       );
 
     if (shouldAttemptLeadAutomation) {
       const propertyForLead =
-        nextAiState.direct_property_reference && matchedProperties.length > 0
+        matchedProperties.length > 0 &&
+        (nextAiState.direct_property_reference || campaignMatchesTopProperty)
           ? matchedProperties[0]
           : null;
-      const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+      const contactId = await upsertContactForConversation(conversationRow, nextAiState, from, {
+        waName: waProfileDisplayName,
+        rawPayload: inboundRawPayload,
+      });
 
-      if (contactId) {
-        const leadAutomationResult = await maybeCreateOrReuseLeadWithEngine({
-          conversationId,
-          conversationRow,
-          nextAiState,
-          contactId,
-          property: propertyForLead,
-          messageText: text,
-          referralContext: normalizedReferral,
-          rawPayload: inboundRawPayload,
-          unifiedContext: nextAiState?.context_fusion || null,
+      const leadAutomationResult = await maybeRetryLeadAfterContactLinked({
+        conversationId,
+        conversationRow,
+        nextAiState,
+        contactId,
+        property: propertyForLead,
+        messageText: text,
+        referralContext: normalizedReferral,
+        rawPayload: inboundRawPayload,
+        unifiedContext: nextAiState?.context_fusion || null,
+      });
+
+      if (
+        leadAutomationResult?.handoffTriggered &&
+        !lastAssistantMessage?.content?.includes('Para darte una atención más precisa, puedo canalizar')
+      ) {
+        reply = buildIntelligentHandoffReply();
+        nextAiState.handoff_ready = true;
+        nextAiState.handoff_sent = true;
+
+        const refreshedMessages = [
+          ...(conversations.get(from) || []).slice(0, -1),
+          { role: 'assistant', content: reply },
+        ];
+        conversations.set(from, refreshedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
+
+        await saveConversationEvent(conversationId, 'intelligent_handoff_message_sent', {
+          lead_id: leadAutomationResult.leadId || null,
+          assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
+          source: 'ai_agent',
         });
-
-        if (
-          leadAutomationResult?.handoffTriggered &&
-          !lastAssistantMessage?.content?.includes('Para darte una atención más precisa, puedo canalizar')
-        ) {
-          reply = buildIntelligentHandoffReply();
-          nextAiState.handoff_ready = true;
-          nextAiState.handoff_sent = true;
-
-          const refreshedMessages = [
-            ...(conversations.get(from) || []).slice(0, -1),
-            { role: 'assistant', content: reply },
-          ];
-          conversations.set(from, refreshedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
-
-          await saveConversationEvent(conversationId, 'intelligent_handoff_message_sent', {
-            lead_id: leadAutomationResult.leadId || null,
-            assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
-            source: 'ai_agent',
-          });
-        }
       }
     }
 

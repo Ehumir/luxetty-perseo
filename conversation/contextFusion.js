@@ -479,7 +479,14 @@ function buildPropertyOffer({ effectiveText, normalizedIntent, previousAiState, 
   };
 }
 
-function buildMissingCriticalFields({ normalizedIntent, propertyDemand, propertyOffer, sourceSignals, previousAiState }) {
+function buildMissingCriticalFields({
+  normalizedIntent,
+  propertyDemand,
+  propertyOffer,
+  sourceSignals,
+  previousAiState,
+  campaignContext = null,
+}) {
   const fields = [];
   const isOffer =
     normalizedIntent.category === 'sell_property' ||
@@ -518,7 +525,13 @@ function buildMissingCriticalFields({ normalizedIntent, propertyDemand, property
   }
 
   if (normalizedIntent.category === 'visit_property' || normalizedIntent.category === 'ask_property_info') {
-    const hasPropertyContext = !!(sourceSignals.hasPropertyContext || sourceSignals.hasCampaignContext);
+    const hasPropertyContext = !!(
+      sourceSignals.hasPropertyContext ||
+      sourceSignals.hasCampaignContext ||
+      (campaignContext &&
+        typeof campaignContext === 'object' &&
+        String(campaignContext.property_code || '').trim())
+    );
     if (!hasPropertyContext) fields.push('property_reference_for_visit_or_info');
   }
 
@@ -728,6 +741,7 @@ function buildUnifiedConversationContext({
     propertyOffer,
     sourceSignals,
     previousAiState: previousAiState || {},
+    campaignContext,
   });
 
   const crmDecision = decideCrmAction({

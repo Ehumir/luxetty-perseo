@@ -134,7 +134,7 @@ function buildMockSupabase(db) {
   };
 }
 
-test('property interest with real property creates lead even without contact', async () => {
+test('property interest without contact does not create lead', async () => {
   const db = {
     leads: [],
     contacts: [],
@@ -161,11 +161,57 @@ test('property interest with real property creates lead even without contact', a
     logger: console,
   });
 
-  assert.equal(result.success, true);
-  assert.equal(result.wasCreated, true);
+  assert.equal(result.success, false);
+  assert.equal(result.reason, 'missing_contact');
+  assert.equal(db.leads.length, 0);
+});
+
+test('retries after contact is linked and then creates lead', async () => {
+  const db = {
+    leads: [],
+    contacts: [{ id: 'contact-retry', whatsapp: '5218333333333' }],
+    conversations: [{ id: 'conv-retry', phone: '5218333333333', channel: 'whatsapp', lead_id: null, contact_id: null }],
+    conversation_events: [],
+    pipeline_stages: [{ id: 'stage-new', code: 'new', lead_type: 'demand', is_active: true, stage_order: 1 }],
+  };
+
+  const supabase = buildMockSupabase(db);
+  const aiState = {
+    lead_flow: 'demand',
+    direct_property_reference: true,
+    property_code: 'LUX-A0470',
+    asks_property_details: true,
+    intent_type: 'property_interest',
+  };
+
+  const first = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState,
+    contactId: null,
+    propertyId: 'prop-retry',
+    property: { id: 'prop-retry', listing_id: 'LUX-A0470', operation_type: 'sale' },
+    logger: console,
+  });
+  assert.equal(first.success, false);
+  assert.equal(first.reason, 'missing_contact');
+  assert.equal(db.leads.length, 0);
+
+  db.conversations[0].contact_id = 'contact-retry';
+  const second = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState,
+    contactId: 'contact-retry',
+    propertyId: 'prop-retry',
+    property: { id: 'prop-retry', listing_id: 'LUX-A0470', operation_type: 'sale', agent_profile_id: 'agent-yolanda' },
+    logger: console,
+  });
+  assert.equal(second.success, true);
+  assert.ok(second.leadId);
   assert.equal(db.leads.length, 1);
-  assert.equal(db.leads[0].contact_id, null);
-  assert.equal(db.leads[0].interested_property_id, 'prop-1');
+  assert.equal(db.leads[0].contact_id, 'contact-retry');
+  assert.equal(db.conversations[0].lead_id, second.leadId);
 });
 
 test('property interest with existing conversation lead does not duplicate', async () => {
@@ -253,6 +299,35 @@ test('property interest links existing open lead by contact and property', async
   assert.equal(db.leads.length, 1);
 });
 
+test('contact without property context does not create lead', async () => {
+  const db = {
+    leads: [],
+    contacts: [{ id: 'contact-noproperty', whatsapp: '5218444444444' }],
+    conversations: [{ id: 'conv-noproperty', phone: '5218444444444', channel: 'whatsapp', lead_id: null, contact_id: 'contact-noproperty' }],
+    conversation_events: [],
+    pipeline_stages: [{ id: 'stage-new', code: 'new', lead_type: 'demand', is_active: true, stage_order: 1 }],
+  };
+
+  const supabase = buildMockSupabase(db);
+  const result = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'demand',
+      confidence: 'low',
+      user_goal: null,
+      direct_property_reference: false,
+    },
+    contactId: 'contact-noproperty',
+    propertyId: null,
+    property: null,
+    logger: console,
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(db.leads.length, 0);
+});
+
 test('extractCampaignReferralContext detects campaign/ad context from referral', () => {
   const extracted = extractCampaignReferralContext({
     referral: {
@@ -313,6 +388,25 @@ test('detectLeadCreationOpportunity accepts explicit property interest when prop
   });
 
   assert.equal(opportunity.shouldCreate, true);
+});
+
+test('detectLeadCreationOpportunity accepts short Info with campaign + resolved property', () => {
+  const opportunity = detectLeadCreationOpportunity({
+    aiState: {
+      lead_flow: null,
+      campaign_context: { property_code: 'LUX-A0470' },
+    },
+    propertyId: 'prop-a0470',
+    propertyCode: 'LUX-A0470',
+    messageText: 'Info',
+    hasCampaignContext: true,
+  });
+
+  assert.equal(opportunity.shouldCreate, true);
+  assert.ok(
+    opportunity.reason === 'property_interest_detected' ||
+      opportunity.reason === 'campaign_property_interest_detected',
+  );
 });
 
 test('property owner agent assignment has priority and bypasses fallback engine', async () => {

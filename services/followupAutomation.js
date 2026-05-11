@@ -25,9 +25,9 @@ const FOLLOWUP_STEPS = [
 ];
 
 const CLOSE_STEP = {
-  key: '23h',
+  key: '24h',
   eventType: 'conversation_closed_by_inactivity',
-  minAgeMs: 23 * 60 * 60 * 1000,
+  minAgeMs: 24 * 60 * 60 * 1000,
   message:
     'Fue un gusto atenderte. Cierro esta conversación por ahora, pero cuando quieras retomarla solo escríbeme y con gusto te ayudo.',
 };
