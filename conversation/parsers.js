@@ -667,7 +667,7 @@ function detectWrongContext(message) {
   return terms.some((term) => text.includes(term));
 }
 
-function classifyInboundBusinessCategory(message, intent = {}) {
+function classifyInboundBusinessCategory(message, intent = {}, prevState = {}) {
   const rawTrim = cleanSpaces(message || '');
   if (/^!(reset|close|case)\b/i.test(rawTrim)) {
     return 'real_estate_client';
@@ -675,6 +675,11 @@ function classifyInboundBusinessCategory(message, intent = {}) {
 
   const text = normalizeText(message);
   const hasRealEstateKeywords =
+    text === 'hola' ||
+    text === 'buenas' ||
+    text === 'buenos dias' ||
+    text === 'buenos días' ||
+    text === 'info' ||
     text.includes('casa') ||
     text.includes('depa') ||
     text.includes('departamento') ||
@@ -684,7 +689,17 @@ function classifyInboundBusinessCategory(message, intent = {}) {
     text.includes('venta') ||
     text.includes('valu') ||
     text.includes('comprar') ||
-    text.includes('vender');
+    text.includes('vender') ||
+    text.includes('precio') ||
+    text.includes('disponible') ||
+    text.includes('disponibilidad') ||
+    text.includes('ubicacion') ||
+    text.includes('ubicación') ||
+    text.includes('informacion') ||
+    text.includes('información') ||
+    text.includes('me interesa') ||
+    text.includes('agendar') ||
+    text.includes('visita');
 
   const isBroker = detectExternalBroker(message);
   const isProvider = detectProvider(message) || detectNonRealEstateOrProvider(message);
@@ -697,6 +712,10 @@ function classifyInboundBusinessCategory(message, intent = {}) {
   if (isWrongContext) return 'wrong_context';
 
   if (!intent?.leadType && !hasRealEstateKeywords) {
+    const prevFlow = prevState?.lead_flow;
+    if ((prevFlow === 'offer' || prevFlow === 'demand') && !isSpam && !isBroker && !isProvider) {
+      return 'real_estate_client';
+    }
     return text ? 'unclear_non_real_estate' : 'wrong_context';
   }
 
@@ -862,6 +881,22 @@ function extractPossibleName(message, prevState = null) {
   }
 
   if (prevState?.awaiting_field === 'full_name') {
+    const notANameReply = new Set([
+      'info',
+      'informacion',
+      'información',
+      'hola',
+      'buenas',
+      'si',
+      'sí',
+      'ok',
+      'listo',
+      'gracias',
+      'no',
+      'cancelar',
+    ]);
+    if (notANameReply.has(text)) return null;
+
     if (
       raw.length >= 3 &&
       raw.length <= 80 &&
@@ -1254,7 +1289,7 @@ function parseMessageSignals(message, prevState = getDefaultAiState(), messageCo
     },
     media: messageContext?.media || null,
   });
-  const inboundBusinessCategory = classifyInboundBusinessCategory(message, intent);
+  const inboundBusinessCategory = classifyInboundBusinessCategory(message, intent, prevState);
   const externalBroker = inboundBusinessCategory === 'external_broker';
   const provider = inboundBusinessCategory === 'provider';
   const spamDetected = inboundBusinessCategory === 'spam';
