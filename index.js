@@ -109,7 +109,17 @@ const {
   isQaLeadBlocked,
   parseQaCommand,
 } = require('./conversation/qaCommands');
-const { appendNameRequestIfNeeded } = require('./conversation/namePrompt');
+const { appendNameRequestIfNeeded, hasValidHumanName } = require('./conversation/namePrompt');
+const {
+  detectRealEstateConsultativeFollowUp,
+  hasRealEstateAdvisorTurnContext,
+  mapConversationDbRowsToChatMessages,
+  getLastOutboundTextFromDbRows,
+  isCandidateTooSimilarToLastOutbound,
+  generateAdvisorReplyForRealEstateTurn,
+  buildSyntheticStateForAdvisor,
+  mergeReplyToString,
+} = require('./conversation/realEstateAdvisorReply');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -1247,6 +1257,56 @@ async function getPropertyBySlug(slug) {
   } catch (err) {
     console.error('FATAL getPropertyBySlug:', err);
     return null;
+  }
+}
+
+const PROPERTY_ROW_SELECT = `
+        id,
+        listing_id,
+        agent_profile_id,
+        title,
+        slug,
+        price,
+        currency_code,
+        neighborhood,
+        zone,
+        city,
+        bedrooms,
+        bathrooms,
+        parking_spaces,
+        main_image_url,
+        canonical_url,
+        operation_type,
+        status,
+        archived_at,
+        visible_on_website,
+        is_public
+      `;
+
+async function getPropertiesByIds(rawIds = []) {
+  try {
+    const cleanIds = [...new Set((Array.isArray(rawIds) ? rawIds : []).filter(Boolean))].slice(0, 12);
+    if (!cleanIds.length) return [];
+
+    const { data, error } = await supabase
+      .from('properties')
+      .select(PROPERTY_ROW_SELECT)
+      .in('id', cleanIds)
+      .is('archived_at', null)
+      .eq('visible_on_website', true)
+      .in('status', ['active', 'sold', 'rented']);
+
+    if (error) {
+      console.error('Error buscando propiedades por id:', error);
+      return [];
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    const byId = new Map(rows.map((p) => [p.id, p]));
+    return cleanIds.map((id) => byId.get(id)).filter(Boolean);
+  } catch (err) {
+    console.error('FATAL getPropertiesByIds:', err);
+    return [];
   }
 }
 
@@ -3063,6 +3123,15 @@ app.post('/webhook', async (req, res) => {
       );
     }
 
+    if (
+      nextAiState.lead_flow === 'demand' &&
+      matchedProperties.length === 0 &&
+      Array.isArray(nextAiState.last_shown_property_ids) &&
+      nextAiState.last_shown_property_ids.length > 0
+    ) {
+      matchedProperties = await getPropertiesByIds(nextAiState.last_shown_property_ids);
+    }
+
     applyPlaybookProgress(nextAiState, { matchedProperties });
 
     nextAiState.crm_structured_summary = buildStructuredSellerCrmSummary({
@@ -3109,6 +3178,13 @@ app.post('/webhook', async (req, res) => {
     });
 
     let reply = null;
+    const replyRouting = {
+      response_source: null,
+      response_reason: null,
+      used_openai_advisor: false,
+      repeated_template_prevented: false,
+      name_prompt_applied: false,
+    };
 
     function shouldAskField(state, fieldName) {
       if (!state) return false;
@@ -3227,6 +3303,47 @@ app.post('/webhook', async (req, res) => {
         'Gracias a ti. Si surge algo más, aquí estoy para seguirte orientando con gusto.';
     } else if (nextAiState.direct_property_reference && nextAiState.property_code && matchedProperties.length === 0) {
       reply = `No encontré esa propiedad disponible en este momento. Si deseas, puedo ayudarte a buscar opciones similares. ¿Qué zona te interesa?`;
+    } else if (
+      !nextAiState.handoff_sent &&
+      detectRealEstateConsultativeFollowUp(text, nextAiState.lead_flow) &&
+      hasRealEstateAdvisorTurnContext(nextAiState, matchedProperties)
+    ) {
+      const follow = detectRealEstateConsultativeFollowUp(text, nextAiState.lead_flow);
+      const chatRecent = mapConversationDbRowsToChatMessages(recentMessages);
+      const synth = buildSyntheticStateForAdvisor(nextAiState, matchedProperties);
+      try {
+        const advisory = await generateAdvisorReplyForRealEstateTurn(
+          {
+            user_message: text,
+            recent_messages: chatRecent,
+            current_lead_flow: nextAiState.lead_flow,
+            synthetic_state: synth,
+            last_suggested_property: matchedProperties[0] || null,
+            suggested_properties: matchedProperties,
+            budget: nextAiState.budget_max,
+            budget_currency: nextAiState.budget_currency,
+            zone:
+              nextAiState.location_text ||
+              (nextAiState.location_any ? 'Zona abierta según preferencias del usuario' : ''),
+            operation: nextAiState.operation_type,
+            missing_name: !hasValidHumanName(linkedEntities.existingContact, nextAiState),
+            next_step: nextAiState.next_step || null,
+            follow_up_reason: follow?.reason || null,
+            change_type: changeType || 'follow_up',
+          },
+          { model: OPENAI_MODEL }
+        );
+        reply = advisory.text;
+        replyRouting.response_source = advisory.response_source;
+        replyRouting.response_reason = advisory.response_reason;
+        replyRouting.used_openai_advisor = true;
+      } catch (advisorErr) {
+        console.error('generateAdvisorReplyForRealEstateTurn_error', advisorErr?.message || advisorErr);
+        reply =
+          'Con gusto reviso ese punto contigo. Para no inventar datos, un asesor de Luxetty puede confirmarte publicación, liga y disponibilidad al momento. ¿Te parece si lo canalizamos? Para registrarte bien, ¿me compartes tu nombre?';
+        replyRouting.response_source = 'advisor_fallback_static';
+        replyRouting.response_reason = follow?.reason || 'advisor_error';
+      }
     } else if (shouldUsePlaybookReply(nextAiState, nextAiState.playbook_step)) {
       const playbookReply = buildPlaybookReply(nextAiState.playbook_step, nextAiState);
       if (playbookReply) {
@@ -3392,6 +3509,42 @@ app.post('/webhook', async (req, res) => {
         reply = mediaReply;
       } else {
         reply = buildOfferReply(nextAiState, changeType, { signals: incomingSignals, text });
+        if (
+          !nextAiState.handoff_sent &&
+          detectRealEstateConsultativeFollowUp(text, 'offer') &&
+          hasRealEstateAdvisorTurnContext(nextAiState, matchedProperties)
+        ) {
+          const follow = detectRealEstateConsultativeFollowUp(text, 'offer');
+          try {
+            const chatRecent = mapConversationDbRowsToChatMessages(recentMessages);
+            const synth = buildSyntheticStateForAdvisor(nextAiState, matchedProperties);
+            const advisory = await generateAdvisorReplyForRealEstateTurn(
+              {
+                user_message: text,
+                recent_messages: chatRecent,
+                current_lead_flow: 'offer',
+                synthetic_state: synth,
+                last_suggested_property: matchedProperties[0] || null,
+                suggested_properties: matchedProperties,
+                budget: nextAiState.budget_max,
+                budget_currency: nextAiState.budget_currency,
+                zone: nextAiState.location_text || '',
+                operation: nextAiState.operation_type,
+                missing_name: !hasValidHumanName(linkedEntities.existingContact, nextAiState),
+                next_step: nextAiState.next_step || null,
+                follow_up_reason: follow?.reason || null,
+                change_type: changeType || 'follow_up',
+              },
+              { model: OPENAI_MODEL }
+            );
+            reply = advisory.text;
+            replyRouting.response_source = advisory.response_source;
+            replyRouting.response_reason = advisory.response_reason;
+            replyRouting.used_openai_advisor = true;
+          } catch (offerAdvisorErr) {
+            console.error('offer_generateAdvisorReply_error', offerAdvisorErr?.message || offerAdvisorErr);
+          }
+        }
         reply = prependVisionPrefixIfNeeded(reply, inboundContext?.media, nextAiState);
       }
 
@@ -3644,6 +3797,56 @@ ${locationCatalog.rawNames.join(', ')}
       }
     }
 
+    if (reply != null && !nextAiState.handoff_sent) {
+      const lastOut = getLastOutboundTextFromDbRows(recentMessages);
+      if (
+        lastOut &&
+        isCandidateTooSimilarToLastOutbound(reply, lastOut) &&
+        hasRealEstateAdvisorTurnContext(nextAiState, matchedProperties)
+      ) {
+        try {
+          const chatRecent = mapConversationDbRowsToChatMessages(recentMessages);
+          const synth = buildSyntheticStateForAdvisor(nextAiState, matchedProperties);
+          const advisory = await generateAdvisorReplyForRealEstateTurn(
+            {
+              user_message: text,
+              recent_messages: chatRecent,
+              current_lead_flow: nextAiState.lead_flow,
+              synthetic_state: synth,
+              last_suggested_property: matchedProperties[0] || null,
+              suggested_properties: matchedProperties,
+              budget: nextAiState.budget_max,
+              budget_currency: nextAiState.budget_currency,
+              zone:
+                nextAiState.location_text ||
+                (nextAiState.location_any ? 'Zona abierta según preferencias del usuario' : ''),
+              operation: nextAiState.operation_type,
+              missing_name: !hasValidHumanName(linkedEntities.existingContact, nextAiState),
+              next_step: nextAiState.next_step || null,
+              anti_repeat: true,
+              follow_up_reason: 'anti_repeat_template',
+              change_type: 'repeat_guard',
+            },
+            { model: OPENAI_MODEL }
+          );
+          reply = advisory.text;
+          replyRouting.repeated_template_prevented = true;
+          replyRouting.used_openai_advisor = true;
+          replyRouting.response_source = 'openai_advisor_anti_repeat';
+          replyRouting.response_reason = 'anti_repeat_template';
+        } catch (guardErr) {
+          console.error('anti_repeat_advisor_error', guardErr?.message || guardErr);
+          reply =
+            'Listo, lo veo. Para avanzar sin repetirnos: dime si lo que buscas ahora es validar la última opción (publicación o disponibilidad) o si quieres que afinemos más alternativas en tu zona y presupuesto.';
+          replyRouting.repeated_template_prevented = true;
+          replyRouting.response_source = 'anti_repeat_static_fallback';
+          replyRouting.response_reason = 'anti_repeat_template';
+        }
+      }
+    }
+
+    const replyBeforeNamePrompt = reply;
+
     reply = await applyNamePromptToReply(reply, {
       conversationId,
       contact: linkedEntities.existingContact,
@@ -3651,6 +3854,19 @@ ${locationCatalog.rawNames.join(', ')}
       waProfileDisplayName: waProfileDisplayName,
       userText: text,
     });
+
+    replyRouting.name_prompt_applied =
+      normalizeText(mergeReplyToString(reply)) !== normalizeText(mergeReplyToString(replyBeforeNamePrompt));
+    if (!replyRouting.response_source) {
+      replyRouting.response_source = 'pipeline_rule';
+    }
+    console.log(
+      'AI_REPLY_ROUTING',
+      JSON.stringify({
+        conversation_id: conversationId,
+        ...replyRouting,
+      })
+    );
 
     const replyForMemory = Array.isArray(reply) ? reply.join('\n\n') : String(reply || '');
     const memAfterName = conversations.get(from) || [];
