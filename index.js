@@ -109,6 +109,7 @@ const {
   isQaLeadBlocked,
   parseQaCommand,
 } = require('./conversation/qaCommands');
+const { appendNameRequestIfNeeded } = require('./conversation/namePrompt');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -977,6 +978,42 @@ async function saveConversationMessage(params) {
 
 async function inboundMessageAlreadyProcessed(metaMessageId) {
   return messagePersistence.inboundMessageAlreadyProcessed(supabase, metaMessageId);
+}
+
+async function applyNamePromptToReply(reply, {
+  conversationId,
+  contact,
+  aiState,
+  waProfileDisplayName,
+  userText,
+}) {
+  if (reply == null) return reply;
+  if (Array.isArray(reply) && reply.length === 0) return reply;
+  if (typeof reply === 'string' && !cleanSpaces(reply)) return reply;
+
+  const recent = conversationId ? await fetchRecentConversationMessages(conversationId, 16) : [];
+  const recentOutboundTexts = recent
+    .filter((m) => m.direction === 'outbound')
+    .map((m) => m.message_text || '')
+    .filter(Boolean)
+    .slice(-4);
+
+  const { messages, statePatch, setAwaitingFullName } = appendNameRequestIfNeeded(reply, {
+    contact,
+    aiState,
+    waProfileDisplayName,
+    recentOutboundTexts,
+    userInboundText: userText || '',
+    leadFlow: aiState?.lead_flow || null,
+    wantsVisit: !!aiState?.wants_visit,
+  });
+
+  Object.assign(aiState, statePatch);
+  if (setAwaitingFullName && (!aiState.awaiting_field || aiState.awaiting_field === 'full_name')) {
+    aiState.awaiting_field = 'full_name';
+  }
+
+  return messages;
 }
 
 async function fetchRecentConversationMessages(conversationId, limit = 20) {
@@ -2326,10 +2363,18 @@ app.post('/webhook', async (req, res) => {
           matchedProperties: [],
         });
 
-        const notFoundReply = enrichReplyWithNextStepCta(
+        let notFoundReply = enrichReplyWithNextStepCta(
           'No encontré esa propiedad disponible en este momento. Si deseas, puedo mostrarte opciones similares. ¿Qué zona te interesa?',
           directState.next_step
         );
+
+        notFoundReply = await applyNamePromptToReply(notFoundReply, {
+          conversationId,
+          contact: linkedEntities.existingContact,
+          aiState: directState,
+          waProfileDisplayName: waProfileDisplayName,
+          userText: text,
+        });
 
         await saveConversationState(conversationId, directState);
 
@@ -2397,9 +2442,17 @@ app.post('/webhook', async (req, res) => {
         [property],
         'direct_property_code'
       );
-      const directReply = Array.isArray(directReplyBase)
+      let directReply = Array.isArray(directReplyBase)
         ? directReplyBase.map((message) => sanitizeReply(message)).filter(Boolean)
         : sanitizeReply(enrichReplyWithNextStepCta(directReplyBase, directState.next_step));
+
+      directReply = await applyNamePromptToReply(directReply, {
+        conversationId,
+        contact: linkedEntities.existingContact,
+        aiState: directState,
+        waProfileDisplayName: waProfileDisplayName,
+        userText: text,
+      });
 
       const directOutbound = await saveOutboundMessages({
         conversationId,
@@ -3170,8 +3223,8 @@ app.post('/webhook', async (req, res) => {
       reply =
         'Hola, bienvenido a Luxetty 😊\n¿En qué puedo orientarte hoy? ¿Buscas comprar, rentar, vender o poner en renta una propiedad?';
     } else if (nextAiState.handoff_sent && isClosureCheck(text)) {
-      // 🚫 No responder para evitar duplicar cierre
-      return;
+      reply =
+        'Gracias a ti. Si surge algo más, aquí estoy para seguirte orientando con gusto.';
     } else if (nextAiState.direct_property_reference && nextAiState.property_code && matchedProperties.length === 0) {
       reply = `No encontré esa propiedad disponible en este momento. Si deseas, puedo ayudarte a buscar opciones similares. ¿Qué zona te interesa?`;
     } else if (shouldUsePlaybookReply(nextAiState, nextAiState.playbook_step)) {
@@ -3589,6 +3642,21 @@ ${locationCatalog.rawNames.join(', ')}
           source: 'ai_agent',
         });
       }
+    }
+
+    reply = await applyNamePromptToReply(reply, {
+      conversationId,
+      contact: linkedEntities.existingContact,
+      aiState: nextAiState,
+      waProfileDisplayName: waProfileDisplayName,
+      userText: text,
+    });
+
+    const replyForMemory = Array.isArray(reply) ? reply.join('\n\n') : String(reply || '');
+    const memAfterName = conversations.get(from) || [];
+    if (memAfterName.length && memAfterName[memAfterName.length - 1]?.role === 'assistant') {
+      memAfterName[memAfterName.length - 1].content = replyForMemory;
+      conversations.set(from, memAfterName.slice(-MAX_SHORT_MEMORY_MESSAGES));
     }
 
     const outboundResult = await saveOutboundMessages({
