@@ -69,7 +69,7 @@ function parseQaCommand(text) {
  * Elimina +, espacios y guiones.
  */
 function normalizePhoneForAllowlist(phone) {
-  return String(phone || '').replace(/[\s\-+()\u00a0]/g, '').replace(/^0+/, '');
+  return String(phone || '').replace(/\D/g, '').replace(/^0+/, '');
 }
 
 /** Últimos 10 dígitos de números MX siempre autorizados para QA (!reset), además del env. */
@@ -127,6 +127,10 @@ function isQaCommandAllowed(phone) {
     }
     if (normalized.endsWith(entry.slice(-10)) && entry.slice(-10).length === 10) return true;
   }
+
+  // Fallback explícito por últimos 10 dígitos para QA interno.
+  const last10 = normalized.slice(-10);
+  if (DEFAULT_QA_LOCAL_10.includes(last10)) return true;
 
   return false;
 }

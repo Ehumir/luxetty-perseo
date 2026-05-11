@@ -1,4 +1,5 @@
 const { normalizeText, cleanSpaces } = require('../utils/text');
+const { isUsefulContactName, isInvalidContactName } = require('../utils/helpers');
 const { detectIntent } = require('./intent');
 const { getDefaultAiState } = require('./aiState');
 const { classifySellerScenarios } = require('./sellerScenarioClassifier');
@@ -854,7 +855,9 @@ function extractPossibleName(message, prevState = null) {
   for (const pattern of patterns) {
     const match = raw.match(pattern);
     if (match?.[1]) {
-      return cleanSpaces(match[1]).replace(/[.,!?]+$/g, '');
+      const candidate = cleanSpaces(match[1]).replace(/[.,!?]+$/g, '');
+      if (!isUsefulContactName(candidate) || isInvalidContactName(candidate)) return null;
+      return candidate;
     }
   }
 
@@ -869,7 +872,9 @@ function extractPossibleName(message, prevState = null) {
       !text.includes('whatsapp') &&
       !text.includes('llamada')
     ) {
-      return raw.replace(/[.,!?]+$/g, '');
+      const candidate = raw.replace(/[.,!?]+$/g, '');
+      if (!isUsefulContactName(candidate) || isInvalidContactName(candidate)) return null;
+      return candidate;
     }
   }
 

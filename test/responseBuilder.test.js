@@ -20,7 +20,7 @@ test('buildPropertyInterestReply returns sequenced commercial messages for A0453
 
   assert.ok(Array.isArray(reply));
   assert.equal(reply.length, 3);
-  assert.match(reply[0], /Con gusto\. Te comparto la liga de la propiedad A0453 en Montemorelos\./);
+  assert.match(reply[0], /(Claro|Perfecto|Listo).+liga de la propiedad A0453 en Montemorelos\./);
   assert.equal(reply[1], 'https://luxetty.com/propiedad/casa-en-montemorelos-a0453');
   assert.match(reply[2], /me compartes tu nombre/i);
 });
@@ -40,6 +40,25 @@ test('buildPropertyInterestReply supports LUX-A0453 code and keeps link separate
   assert.match(reply[0], /LUX-A0453/);
 });
 
+test('buildPropertyInterestReply varía apertura para pauta en respuestas sucesivas', () => {
+  const originalRandom = Math.random;
+  try {
+    Math.random = () => 0.01;
+    const first = buildPropertyInterestReply(
+      { listing_id: 'LUX-A0470', neighborhood: 'Mitras Poniente', slug: 'casa-en-mitras-poniente-en-venta' },
+      {}
+    );
+    Math.random = () => 0.95;
+    const second = buildPropertyInterestReply(
+      { listing_id: 'LUX-A0470', neighborhood: 'Mitras Poniente', slug: 'casa-en-mitras-poniente-en-venta' },
+      {}
+    );
+    assert.notEqual(first[0], second[0]);
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
 test('buildPropertyInterestReply with known name does not ask name again and asks contact authorization', () => {
   const reply = buildPropertyInterestReply(
     {
@@ -54,6 +73,21 @@ test('buildPropertyInterestReply with known name does not ask name again and ask
   assert.doesNotMatch(reply[2], /me compartes tu nombre/i);
   assert.match(reply[2], /Si me autorizas/i);
   assert.match(reply[2], /te contacte/i);
+});
+
+test('buildPropertyInterestReply evita repetir pregunta de nombre si ya se pidió', () => {
+  const reply = buildPropertyInterestReply(
+    {
+      listing_id: 'LUX-A0462',
+      municipality: 'Monterrey',
+      slug: 'casa-en-monterrey-a0462',
+    },
+    { full_name: null, awaiting_field: 'full_name' }
+  );
+
+  assert.ok(Array.isArray(reply));
+  assert.doesNotMatch(reply[2], /¿me compartes tu nombre\?/i);
+  assert.match(reply[2], /compárteme solo tu nombre/i);
 });
 
 test('buildDemandReply with context of direct property keeps commercial sequence and asks name when unknown', () => {
