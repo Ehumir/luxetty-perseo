@@ -85,6 +85,7 @@ const {
   chooseSingleUsefulQuestion,
   evaluateCommercialCloseDecision,
 } = require('./conversation/inboundReliability');
+const { applyCommercialClose } = require('./conversation/conversationClose');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -95,6 +96,7 @@ const {
   normalizePhoneNumber,
   buildPhoneLookupValues,
   isUsefulContactName,
+  isInvalidContactName,
   selectConversationReuseStrategy,
   splitContactName,
   extractWhatsAppReferral,
@@ -1598,8 +1600,8 @@ async function ensureContactForConversation({
     if (!conversationRow?.id || !phone) return null;
 
     const normalizedPhone = normalizePhoneNumber(phone) || phone;
-    const candidateNames = [state?.full_name, waName].filter(Boolean);
-    const usefulName = candidateNames.find((name) => isUsefulContactName(name)) || null;
+    const candidateNames = [waName, state?.full_name].filter(Boolean);
+    const usefulName = candidateNames.find((name) => isUsefulContactName(name) && !isInvalidContactName(name)) || null;
 
     let existingContact = null;
 
@@ -2356,7 +2358,14 @@ app.post('/webhook', async (req, res) => {
       const signals = incomingSignals;
 
       if (waProfileDisplayName && !incomingSignals.full_name) {
-        incomingSignals.full_name = waProfileDisplayName;
+        if (isUsefulContactName(waProfileDisplayName) && !isInvalidContactName(waProfileDisplayName)) {
+          incomingSignals.full_name = waProfileDisplayName;
+        } else if (conversationId) {
+          await saveConversationEvent(conversationId, 'invalid_contact_name_skipped', {
+            source: 'whatsapp_profile_name',
+            rejected_value: String(waProfileDisplayName).slice(0, 120),
+          });
+        }
       }
 
       const normalizedInboundText = normalizeText(text);
@@ -2899,7 +2908,14 @@ app.post('/webhook', async (req, res) => {
       nextAiState.context_fusion?.pending_question || nextAiState.pending_question || null;
 
     if (incomingSignals.full_name) {
-      nextAiState.full_name = incomingSignals.full_name;
+      if (isUsefulContactName(incomingSignals.full_name) && !isInvalidContactName(incomingSignals.full_name)) {
+        nextAiState.full_name = incomingSignals.full_name;
+      } else if (conversationId) {
+        await saveConversationEvent(conversationId, 'invalid_contact_name_skipped', {
+          source: 'incoming_signals_full_name',
+          rejected_value: String(incomingSignals.full_name).slice(0, 120),
+        });
+      }
     }
 
     // ✅ No volver a pedir datos que ya existen en estado
@@ -3322,6 +3338,15 @@ app.post('/webhook', async (req, res) => {
         reason: closeDecision.reason,
         text,
         source: 'ai_agent',
+      });
+
+      await applyCommercialClose({
+        conversationId,
+        conversationRow,
+        closeReason: closeDecision.reason,
+        saveConversationEvent,
+        updateConversationMeta,
+        nowIso,
       });
 
       const phoneExplicitlyConfirmed =

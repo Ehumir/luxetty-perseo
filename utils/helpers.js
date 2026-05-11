@@ -59,10 +59,39 @@ function isUsefulContactName(value) {
   ];
 
   if (invalidTokens.includes(lowered)) return false;
+  if (isInvalidContactName(normalized)) return false;
   if (/^\d+$/.test(normalized)) return false;
   if (normalized.length < 3) return false;
 
   return true;
+}
+
+function isInvalidContactName(value) {
+  const normalized = normalizeName(value);
+  if (!normalized) return true;
+  const lowered = normalized.toLowerCase();
+
+  const invalidPhrases = [
+    'el usuario envio una imagen',
+    'el usuario envió una imagen',
+    'el usuario envio un audio',
+    'el usuario envió un audio',
+    'el usuario envio un sticker',
+    'el usuario envió un sticker',
+    'usuario envio',
+    'usuario envió',
+    'mensaje',
+    'sticker',
+    'audio',
+    'imagen',
+  ];
+
+  if (invalidPhrases.some((phrase) => lowered.includes(phrase))) return true;
+  if (/https?:\/\//i.test(normalized) || /www\./i.test(normalized) || /\.com\b/i.test(lowered)) return true;
+  if (/wamid\./i.test(lowered)) return true;
+  if (normalized.length > 60) return true;
+
+  return false;
 }
 
 function normalizeWhatsApp(input) {
@@ -559,6 +588,7 @@ module.exports = {
   selectConversationReuseStrategy,
   normalizeName,
   isUsefulContactName,
+  isInvalidContactName,
   extractFirstName,
   splitContactName,
   findContactByWhatsApp,

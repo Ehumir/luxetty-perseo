@@ -261,7 +261,26 @@ function buildPropertyAdvisorCta(state = {}, code = null) {
     return `Si me autorizas, un asesor de Luxetty puede contactarte para apoyarte con detalles confirmados y visita de ${code || 'la propiedad'}. ¿Deseas que te contacte?`;
   }
 
+  if (state.awaiting_field === 'full_name') {
+    return 'Cuando puedas, compárteme solo tu nombre y con eso lo canalizo con asesor.';
+  }
+
   return 'Para que un asesor de Luxetty pueda apoyarte con detalles confirmados y visita, ¿me compartes tu nombre?';
+}
+
+function pickPropertyInterestOpening(hasUrl) {
+  const openings = hasUrl
+    ? [
+        'Claro. Te comparto la liga de la propiedad',
+        'Perfecto, aquí está la liga de la propiedad',
+        'Listo, te paso la liga de la propiedad',
+      ]
+    : [
+        'Claro, identifiqué la propiedad',
+        'Perfecto, ya identifiqué la propiedad',
+        'Listo, encontré la propiedad',
+      ];
+  return openings[Math.floor(Math.random() * openings.length)];
 }
 
 function buildPropertyInterestReply(property, state = {}) {
@@ -272,13 +291,13 @@ function buildPropertyInterestReply(property, state = {}) {
 
   if (!url) {
     return [
-      `Con gusto. Identifiqué la propiedad ${code}${locationText}.`,
+      `${pickPropertyInterestOpening(false)} ${code}${locationText}.`,
       `Para compartirte información confirmada, voy a canalizar tu caso con un asesor de Luxetty. ${buildPropertyAdvisorCta(state, code)}`,
     ];
   }
 
   return [
-    `Con gusto. Te comparto la liga de la propiedad ${code}${locationText}.`,
+    `${pickPropertyInterestOpening(true)} ${code}${locationText}.`,
     url,
     `${buildPropertyAdvisorCta(state, code)} También puedo pedir que confirmen disponibilidad y precio actual.`,
   ];

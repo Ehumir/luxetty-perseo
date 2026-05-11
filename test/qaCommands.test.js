@@ -163,6 +163,22 @@ test('isQaCommandAllowed · env no definida → QA interno 8119086196 sigue auto
   if (original !== undefined) process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original;
 });
 
+test('isQaCommandAllowed · QA interno autorizado por últimos 10 dígitos en variantes comunes', () => {
+  const variants = [
+    '8181877351',
+    '5218181877351',
+    '528181877351',
+    '+52 1 8181877351',
+    '8119086196',
+    '5218119086196',
+    '528119086196',
+    '+52 1 8119086196',
+  ];
+  for (const variant of variants) {
+    assert.equal(isQaCommandAllowed(variant), true, `Debe autorizar variante ${variant}`);
+  }
+});
+
 test('isQaCommandAllowed · normaliza + y espacios del número en allowlist', () => {
   const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
   process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '+52 181 111 11111';
