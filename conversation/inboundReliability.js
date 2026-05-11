@@ -109,6 +109,32 @@ function detectComplaintCorrection(text = '') {
   );
 }
 
+/**
+ * Frases de apertura comercial (captación / consulta inicial).
+ * No deben activar cierre tipo "commercial_close" — el cierre es solo para
+ * confirmaciones explícitas o pedidos directos de contacto/agenda.
+ */
+function detectOpeningCommercialIntent(text = '') {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+
+  return (
+    normalized.includes('quiero vender') ||
+    normalized.includes('vender mi casa') ||
+    normalized.includes('vender mi propiedad') ||
+    normalized.includes('vender mi depa') ||
+    normalized.includes('vender mi departamento') ||
+    normalized.includes('quiero valuar') ||
+    normalized.includes('quiero mas informacion') ||
+    normalized.includes('quiero más información') ||
+    normalized.includes('quiero vender pero') ||
+    normalized.includes('no se cuanto vale') ||
+    normalized.includes('no se cuanto') ||
+    normalized.includes('cuanto vale mi')
+  );
+}
+
+/** Señales de cierre / handoff explícito (no confundir con apertura de venta o valuación). */
 function detectCommercialCloseSignal(text = '') {
   const normalized = normalizeText(text);
   if (!normalized) return false;
@@ -119,17 +145,23 @@ function detectCommercialCloseSignal(text = '') {
   return (
     normalized.includes('ese es mi numero') ||
     normalized.includes('ese es mi número') ||
+    normalized.includes('ese es mi whatsapp') ||
+    normalized.includes('correcto, ese es mi whatsapp') ||
+    normalized.includes('correcto ese es mi whatsapp') ||
     normalized.includes('quiero verla') ||
     normalized.includes('agendame') ||
     normalized.includes('agéndame') ||
     normalized.includes('que me contacten') ||
+    normalized.includes('que me contacte un asesor') ||
+    normalized.includes('que me contacte una asesora') ||
+    normalized.includes('contacte un asesor') ||
+    normalized.includes('contacte una asesora') ||
+    normalized.includes('quiero hablar con un asesor') ||
+    normalized.includes('quiero hablar con una asesora') ||
+    normalized.includes('hablar con un asesor') ||
+    normalized.includes('hablar con una asesora') ||
     normalized.includes('mandame info') ||
-    normalized.includes('mándame info') ||
-    normalized.includes('quiero vender') ||
-    normalized.includes('quiero valuar') ||
-    normalized.includes('quiero que me apoyen') ||
-    normalized.includes('quiero mas informacion') ||
-    normalized.includes('quiero más información')
+    normalized.includes('mándame info')
   );
 }
 
@@ -140,6 +172,15 @@ function evaluateCommercialCloseDecision({
   hasPropertyContext = false,
 } = {}) {
   const normalized = normalizeText(text);
+
+  if (detectOpeningCommercialIntent(normalized)) {
+    return {
+      shouldClose: false,
+      shouldClarify: false,
+      reason: 'opening_commercial_intent_not_close',
+    };
+  }
+
   const hasSignal = detectCommercialCloseSignal(normalized);
   if (!hasSignal) {
     return {
@@ -304,6 +345,7 @@ module.exports = {
   buildConversationContextSnapshot,
   chooseSingleUsefulQuestion,
   detectComplaintCorrection,
+  detectOpeningCommercialIntent,
   detectCommercialCloseSignal,
   evaluateCommercialCloseDecision,
 };

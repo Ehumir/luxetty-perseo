@@ -667,6 +667,11 @@ function detectWrongContext(message) {
 }
 
 function classifyInboundBusinessCategory(message, intent = {}) {
+  const rawTrim = cleanSpaces(message || '');
+  if (/^!(reset|close|case)\b/i.test(rawTrim)) {
+    return 'real_estate_client';
+  }
+
   const text = normalizeText(message);
   const hasRealEstateKeywords =
     text.includes('casa') ||

@@ -147,17 +147,19 @@ test('isQaCommandAllowed · número no en allowlist → false', () => {
   process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
 
-test('isQaCommandAllowed · env vacía → nadie autorizado', () => {
+test('isQaCommandAllowed · env vacía → QA interno 8181877351 sigue autorizado', () => {
   const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
   process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '';
   assert.equal(isQaCommandAllowed('5218111111111'), false);
+  assert.equal(isQaCommandAllowed('5218181877351'), true);
+  assert.equal(isQaCommandAllowed('528181877351'), true);
   process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
 
-test('isQaCommandAllowed · env no definida → nadie autorizado', () => {
+test('isQaCommandAllowed · env no definida → QA interno 8119086196 sigue autorizado', () => {
   const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
   delete process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
-  assert.equal(isQaCommandAllowed('5218111111111'), false);
+  assert.equal(isQaCommandAllowed('5218119086196'), true);
   if (original !== undefined) process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original;
 });
 
@@ -201,7 +203,7 @@ test('handleQaCommand !reset · limpia estado, registra evento, responde OK', as
   // Estado limpio
   assert.equal(stateHolder.lead_flow, null, 'lead_flow debe limpiarse');
   assert.equal(stateHolder.qa_test_active, true, 'qa_test_active debe activarse');
-  assert.equal(stateHolder.qa_lead_creation_blocked, true, 'debe bloquear creación de lead');
+  assert.equal(stateHolder.qa_lead_creation_blocked, false, 'no debe bloquear creación de lead tras reset QA');
   assert.ok(stateHolder.qa_test_session_id, 'debe generar qa_test_session_id');
 
   // Memoria en RAM limpia
@@ -214,10 +216,11 @@ test('handleQaCommand !reset · limpia estado, registra evento, responde OK', as
   assert.equal(resetEvent.convId, 'conv-qa-001');
   assert.equal(resetEvent.payload.qa_phone, '5218111111111');
   assert.equal(resetEvent.payload.previous_lead_flow, 'offer');
+  assert.equal(resetEvent.payload.qa_reset_production, true);
 
   // Reply enviado
   assert.ok(replyLog.length > 0, 'debe enviar respuesta');
-  assert.equal(String(replyLog[0].messages), 'Contexto reiniciado para prueba.');
+  assert.equal(String(replyLog[0].messages), 'QA reset aplicado. Puedes iniciar una nueva prueba.');
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -395,7 +398,7 @@ test('handleQaCommand !reset · contexto previo no se arrastra al nuevo estado',
 
   // Solo deben existir las banderas QA
   assert.equal(stateHolder.qa_test_active, true);
-  assert.equal(stateHolder.qa_lead_creation_blocked, true);
+  assert.equal(stateHolder.qa_lead_creation_blocked, false);
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -505,7 +508,7 @@ test('interceptQaCommand · comando con espacios "  !reset  " funciona', async (
   });
 
   assert.equal(result.handled, true);
-  assert.equal(String(replyLog[0].messages), 'Contexto reiniciado para prueba.');
+  assert.equal(String(replyLog[0].messages), 'QA reset aplicado. Puedes iniciar una nueva prueba.');
 
   process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
@@ -532,7 +535,7 @@ test('interceptQaCommand · comando en mayúsculas "!RESET" funciona', async () 
   });
 
   assert.equal(result.handled, true);
-  assert.equal(String(replyLog[0].messages), 'Contexto reiniciado para prueba.');
+  assert.equal(String(replyLog[0].messages), 'QA reset aplicado. Puedes iniciar una nueva prueba.');
 
   process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });

@@ -104,6 +104,7 @@ const { isGreetingOnly } = require('./utils/messageChecks');
 const {
   interceptQaCommand,
   isQaLeadBlocked,
+  parseQaCommand,
 } = require('./conversation/qaCommands');
 
 const app = express();
@@ -1570,6 +1571,21 @@ async function maybeCreateFollowupRequest({
   }
 }
 
+function extractWaProfileDisplayName(value = {}, rawFromPhone = '') {
+  if (!value || typeof value !== 'object') return null;
+  const normalizedFrom = normalizePhoneNumber(rawFromPhone) || String(rawFromPhone || '').replace(/[\s\-+()]/g, '');
+  const contacts = Array.isArray(value.contacts) ? value.contacts : [];
+  for (const c of contacts) {
+    const cw = normalizePhoneNumber(c?.wa_id) || String(c?.wa_id || '').replace(/[\s\-+()]/g, '');
+    if (!cw || !normalizedFrom) continue;
+    if (cw === normalizedFrom) {
+      const n = c?.profile?.name;
+      if (typeof n === 'string' && n.trim()) return n.trim();
+    }
+  }
+  return null;
+}
+
 async function ensureContactForConversation({
   conversationRow,
   state,
@@ -1631,7 +1647,15 @@ async function ensureContactForConversation({
 
     if (existingContact) {
       const payload = {};
-      if (usefulName && !isUsefulContactName(existingContact.full_name)) {
+      const existingDisplay =
+        [existingContact.first_name, existingContact.last_name].filter(Boolean).join(' ').trim() ||
+        existingContact.full_name ||
+        '';
+      const placeholderFirst = /^cliente$/i.test(String(existingContact.first_name || '').trim());
+      const shouldApplyName =
+        usefulName &&
+        (!isUsefulContactName(existingDisplay) || placeholderFirst);
+      if (shouldApplyName) {
         // Sprint 5C: usar first_name/last_name en lugar de full_name directo.
         // full_name en ATENA es columna regular o mantenida por trigger;
         // no escribir full_name directamente para no romper la lógica de ATENA.
@@ -1706,6 +1730,12 @@ async function ensureContactForConversation({
       raw_payload_meta_message_id: rawPayload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id || null,
     });
 
+    console.log('CONTACT_CREATED', {
+      conversation_id: conversationRow.id,
+      contact_id: created.id,
+      normalized_phone: normalizedPhone,
+    });
+
     return created.id;
   } catch (err) {
     console.error('FATAL ensureContactForConversation:', err);
@@ -1713,8 +1743,15 @@ async function ensureContactForConversation({
   }
 }
 
-async function upsertContactForConversation(conversationRow, state, phone) {
-  return ensureContactForConversation({ conversationRow, state, phone });
+async function upsertContactForConversation(conversationRow, state, phone, extra = {}) {
+  return ensureContactForConversation({
+    conversationRow,
+    state,
+    phone,
+    waName: extra.waName ?? null,
+    rawPayload: extra.rawPayload ?? null,
+    source: extra.source || 'whatsapp',
+  });
 }
 
 function shouldEscalateDemand(state, properties, text) {
@@ -1907,6 +1944,7 @@ app.post('/webhook', async (req, res) => {
         : payloadSnapshot;
 
       from = normalizePhoneNumber(rawFrom) || rawFrom;
+      const waProfileDisplayName = extractWaProfileDisplayName(value, rawFrom);
 
       const inboundContext = buildInboundMessageContext(message);
       let text = inboundContext.messageText;
@@ -1924,6 +1962,19 @@ app.post('/webhook', async (req, res) => {
 
       if (processingMode === 'respond' && cleanSpaces(burstCombinedText || '')) {
         text = cleanSpaces(burstCombinedText);
+      }
+
+      if (conversationId && parseQaCommand(text)) {
+        await saveConversationMessage({
+          conversationId,
+          direction: 'inbound',
+          senderType: 'lead',
+          messageType: mapInboundMessageType(messageType),
+          messageText: text,
+          transcriptionText,
+          metaMessageId,
+          rawPayload: inboundRawPayload || {},
+        });
       }
 
       // ─── Guard: Comandos internos QA ──────────────────────────────────────
@@ -1946,6 +1997,16 @@ app.post('/webhook', async (req, res) => {
 
       if (qaIntercept?.handled) {
         return; // No continuar con el pipeline normal
+      }
+
+      if (qaIntercept?.isQaCommand && !qaIntercept?.handled) {
+        if (conversationId) {
+          await saveConversationEvent(conversationId, 'qa_command_denied_user_notified', {
+            meta_message_id: metaMessageId || null,
+            reason: qaIntercept?.reason || 'qa_command_denied',
+          });
+        }
+        return;
       }
       // ─────────────────────────────────────────────────────────────────────
 
@@ -2079,19 +2140,24 @@ app.post('/webhook', async (req, res) => {
         inboundContext.media.audio_without_transcription_repeat = true;
       }
 
-      const propertyContextFromState =
-        previousAiState?.direct_property_reference && previousAiState?.property_code
-          ? {
-              listing_id: previousAiState.property_code,
-            }
-          : null;
-
       const campaignContextForFusion = extractCampaignReferralContext({
         aiState: previousAiState,
         referral: normalizedReferral,
         rawPayload: inboundRawPayload,
         messageText: text,
       });
+
+      const listingFromCampaignForFusion =
+        campaignContextForFusion?.campaignContext?.property_code || null;
+      const listingFromPrevDirect =
+        previousAiState?.direct_property_reference && previousAiState?.property_code
+          ? previousAiState.property_code
+          : null;
+      const propertyContextFromState = listingFromPrevDirect
+        ? { listing_id: listingFromPrevDirect }
+        : listingFromCampaignForFusion
+        ? { listing_id: listingFromCampaignForFusion }
+        : null;
 
       const unifiedContext = buildUnifiedConversationContext({
         inboundText: text,
@@ -2197,12 +2263,25 @@ app.post('/webhook', async (req, res) => {
       const incomingSignals = parseMessageSignals(text, previousAiState, inboundContext);
       const signals = incomingSignals;
 
+      if (waProfileDisplayName && !incomingSignals.full_name) {
+        incomingSignals.full_name = waProfileDisplayName;
+      }
+
       const normalizedInboundText = normalizeText(text);
       const campaignPropertyCode = campaignContextForFusion?.campaignContext?.property_code || null;
       const referencesCampaignProperty =
         normalizedInboundText.includes('la propiedad') ||
         normalizedInboundText.includes('precio') ||
         normalizedInboundText.includes('disponibilidad') ||
+        normalizedInboundText.includes('disponible') ||
+        normalizedInboundText.includes('sigue disponible') ||
+        normalizedInboundText.includes('informacion') ||
+        normalizedInboundText.includes('información') ||
+        normalizedInboundText.includes('info') ||
+        normalizedInboundText.includes('fotos') ||
+        normalizedInboundText.includes('video') ||
+        normalizedInboundText.includes('agendar') ||
+        normalizedInboundText.includes('visita') ||
         normalizedInboundText.includes('quiero verla') ||
         normalizedInboundText.includes('me interesa');
 
@@ -2446,7 +2525,10 @@ app.post('/webhook', async (req, res) => {
         await savePropertySuggestions(conversationId, directOutbound.rows[0].id, [property]);
       }
 
-      const contactId = await upsertContactForConversation(conversationRow, directState, from);
+      const contactId = await upsertContactForConversation(conversationRow, directState, from, {
+        waName: waProfileDisplayName,
+        rawPayload: inboundRawPayload,
+      });
       const leadAutomationResult = await maybeCreateOrReuseLeadWithEngine({
         conversationId,
         conversationRow,
@@ -3150,7 +3232,17 @@ app.post('/webhook', async (req, res) => {
         source: 'ai_agent',
       });
 
-      reply = 'Perfecto, ya tengo confirmado tu WhatsApp. Voy a canalizar tu solicitud con un asesor de Luxetty para que te apoye con la información y próximos pasos.';
+      const phoneExplicitlyConfirmed =
+        nextAiState.contact_number_confirmed === true ||
+        nextAiState.confirmed_phone === true ||
+        /ese es mi numero|ese es mi número|ese es mi whatsapp/i.test(normalizedText) ||
+        /correcto.*whatsapp|whatsapp.*correcto/i.test(normalizedText) ||
+        (previousAiState.awaiting_field === 'contact_number_confirmed' &&
+          /^(si|sí|correcto)$/.test(normalizedText));
+
+      reply = phoneExplicitlyConfirmed
+        ? 'Perfecto, ya tengo confirmado tu WhatsApp. Voy a canalizar tu solicitud con un asesor de Luxetty para que te apoye con la información y próximos pasos.'
+        : 'Perfecto. Voy a canalizar tu solicitud con un asesor de Luxetty para que te apoye con la información y próximos pasos.';
     } else if (incomingSignals.complaint_followup) {
       nextAiState.wants_human = true;
       const oneUsefulQuestion = chooseSingleUsefulQuestion(nextAiState);
@@ -3255,7 +3347,10 @@ app.post('/webhook', async (req, res) => {
         !nextAiState.handoff_sent;
 
       if (canCreateDemandHandoff) {
-        const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+        const contactId = await upsertContactForConversation(conversationRow, nextAiState, from, {
+        waName: waProfileDisplayName,
+        rawPayload: inboundRawPayload,
+      });
         const summary =
           buildAiSummary(nextAiState, matchedProperties) ||
           'Cliente buscando propiedad y requiere seguimiento humano.';
@@ -3285,7 +3380,10 @@ app.post('/webhook', async (req, res) => {
             return;
           }
 
-          const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+          const contactId = await upsertContactForConversation(conversationRow, nextAiState, from, {
+        waName: waProfileDisplayName,
+        rawPayload: inboundRawPayload,
+      });
           const summary =
             buildAiSummary(nextAiState, matchedProperties) ||
             'Cliente buscando propiedad y requiere seguimiento humano.';
@@ -3355,7 +3453,10 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (shouldEscalateOffer(nextAiState) && !nextAiState.handoff_sent) {
-        const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+        const contactId = await upsertContactForConversation(conversationRow, nextAiState, from, {
+        waName: waProfileDisplayName,
+        rawPayload: inboundRawPayload,
+      });
 
         const summary =
           buildAiSummary(nextAiState, matchedProperties) ||
@@ -3522,6 +3623,16 @@ ${locationCatalog.rawNames.join(', ')}
 
     conversations.set(from, updatedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
 
+    const campaignPropertyCodeForLead =
+      campaignContextForFusion?.campaignContext?.property_code || null;
+    const matchedListingForLead =
+      matchedProperties.length > 0 ? matchedProperties[0]?.listing_id || null : null;
+    const campaignMatchesTopProperty =
+      !!campaignPropertyCodeForLead &&
+      !!matchedListingForLead &&
+      String(campaignPropertyCodeForLead).toUpperCase().replace(/\s+/g, '') ===
+        String(matchedListingForLead).toUpperCase().replace(/\s+/g, '');
+
     const shouldAttemptLeadAutomation =
       !isGreetingOnly(text) &&
       !isNonRealEstateCategory(nextAiState) &&
@@ -3529,15 +3640,20 @@ ${locationCatalog.rawNames.join(', ')}
         nextAiState.lead_flow === 'demand' ||
         nextAiState.lead_flow === 'offer' ||
         nextAiState.direct_property_reference ||
-        nextAiState?.context_fusion?.should_create_or_update_lead
+        nextAiState?.context_fusion?.should_create_or_update_lead ||
+        (matchedProperties.length > 0 && campaignMatchesTopProperty)
       );
 
     if (shouldAttemptLeadAutomation) {
       const propertyForLead =
-        nextAiState.direct_property_reference && matchedProperties.length > 0
+        matchedProperties.length > 0 &&
+        (nextAiState.direct_property_reference || campaignMatchesTopProperty)
           ? matchedProperties[0]
           : null;
-      const contactId = await upsertContactForConversation(conversationRow, nextAiState, from);
+      const contactId = await upsertContactForConversation(conversationRow, nextAiState, from, {
+        waName: waProfileDisplayName,
+        rawPayload: inboundRawPayload,
+      });
 
       if (contactId) {
         const leadAutomationResult = await maybeCreateOrReuseLeadWithEngine({

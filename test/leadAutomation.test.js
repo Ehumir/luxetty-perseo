@@ -315,6 +315,25 @@ test('detectLeadCreationOpportunity accepts explicit property interest when prop
   assert.equal(opportunity.shouldCreate, true);
 });
 
+test('detectLeadCreationOpportunity accepts short Info with campaign + resolved property', () => {
+  const opportunity = detectLeadCreationOpportunity({
+    aiState: {
+      lead_flow: null,
+      campaign_context: { property_code: 'LUX-A0470' },
+    },
+    propertyId: 'prop-a0470',
+    propertyCode: 'LUX-A0470',
+    messageText: 'Info',
+    hasCampaignContext: true,
+  });
+
+  assert.equal(opportunity.shouldCreate, true);
+  assert.ok(
+    opportunity.reason === 'property_interest_detected' ||
+      opportunity.reason === 'campaign_property_interest_detected',
+  );
+});
+
 test('property owner agent assignment has priority and bypasses fallback engine', async () => {
   const db = {
     leads: [],

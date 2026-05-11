@@ -72,28 +72,63 @@ function normalizePhoneForAllowlist(phone) {
   return String(phone || '').replace(/[\s\-+()\u00a0]/g, '').replace(/^0+/, '');
 }
 
+/** Últimos 10 dígitos de números MX siempre autorizados para QA (!reset), además del env. */
+const DEFAULT_QA_LOCAL_10 = ['8181877351', '8119086196'];
+
+function expandMxComparableDigits(normalized) {
+  const d = normalizePhoneForAllowlist(normalized);
+  if (!d) return new Set();
+  const out = new Set([d]);
+  if (d.length === 13 && d.startsWith('521')) out.add(`52${d.slice(3)}`);
+  if (d.length === 12 && d.startsWith('52') && !d.startsWith('521')) out.add(`521${d.slice(2)}`);
+  if (d.length === 10) {
+    out.add(`52${d}`);
+    out.add(`521${d}`);
+  }
+  return out;
+}
+
+function isDefaultQaPhone(normalizedDigits) {
+  const d = normalizePhoneForAllowlist(normalizedDigits);
+  if (!d) return false;
+  const last10 = d.slice(-10);
+  return DEFAULT_QA_LOCAL_10.includes(last10);
+}
+
 /**
  * Verifica si un número de WhatsApp está autorizado para ejecutar comandos QA.
  *
- * Lee la variable de entorno QA_ALLOWED_WHATSAPP_NUMBERS (separada por comas).
- * Si la variable está vacía o no existe, nadie está autorizado.
+ * Siempre autoriza los QA internos (8181877351, 8119086196 y variantes 52/521).
+ * Además lee QA_ALLOWED_WHATSAPP_NUMBERS (separada por comas) para otros testers.
  *
  * @param {string} phone  Número normalizado (e.g. "5218111111111")
  * @returns {boolean}
  */
 function isQaCommandAllowed(phone) {
-  const raw = process.env.QA_ALLOWED_WHATSAPP_NUMBERS || '';
-  if (!raw.trim()) return false;
-
   const normalized = normalizePhoneForAllowlist(phone);
   if (!normalized) return false;
 
-  const allowlist = raw
+  if (isDefaultQaPhone(normalized)) return true;
+
+  const raw = process.env.QA_ALLOWED_WHATSAPP_NUMBERS || '';
+  if (!raw.trim()) return false;
+
+  const envList = raw
     .split(/[\n,;]+/)
     .map((n) => normalizePhoneForAllowlist(n))
     .filter(Boolean);
 
-  return allowlist.includes(normalized);
+  for (const entry of envList) {
+    if (!entry) continue;
+    const entrySet = expandMxComparableDigits(entry);
+    const phoneSet = expandMxComparableDigits(normalized);
+    for (const p of phoneSet) {
+      if (entrySet.has(p)) return true;
+    }
+    if (normalized.endsWith(entry.slice(-10)) && entry.slice(-10).length === 10) return true;
+  }
+
+  return false;
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -160,8 +195,9 @@ async function handleQaCommand({
       qa_test_session_id: testSessionId,
       qa_test_started_at: nowIso(),
       qa_test_phone: from,
-      // Bloquea creación de lead durante sesión de prueba
-      qa_lead_creation_blocked: true,
+      qa_reset_applied_at: nowIso(),
+      // Hotfix: no bloquear leads en QA reset — el panel necesita probar CRM end-to-end.
+      qa_lead_creation_blocked: false,
     };
 
     // Persiste el estado limpio (no toca histórico ni contactos)
@@ -173,9 +209,10 @@ async function handleQaCommand({
       action: 'conversation_context_cleared',
       previous_lead_flow: conversationRow?.ai_state?.lead_flow || null,
       previous_intent_type: conversationRow?.ai_state?.intent_type || null,
+      qa_reset_production: true,
     });
 
-    reply = 'Contexto reiniciado para prueba.';
+    reply = 'QA reset aplicado. Puedes iniciar una nueva prueba.';
 
   } else if (command === 'close') {
     // Marca la sesión de prueba como cerrada en el estado

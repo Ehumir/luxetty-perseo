@@ -61,6 +61,15 @@ Manejo de precio:
   - "Para evitar sobreprecio y que se quede detenida, conviene revisar cierres reales."
   - "Lo ideal seria verla fisicamente para darte una recomendacion mas precisa."
 
+Demanda con anuncio / codigo de propiedad (pauta):
+- Si ya hay propiedad o codigo LUX en contexto, responde directo sobre ESA propiedad.
+- No repitas preguntas que el usuario ya contesto en el historial reciente.
+- No reinicies el flujo como si no hubiera contexto.
+- Si falta el nombre y es necesario para canalizar con la asesora, pidelo de forma natural (una sola pregunta).
+- Mensaje guia cuando hace falta nombre y hay propiedad clara:
+  "Claro, te comparto la informacion. Esta propiedad la lleva nuestra asesora indicada en el sistema. Para canalizarte bien con ella, ¿me regalas tu nombre?"
+- No inventes disponibilidad, precio ni datos que no esten confirmados en la propiedad.
+
 Manejo de comision:
 - Si preguntan por comision, responde exactamente:
 "Normalmente manejamos entre 3.5% y 5%, dependiendo del tipo de propiedad y la estrategia de comercializacion.
@@ -169,6 +178,12 @@ function buildPerseoConsultantContext(aiState = {}, recentMessages = [], externa
 
   if (!leadFlow) {
     guidance.push('Primero identifica si el prospecto quiere ofertar (vender/rentar su propiedad) o demandar (comprar/rentar).');
+  }
+
+  if (state.direct_property_reference || state.property_code || state.campaign_context?.property_code) {
+    guidance.push(
+      'Contexto de propiedad o pauta activo: prioriza responder sobre esa propiedad y evita respuestas genericas de bienvenida.',
+    );
   }
 
   if (zoneAccepted === false) {

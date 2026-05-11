@@ -31,6 +31,12 @@ function resolveLeadType(aiState = {}) {
   if (aiState.lead_flow === 'demand') return 'demand';
   if (aiState.direct_property_reference || aiState.property_code || aiState.direct_property_code) return 'demand';
 
+  const campaignCode =
+    aiState.campaign_context && typeof aiState.campaign_context === 'object'
+      ? aiState.campaign_context.property_code
+      : null;
+  if (campaignCode) return 'demand';
+
   const goal = normalizeText(aiState.user_goal || '');
   if (goal.includes('capture')) return 'supply';
   if (goal.includes('search')) return 'demand';
@@ -251,10 +257,11 @@ function hasCommercialContext(aiState = {}, propertyId = null) {
 }
 
 function hasClearIntent(aiState = {}, propertyId = null) {
+  if (propertyId) return true;
+
   const leadType = resolveLeadType(aiState);
   if (!leadType) return false;
 
-  if (propertyId) return true;
   if (leadType === 'supply') return hasCommercialContext(aiState, propertyId);
 
   if (aiState.shows_high_interest && !aiState.property_type && !aiState.location_text && !aiState.budget_max) {
@@ -530,6 +537,17 @@ function detectLeadCreationOpportunity({ aiState = {}, propertyId = null, proper
     propertyCode
   );
 
+  const shortInfoPing =
+    text === 'info' ||
+    text === 'informacion' ||
+    text === 'información' ||
+    text.startsWith('info ') ||
+    text.includes('sigue disponible') ||
+    text.includes('aun disponible') ||
+    text.includes('aún disponible') ||
+    text.includes('todavia disponible') ||
+    text.includes('todavía disponible');
+
   const explicitCommercialSignals = !!(
     aiState.wants_visit ||
     aiState.asks_property_details ||
@@ -541,7 +559,8 @@ function detectLeadCreationOpportunity({ aiState = {}, propertyId = null, proper
     text.includes('quiero detalles') ||
     text.includes('precio') ||
     text.includes('disponible') ||
-    text.includes('visita')
+    text.includes('visita') ||
+    shortInfoPing
   );
 
   if (!hasPropertyReference && !explicitCommercialSignals && !hasCampaignContext) {
@@ -1270,6 +1289,13 @@ async function assignLead(supabase, leadId, conversationId, logger, context = {}
     });
 
     if (attempt?.assignedAgentProfileId) {
+      if (candidate.strategy === 'property_owner_agent') {
+        log(logger, 'ASSIGNMENT_PROPERTY_AGENT', {
+          lead_id: leadId,
+          assigned_agent_profile_id: candidate.agentId,
+          conversation_id: conversationId,
+        });
+      }
       return attempt;
     }
   }
@@ -1536,6 +1562,7 @@ async function createOrReuseLeadFromConversation({
     });
 
     if (!contactId && !propertyId) {
+      logWarn(logger, 'LEAD_CREATION_FAILED', { conversation_id: conversationId, reason: 'missing_contact' });
       logWarn(logger, 'LEAD_AUTOMATION_SKIPPED_MISSING_CONTACT', { conversation_id: conversationId });
       await saveConversationEvent(supabase, conversationId, 'lead_not_created_missing_contact', {
         reason: 'missing_contact',
@@ -1563,6 +1590,11 @@ async function createOrReuseLeadFromConversation({
     }
 
     if (aiState?.direct_property_reference && (aiState.property_code || aiState.direct_property_code) && !propertyId) {
+      logWarn(logger, 'LEAD_CREATION_FAILED', {
+        conversation_id: conversationId,
+        reason: 'missing_property',
+        property_code: aiState.property_code || aiState.direct_property_code,
+      });
       logWarn(logger, 'LEAD_AUTOMATION_SKIPPED_MISSING_PROPERTY', {
         conversation_id: conversationId,
         property_code: aiState.property_code || aiState.direct_property_code,
@@ -1583,6 +1615,12 @@ async function createOrReuseLeadFromConversation({
     }
 
     if (!hasClearIntent(aiState, propertyId)) {
+      logWarn(logger, 'LEAD_CREATION_FAILED', {
+        conversation_id: conversationId,
+        reason: 'low_confidence',
+        lead_flow: aiState?.lead_flow || null,
+        confidence: aiState?.confidence || null,
+      });
       log(logger, 'LEAD_AUTOMATION_SKIPPED_LOW_CONFIDENCE', {
         conversation_id: conversationId,
         lead_flow: aiState?.lead_flow || null,
@@ -1604,10 +1642,41 @@ async function createOrReuseLeadFromConversation({
       };
     }
 
-    const leadType = resolveLeadType(aiState);
+    if (propertyId || aiState?.campaign_context?.property_code) {
+      log(logger, 'PROPERTY_CONTEXT_FOUND', {
+        conversation_id: conversationId,
+        property_id: propertyId || null,
+        listing_id: property?.listing_id || aiState?.property_code || aiState?.campaign_context?.property_code || null,
+      });
+    }
+
+    const leadType = resolveLeadType(aiState) || (propertyId ? 'demand' : null);
+    if (!leadType) {
+      logWarn(logger, 'LEAD_CREATION_FAILED', {
+        conversation_id: conversationId,
+        reason: 'missing_lead_type',
+        property_id: propertyId || null,
+      });
+      await saveConversationEvent(supabase, conversationId, 'lead_not_created_missing_lead_type', {
+        property_id: propertyId || null,
+      });
+      return {
+        success: false,
+        lead: null,
+        leadId: null,
+        wasCreated: false,
+        assignedAgentProfileId: null,
+        assignmentResult: null,
+        reason: 'missing_lead_type',
+      };
+    }
+
     const operation = resolveOperation(aiState, property);
     const normalizedConversationPhone = normalizePhoneNumber(conversation?.phone) || conversation?.phone || null;
     const contact = await findContactById(supabase, contactId);
+    if (contactId) {
+      log(logger, 'CONTACT_FOUND', { conversation_id: conversationId, contact_id: contactId });
+    }
     const contactOwner = resolveContactAssignedAgentField(contact || {});
     const hasContactOwnerAssignedAgent = !!contactOwner.assignedAgentProfileId;
     const scoringIntent = {
@@ -1806,6 +1875,11 @@ async function createOrReuseLeadFromConversation({
 
       lead = data;
       wasCreated = true;
+      log(logger, 'LEAD_CREATED', {
+        conversation_id: conversationId,
+        lead_id: lead.id,
+        property_id: propertyId || null,
+      });
       log(logger, 'LEAD_AUTOMATION_CREATED', {
         conversation_id: conversationId,
         lead_id: lead.id,
@@ -2011,6 +2085,12 @@ async function createOrReuseLeadFromConversation({
       ai_state: nextAiState,
     });
 
+    log(logger, 'CONVERSATION_LINKED', {
+      conversation_id: conversationId,
+      lead_id: lead.id,
+      contact_id: contactId || null,
+    });
+
     await saveConversationEvent(supabase, conversationId, 'crm_trace_snapshot', {
       lead_id: lead.id,
       contact_id: contactId || null,
@@ -2024,6 +2104,14 @@ async function createOrReuseLeadFromConversation({
       campaign_type: aiState?.campaign_context?.campaign_type || null,
       source: 'ai_agent',
     });
+
+    if (!wasCreated) {
+      log(logger, 'LEAD_REUSED', {
+        conversation_id: conversationId,
+        lead_id: lead.id,
+        property_id: propertyId || null,
+      });
+    }
 
     return {
       success: true,
