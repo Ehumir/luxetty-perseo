@@ -8,22 +8,15 @@ const {
   buildPerseoConsultantContext,
 } = require('./perseoConsultantPrompt');
 const { openai } = require('../services/openaiService');
+const { normalizeRecentMessagesForAdvisor } = require('./advisorDraftContext');
 
 const GENERIC_PLAYBOOK_SNIPPET = normalizeText(
   'Con esa información puedo orientarte mejor. ¿Prefieres ver opciones disponibles o que un asesor de Luxetty te contacte?'
 );
 
+/** Delega en advisorDraftContext para una sola fuente de verdad (PR1 draft layer). */
 function mapConversationDbRowsToChatMessages(rows = []) {
-  if (!Array.isArray(rows)) return [];
-  return rows
-    .map((row) => {
-      const raw = cleanSpaces(row?.message_text || '');
-      if (!raw) return null;
-      if (row.direction === 'outbound') return { role: 'assistant', content: raw };
-      if (row.direction === 'inbound') return { role: 'user', content: raw };
-      return null;
-    })
-    .filter(Boolean);
+  return normalizeRecentMessagesForAdvisor(rows).map(({ role, content }) => ({ role, content }));
 }
 
 function getLastOutboundTextFromDbRows(rows = []) {
