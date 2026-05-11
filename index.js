@@ -23,6 +23,7 @@ const {
 } = require('./conversation/perseoConsultantPrompt');
 
 const { supabase } = require('./services/supabaseService');
+const messagePersistence = require('./services/saveConversationMessage');
 const { openai } = require('./services/openaiService');
 const { axios } = require('./services/whatsappService');
 const {
@@ -970,91 +971,12 @@ async function saveConversationState(conversationId, nextState, aiSummary = null
   }
 }
 
-async function saveConversationMessage({
-  conversationId,
-  direction,
-  senderType,
-  messageType,
-  messageText,
-  transcriptionText = null,
-  metaMessageId = null,
-  rawPayload = {},
-}) {
-  try {
-    if (!conversationId) return null;
-
-    if (direction === 'inbound' && metaMessageId) {
-      const alreadyProcessed = await inboundMessageAlreadyProcessed(metaMessageId);
-      if (alreadyProcessed) {
-        const { data: existing } = await supabase
-          .from('conversation_messages')
-          .select('*')
-          .eq('conversation_id', conversationId)
-          .eq('direction', 'inbound')
-          .eq('meta_message_id', metaMessageId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        return existing || null;
-      }
-    }
-
-    const { data, error } = await supabase
-      .from('conversation_messages')
-      .insert({
-        conversation_id: conversationId,
-        direction,
-        sender_type: senderType,
-        message_type: messageType,
-        message_text: messageText,
-        transcription_text: transcriptionText,
-        meta_message_id: metaMessageId,
-        raw_payload: rawPayload,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error guardando mensaje:', error);
-      return null;
-    }
-
-    await supabase
-      .from('conversations')
-      .update({
-        last_message_at: nowIso(),
-      })
-      .eq('id', conversationId);
-
-    return data;
-  } catch (err) {
-    console.error('FATAL saveConversationMessage:', err);
-    return null;
-  }
+async function saveConversationMessage(params) {
+  return messagePersistence.saveConversationMessage(supabase, params);
 }
 
 async function inboundMessageAlreadyProcessed(metaMessageId) {
-  try {
-    if (!metaMessageId) return false;
-
-    const { data, error } = await supabase
-      .from('conversation_messages')
-      .select('id')
-      .eq('direction', 'inbound')
-      .eq('meta_message_id', metaMessageId)
-      .limit(1);
-
-    if (error) {
-      console.error('Error checking inbound duplicate:', error);
-      return false;
-    }
-
-    return Array.isArray(data) && data.length > 0;
-  } catch (err) {
-    console.error('FATAL inboundMessageAlreadyProcessed:', err);
-    return false;
-  }
+  return messagePersistence.inboundMessageAlreadyProcessed(supabase, metaMessageId);
 }
 
 async function fetchRecentConversationMessages(conversationId, limit = 20) {
@@ -1414,12 +1336,11 @@ async function getOrCreateConversation(phone) {
 
     if (strategy.hasMultipleReusableConversations) {
       console.warn('multiple_reusable_conversations_detected', {
-        normalized_phone: normalizedPhone,
+        phone: normalizedPhone,
         channel: 'whatsapp',
-        candidate_ids: (existing || [])
-          .filter((row) => row?.status !== 'closed')
-          .map((row) => row?.id)
-          .filter(Boolean),
+        selected_conversation_id: strategy.reusableConversation?.id || null,
+        duplicate_conversation_ids: strategy.duplicateReusableConversationIds || [],
+        reason: strategy.multipleReusableResolutionReason || 'canonical_lead_contact_recency_then_id',
       });
     }
 

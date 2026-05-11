@@ -100,12 +100,16 @@ function normalizeWhatsApp(input) {
 
 function buildPhoneLookupValues(phone) {
   const normalized = normalizePhoneNumber(phone) || (phone == null ? null : String(phone).trim());
-  const values = new Set([normalized, String(phone || '').trim()].filter(Boolean));
+  const rawTrim = String(phone || '').trim();
+  const values = new Set([normalized, rawTrim].filter(Boolean));
 
   if (normalized) {
     values.add(`+${normalized}`);
     if (normalized.startsWith('521') && normalized.length === 13) {
-      const legacyMx = `52${normalized.slice(3)}`;
+      const ten = normalized.slice(3);
+      values.add(ten);
+      values.add(`+52${ten}`);
+      const legacyMx = `52${ten}`;
       values.add(legacyMx);
       values.add(`+${legacyMx}`);
     }
@@ -126,18 +130,67 @@ function getConversationSortTimestamp(row) {
   return Number.isFinite(ts) ? ts : 0;
 }
 
+/**
+ * Orden determinista entre conversaciones reutilizables (mismo canal + teléfono lógico).
+ * Prioridad: lead_id > contact_id > last_message_at > updated_at > created_at > id (lex).
+ * @returns {number} negativo si a debe ir antes que b (a "gana" sobre b)
+ */
+function compareCanonicalReusable(a, b) {
+  const score = (row) => ({
+    hasLead: row?.lead_id ? 1 : 0,
+    hasContact: row?.contact_id ? 1 : 0,
+    lastMsg: new Date(row?.last_message_at || 0).getTime(),
+    updated: new Date(row?.updated_at || 0).getTime(),
+    created: new Date(row?.created_at || 0).getTime(),
+    id: String(row?.id || ''),
+  });
+  const sa = score(a);
+  const sb = score(b);
+  if (sa.hasLead !== sb.hasLead) return sb.hasLead - sa.hasLead;
+  if (sa.hasContact !== sb.hasContact) return sb.hasContact - sa.hasContact;
+  if (sa.lastMsg !== sb.lastMsg) return sb.lastMsg - sa.lastMsg;
+  if (sa.updated !== sb.updated) return sb.updated - sa.updated;
+  if (sa.created !== sb.created) return sb.created - sa.created;
+  return sb.id.localeCompare(sa.id);
+}
+
+function chooseCanonicalReusableConversation(reusableCandidates) {
+  const list = Array.isArray(reusableCandidates) ? reusableCandidates.filter(Boolean) : [];
+  if (list.length === 0) {
+    return { canonical: null, duplicateIds: [], resolutionReason: null };
+  }
+  if (list.length === 1) {
+    return {
+      canonical: list[0],
+      duplicateIds: [],
+      resolutionReason: 'single_reusable_conversation',
+    };
+  }
+  const sorted = [...list].sort(compareCanonicalReusable);
+  const canonical = sorted[0] || null;
+  const duplicateIds = sorted.slice(1).map((row) => row.id).filter(Boolean);
+  return {
+    canonical,
+    duplicateIds,
+    resolutionReason: 'canonical_lead_contact_recency_then_id',
+  };
+}
+
 function selectConversationReuseStrategy(rows = [], normalizedPhone = null) {
   const candidates = Array.isArray(rows) ? [...rows] : [];
   candidates.sort((a, b) => getConversationSortTimestamp(b) - getConversationSortTimestamp(a));
 
   const reusableCandidates = candidates.filter((row) => isReusableConversationStatus(row?.status));
-  const reusableConversation = reusableCandidates[0] || null;
+  const { canonical, duplicateIds, resolutionReason } = chooseCanonicalReusableConversation(reusableCandidates);
+  const reusableConversation = canonical;
   const latestConversation = candidates[0] || null;
 
   return {
     reusableConversation,
     latestConversation,
     hasMultipleReusableConversations: reusableCandidates.length > 1,
+    duplicateReusableConversationIds: duplicateIds,
+    multipleReusableResolutionReason: reusableCandidates.length > 1 ? resolutionReason : null,
     shouldNormalizeReusablePhone: !!(
       reusableConversation &&
       normalizedPhone &&
@@ -585,6 +638,7 @@ module.exports = {
   normalizePhoneNumber,
   buildPhoneLookupValues,
   isReusableConversationStatus,
+  chooseCanonicalReusableConversation,
   selectConversationReuseStrategy,
   normalizeName,
   isUsefulContactName,
