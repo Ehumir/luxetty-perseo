@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
   buildPhoneLookupValues,
@@ -22,7 +24,16 @@ test('conversation reuse policy: lookup includes 521 / 52 / 10-digit and plus fo
   assert.ok(fromNormalized.includes('5218112345678'));
   assert.ok(fromNormalized.includes('+5218112345678'));
   assert.ok(fromNormalized.includes('528112345678'));
+  assert.ok(fromNormalized.includes('+528112345678'));
   assert.ok(fromNormalized.includes('8112345678'));
+});
+
+test('contact provisional regression: ensureContactForConversation uses buildPhoneLookupValues', () => {
+  const indexPath = path.join(__dirname, '..', 'index.js');
+  const source = fs.readFileSync(indexPath, 'utf8');
+
+  assert.equal(source.includes('getPhoneLookupValues('), false);
+  assert.equal(source.includes('buildPhoneLookupValues(normalizedPhone)'), true);
 });
 
 test('conversation reuse policy: reuses latest non-closed conversation', () => {

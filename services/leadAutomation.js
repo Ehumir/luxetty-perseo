@@ -916,7 +916,7 @@ async function findCompatibleLead(supabase, { contactId, leadType, operation, pr
     .eq('contact_id', contactId)
     .eq('lead_type', leadType)
     .order('created_at', { ascending: false })
-    .limit(1);
+    .limit(25);
 
   if (operation) query = query.eq('interested_in_operation', operation);
   else query = query.is('interested_in_operation', null);
@@ -928,14 +928,14 @@ async function findCompatibleLead(supabase, { contactId, leadType, operation, pr
   const { data, error } = await query;
   if (error) {
     console.error('LEAD_AUTOMATION_FIND_COMPATIBLE_ERROR', { error: error.message });
-    return null;
+    return [];
   }
 
-  return data?.[0] || null;
+  return Array.isArray(data) ? data : [];
 }
 
 async function findCompatibleLeadByPhoneAndProperty(supabase, { normalizedPhone, leadType, operation, propertyId }) {
-  if (!normalizedPhone || !propertyId) return null;
+  if (!normalizedPhone || !propertyId) return [];
 
   let query = supabase
     .from('leads')
@@ -946,21 +946,21 @@ async function findCompatibleLeadByPhoneAndProperty(supabase, { normalizedPhone,
     .eq('is_active', true)
     .eq('is_archived', false)
     .order('created_at', { ascending: false })
-    .limit(1);
+    .limit(25);
 
   if (operation) query = query.eq('interested_in_operation', operation);
 
   const { data, error } = await query;
   if (error) {
     console.error('LEAD_AUTOMATION_FIND_COMPATIBLE_PHONE_ERROR', { error: error.message });
-    return null;
+    return [];
   }
 
-  return data?.[0] || null;
+  return Array.isArray(data) ? data : [];
 }
 
 async function findCompatibleLeadByWhatsapp(supabase, { normalizedWhatsapp, leadType, operation, propertyId }) {
-  if (!normalizedWhatsapp) return null;
+  if (!normalizedWhatsapp) return [];
 
   let query = supabase
     .from('leads')
@@ -970,7 +970,7 @@ async function findCompatibleLeadByWhatsapp(supabase, { normalizedWhatsapp, lead
     .eq('is_active', true)
     .eq('is_archived', false)
     .order('created_at', { ascending: false })
-    .limit(1);
+    .limit(25);
 
   if (operation) query = query.eq('interested_in_operation', operation);
   if (propertyId) query = query.eq('interested_property_id', propertyId);
@@ -978,10 +978,31 @@ async function findCompatibleLeadByWhatsapp(supabase, { normalizedWhatsapp, lead
   const { data, error } = await query;
   if (error) {
     console.error('LEAD_AUTOMATION_FIND_COMPATIBLE_WHATSAPP_ERROR', { error: error.message });
-    return null;
+    return [];
   }
 
-  return data?.[0] || null;
+  return Array.isArray(data) ? data : [];
+}
+
+function chooseCanonicalCompatibleLead(leads = []) {
+  const list = Array.isArray(leads) ? leads.filter(Boolean) : [];
+  if (list.length === 0) return null;
+  const sorted = [...list].sort((a, b) => {
+    const aAssigned = a?.assigned_agent_profile_id ? 1 : 0;
+    const bAssigned = b?.assigned_agent_profile_id ? 1 : 0;
+    if (aAssigned !== bAssigned) return bAssigned - aAssigned;
+    const aHasProperty = a?.interested_property_id ? 1 : 0;
+    const bHasProperty = b?.interested_property_id ? 1 : 0;
+    if (aHasProperty !== bHasProperty) return bHasProperty - aHasProperty;
+    const aUpdated = new Date(a?.updated_at || 0).getTime();
+    const bUpdated = new Date(b?.updated_at || 0).getTime();
+    if (aUpdated !== bUpdated) return bUpdated - aUpdated;
+    const aCreated = new Date(a?.created_at || 0).getTime();
+    const bCreated = new Date(b?.created_at || 0).getTime();
+    if (aCreated !== bCreated) return bCreated - aCreated;
+    return String(b?.id || '').localeCompare(String(a?.id || ''));
+  });
+  return sorted[0] || null;
 }
 
 async function insertLeadWithSourceFallback(supabase, payload) {
@@ -1031,7 +1052,7 @@ async function updateLeadScoring(supabase, leadId, scoring) {
 }
 
 async function syncConversation(supabase, conversationId, payload) {
-  if (!conversationId) return;
+  if (!conversationId) return { ok: false, error: 'missing_conversation_id' };
   const { error } = await supabase
     .from('conversations')
     .update({
@@ -1040,7 +1061,14 @@ async function syncConversation(supabase, conversationId, payload) {
     })
     .eq('id', conversationId);
 
-  if (error) console.error('LEAD_AUTOMATION_CONVERSATION_SYNC_ERROR', { error: error.message });
+  if (error) {
+    console.error('LEAD_AUTOMATION_CONVERSATION_SYNC_ERROR', {
+      conversation_id: conversationId,
+      error: error.message,
+    });
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, error: null };
 }
 
 async function createAssignmentAuditLog(supabase, payload = {}) {
@@ -1739,6 +1767,46 @@ async function createOrReuseLeadFromConversation({
     let wasCreated = false;
     let intentChanged = false;
 
+    async function applyCompatibleLeadSelection(candidates, reason, extra = {}) {
+      if (!Array.isArray(candidates) || candidates.length === 0) return null;
+      const canonicalLead = chooseCanonicalCompatibleLead(candidates);
+      if (!canonicalLead) return null;
+      if (candidates.length > 1) {
+        const duplicateLeadIds = candidates
+          .map((item) => item?.id)
+          .filter((id) => id && id !== canonicalLead.id);
+        await saveConversationEvent(supabase, conversationId, 'multiple_compatible_leads_detected', {
+          candidate_count: candidates.length,
+          canonical_lead_id: canonicalLead.id,
+          duplicate_lead_ids: duplicateLeadIds,
+          reason,
+          source: 'ai_agent',
+          ...extra,
+        });
+        await saveConversationEvent(supabase, conversationId, 'canonical_lead_selected', {
+          lead_id: canonicalLead.id,
+          candidate_count: candidates.length,
+          reason,
+          source: 'ai_agent',
+          ...extra,
+        });
+        await saveConversationEvent(supabase, conversationId, 'lead_duplicate_prevented', {
+          lead_id: canonicalLead.id,
+          prevented_duplicate_count: duplicateLeadIds.length,
+          duplicate_lead_ids: duplicateLeadIds,
+          reason,
+          source: 'ai_agent',
+          ...extra,
+        });
+      }
+      await saveConversationEvent(supabase, conversationId, 'lead_reused', {
+        lead_id: canonicalLead.id,
+        reason,
+        source: 'ai_agent',
+      });
+      return canonicalLead;
+    }
+
     if (lead) {
       if (isLeadCompatible(lead, expected)) {
         log(logger, 'LEAD_AUTOMATION_REUSE_BY_CONVERSATION', {
@@ -1767,66 +1835,59 @@ async function createOrReuseLeadFromConversation({
     }
 
     if (!lead && contactId) {
-      lead = await findCompatibleLead(supabase, {
+      const compatibleLeads = await findCompatibleLead(supabase, {
         contactId,
         leadType,
         operation,
         propertyId: propertyId || null,
       });
-
+      lead = await applyCompatibleLeadSelection(compatibleLeads, 'compatible_active_lead');
       if (lead) {
         log(logger, 'LEAD_AUTOMATION_REUSE_BY_MATCH', {
           conversation_id: conversationId,
           lead_id: lead.id,
         });
-        await saveConversationEvent(supabase, conversationId, 'lead_reused', {
-          lead_id: lead.id,
-          reason: 'compatible_active_lead',
-          source: 'ai_agent',
-        });
       }
     }
 
     if (!lead) {
-      lead = await findCompatibleLeadByPhoneAndProperty(supabase, {
+      const compatibleLeadsByPhone = await findCompatibleLeadByPhoneAndProperty(supabase, {
         normalizedPhone: normalizedConversationPhone,
         leadType,
         operation,
         propertyId: propertyId || null,
       });
-
+      lead = await applyCompatibleLeadSelection(
+        compatibleLeadsByPhone,
+        'compatible_active_lead_by_phone_property',
+        { property_id: propertyId || null }
+      );
       if (lead) {
         log(logger, 'LEAD_AUTOMATION_REUSE_BY_PHONE_PROPERTY', {
           conversation_id: conversationId,
           lead_id: lead.id,
           property_id: propertyId || null,
         });
-        await saveConversationEvent(supabase, conversationId, 'lead_reused', {
-          lead_id: lead.id,
-          reason: 'compatible_active_lead_by_phone_property',
-          source: 'ai_agent',
-        });
       }
     }
 
     if (!lead) {
-      lead = await findCompatibleLeadByWhatsapp(supabase, {
+      const compatibleLeadsByWhatsapp = await findCompatibleLeadByWhatsapp(supabase, {
         normalizedWhatsapp: normalizedConversationPhone,
         leadType,
         operation,
         propertyId: propertyId || null,
       });
-
+      lead = await applyCompatibleLeadSelection(
+        compatibleLeadsByWhatsapp,
+        'compatible_active_lead_by_whatsapp',
+        { whatsapp: normalizedConversationPhone }
+      );
       if (lead) {
         log(logger, 'LEAD_AUTOMATION_REUSE_BY_WHATSAPP', {
           conversation_id: conversationId,
           lead_id: lead.id,
           whatsapp: normalizedConversationPhone,
-        });
-        await saveConversationEvent(supabase, conversationId, 'lead_reused', {
-          lead_id: lead.id,
-          reason: 'compatible_active_lead_by_whatsapp',
-          source: 'ai_agent',
         });
       }
     }
@@ -2071,12 +2132,35 @@ async function createOrReuseLeadFromConversation({
         };
       }
 
-    await syncConversation(supabase, conversationId, {
+    const conversationSync = await syncConversation(supabase, conversationId, {
       lead_id: lead.id,
       contact_id: contactId,
       assigned_agent_profile_id: assignedAgentProfileId || lead.assigned_agent_profile_id || null,
       ai_state: nextAiState,
     });
+
+    let conversationSyncWarning = null;
+    if (!conversationSync?.ok) {
+      conversationSyncWarning = conversationSync?.error || 'conversation_sync_failed';
+      logWarn(logger, 'LEAD_AUTOMATION_CONVERSATION_SYNC_FAILED', {
+        conversation_id: conversationId,
+        lead_id: lead.id,
+        contact_id: contactId || null,
+        error: conversationSyncWarning,
+      });
+      await saveConversationEvent(supabase, conversationId, 'conversation_link_sync_failed', {
+        lead_id: lead.id,
+        contact_id: contactId || null,
+        error: conversationSyncWarning,
+        source: 'ai_agent',
+      });
+    } else {
+      await saveConversationEvent(supabase, conversationId, 'conversation_link_synced', {
+        lead_id: lead.id,
+        contact_id: contactId || null,
+        source: 'ai_agent',
+      });
+    }
 
     log(logger, 'CONVERSATION_LINKED', {
       conversation_id: conversationId,
@@ -2117,6 +2201,7 @@ async function createOrReuseLeadFromConversation({
       handoffTriggered,
       reason: wasCreated ? 'lead_created' : 'lead_reused',
       aiState: nextAiState,
+      warnings: conversationSyncWarning ? [{ code: 'conversation_sync_failed', detail: conversationSyncWarning }] : [],
     };
   } catch (err) {
     logWarn(logger, 'LEAD_AUTOMATION_ERROR', {
@@ -2319,6 +2404,7 @@ async function ensureLeadForConversation(args) {
 
 module.exports = {
   calculateLeadScore,
+  chooseCanonicalCompatibleLead,
   shouldTriggerHandoff,
   detectLeadCreationOpportunity,
   extractCampaignReferralContext,
