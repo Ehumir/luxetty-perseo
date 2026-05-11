@@ -19,9 +19,177 @@ const {
   isPlaceholderContact,
 } = require('./namePrompt');
 
-const DRAFT_VERSION = '1.0.0';
+const DRAFT_VERSION = '1.1.0';
 
 /** @typedef {{ role: string, content: string, created_at?: string|null }} AdvisorChatMessage */
+
+/**
+ * PR3 — única fuente de patrones cortos inmobiliarios (router + inferResponseGoal + detect follow-up).
+ * Orden: del más específico al más general.
+ */
+const SHORT_FOLLOW_UP_CHECKS = [
+  {
+    reason: 'listing_link_public',
+    response_goal: 'link_or_publication',
+    re: /(publicaci[oó]n|publicad[oa]s?|publicado|link|liga|url|pdf|brochure|pasame|pásame|mandame|mándame|en luxetty|en la pagina|en la página)/,
+  },
+  {
+    reason: 'more_options',
+    response_goal: 'more_options',
+    re: /(otras opciones|más opciones|mas opciones|que más|qué más|hay más|algo más|tienes otra|otra opcion|otra opción|muestrame mas|muéstrame más)/,
+  },
+  {
+    reason: 'price_followup',
+    response_goal: 'price_followup',
+    re: /(precio|cuanto cuesta|cuánto cuesta|cuanto vale|cuánto vale|cuanto es|cuánto es)/,
+  },
+  {
+    reason: 'location_followup',
+    response_goal: 'location_followup',
+    re: /(ubicacion|ubicación|dónde está|donde esta|en que zona|en qué zona|direccion|dirección)/,
+  },
+  {
+    reason: 'availability',
+    response_goal: 'property_followup',
+    re: /(disponible|disponibilidad)/,
+  },
+  {
+    reason: 'visit_request',
+    response_goal: 'visit_intent',
+    re: /(puedo verla|la puedo ver|agendar|visita|verla)/,
+  },
+];
+
+/**
+ * @param {string} text
+ * @param {string|null} leadFlow
+ * @returns {{ reason: string, response_goal: string } | null}
+ */
+function classifyShortRealEstateFollowUp(text, leadFlow) {
+  if (!leadFlow || (leadFlow !== 'demand' && leadFlow !== 'offer')) return null;
+  const t = normalizeText(String(text || ''));
+  if (!t) return null;
+  for (const c of SHORT_FOLLOW_UP_CHECKS) {
+    if (c.re.test(t)) return { reason: c.reason, response_goal: c.response_goal };
+  }
+  return null;
+}
+
+function outboundRowHadPropertyCard(messageText) {
+  const t = normalizeText(String(messageText || ''));
+  if (!t) return false;
+  return t.includes('luxetty.com/propiedad') || /\blux-\s*[a-z]\s*\d{4}\b/i.test(t) || t.includes('• ');
+}
+
+/**
+ * PR3 — pistas de memoria sin persistencia nueva (solo lectura de historial + ai_state).
+ * @param {Array<Record<string, unknown>>} recentDbRows
+ * @param {object} aiState
+ * @param {string} currentUserMessage
+ */
+function analyzeMemoryCohesion(recentDbRows = [], aiState = {}, currentUserMessage = '') {
+  const rows = Array.isArray(recentDbRows) ? recentDbRows : [];
+  let lastOutboundSnippet = null;
+  let lastInboundBeforeCurrent = null;
+  let outbound_had_property_card = false;
+
+  const inboundTexts = [];
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const row = rows[i];
+    if (row?.direction === 'outbound' && !lastOutboundSnippet) {
+      const raw = cleanSpaces(String(row.message_text || ''));
+      if (raw) {
+        lastOutboundSnippet = raw.length > 220 ? `${raw.slice(0, 220)}…` : raw;
+        outbound_had_property_card = outboundRowHadPropertyCard(raw);
+      }
+    }
+    if (row?.direction === 'inbound') {
+      const raw = cleanSpaces(String(row.message_text || ''));
+      if (raw) inboundTexts.push(raw);
+    }
+  }
+
+  if (inboundTexts.length >= 2) {
+    const last = inboundTexts[0];
+    if (normalizeText(last) === normalizeText(String(currentUserMessage || '').trim()) && inboundTexts.length >= 2) {
+      lastInboundBeforeCurrent = inboundTexts[1];
+    } else {
+      lastInboundBeforeCurrent = last;
+    }
+  } else if (inboundTexts.length === 1) {
+    const last = inboundTexts[0];
+    if (normalizeText(last) !== normalizeText(String(currentUserMessage || '').trim())) {
+      lastInboundBeforeCurrent = last;
+    }
+  }
+
+  return {
+    last_outbound_snippet: lastOutboundSnippet,
+    last_inbound_before_current: lastInboundBeforeCurrent
+      ? lastInboundBeforeCurrent.slice(0, 180)
+      : null,
+    outbound_had_property_card: outbound_had_property_card,
+    last_intent_lead_flow: aiState.lead_flow || null,
+    last_next_step: aiState.next_step != null ? String(aiState.next_step) : null,
+    awaiting_field: aiState.awaiting_field || null,
+  };
+}
+
+/**
+ * Hint para el advisor (no modifica namePrompt): cuándo cerrar con nombre de forma natural.
+ */
+function computeNameTimingHint(contact, aiState, responseGoal) {
+  const ask = computeShouldAskName(contact, aiState);
+  if (!ask) return 'none';
+  if (['contact_preference', 'contact_number_confirmed', 'contact_number'].includes(aiState?.awaiting_field)) {
+    return 'defer';
+  }
+  if (
+    aiState?.lead_flow === 'demand' &&
+    responseGoal === 'qualify_demand' &&
+    aiState?.budget_max != null &&
+    aiState?.location_text &&
+    (Number(aiState.last_search_result_count) > 0 ||
+      (Array.isArray(aiState.last_shown_property_ids) && aiState.last_shown_property_ids.length > 0))
+  ) {
+    return 'soft_close';
+  }
+  if (responseGoal === 'link_or_publication' || responseGoal === 'visit_intent' || responseGoal === 'more_options') {
+    return 'soft_close';
+  }
+  return 'standard';
+}
+
+/**
+ * Lista única de prohibiciones (sin duplicar el párrafo legacy).
+ */
+function buildUnifiedForbiddenClaims({ last_suggested_property = null, media_context = {} } = {}) {
+  const base = buildForbiddenClaims({
+    last_suggested_property,
+    media_context,
+  });
+  const extra = [];
+  const p = last_suggested_property;
+  if (!p) {
+    extra.push('No hay propiedad sugerida en contexto: no inventes una; ofrece revisión con asesor.');
+  } else {
+    if (!p.slug && !p.canonical_url) {
+      extra.push('La propiedad puede no tener URL pública: dilo y ofrece que un asesor comparta enlace o valide en sistema.');
+    }
+    if (p.price == null || Number(p.price) <= 0) {
+      extra.push('Precio no confirmado en datos: no lo afirmes como definitivo.');
+    }
+  }
+  const seen = new Set();
+  const out = [];
+  for (const line of [...base, ...extra]) {
+    const k = normalizeText(String(line).slice(0, 80));
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(line);
+  }
+  return out;
+}
 
 /**
  * Normaliza filas de conversation_messages (o mensajes ya tipo chat) al shape del advisor.
@@ -125,12 +293,8 @@ function inferResponseGoal(userMessage, aiState = {}, signals = {}) {
     return 'qualify_offer';
   }
 
-  if (/(publicad|publicada|link|liga|url|pdf|brochure)/.test(t)) return 'link_or_publication';
-  if (/(otras opciones|más opciones|otra opcion|otra opción|que más|hay más)/.test(t)) return 'more_options';
-  if (/(precio|cuanto cuesta|cuánto cuesta|cuanto vale)/.test(t)) return 'price_followup';
-  if (/(ubicacion|ubicación|donde|dónde|direccion|dirección)/.test(t)) return 'location_followup';
-  if (/(disponible|disponibilidad)/.test(t)) return 'property_followup';
-  if (/(visita|verla|puedo ver|agendar)/.test(t)) return 'visit_intent';
+  const shortFollow = classifyShortRealEstateFollowUp(String(userMessage || ''), state.lead_flow);
+  if (shortFollow) return shortFollow.response_goal;
 
   if (!hasValidHumanName(signals.contact || null, state) && state.lead_flow && t.length < 80) {
     if (/(nombre|llamo|me llamo)/.test(t)) return 'qualify_demand';
@@ -308,7 +472,12 @@ function buildAdvisorResponseDraftContext(context) {
 
   const response_goal = inferResponseGoal(userMessage, aiState, { ...signals, contact });
 
-  const forbidden_claims = buildForbiddenClaims({
+  const recentDbOnly = Array.isArray(safe.recent_db_messages) ? safe.recent_db_messages : [];
+  const memory_cohesion = analyzeMemoryCohesion(recentDbOnly, aiState, userMessage);
+  const advisor_followup_type = classifyShortRealEstateFollowUp(userMessage, aiState.lead_flow)?.reason || null;
+  const name_timing_hint = computeNameTimingHint(contact, aiState, response_goal);
+
+  const forbidden_claims = buildUnifiedForbiddenClaims({
     last_suggested_property,
     media_context: mediaContext,
   });
@@ -321,6 +490,8 @@ function buildAdvisorResponseDraftContext(context) {
     draft_version: DRAFT_VERSION,
     conversation_id: safe.conversation_id != null ? String(safe.conversation_id) : null,
     change_type: safe.change_type != null ? String(safe.change_type) : null,
+    advisor_followup_type,
+    name_timing_hint,
   };
 
   return {
@@ -343,6 +514,8 @@ function buildAdvisorResponseDraftContext(context) {
     forbidden_claims,
     response_goal,
     advisor_mode,
+    memory_cohesion,
+    name_timing_hint,
     metadata,
   };
 }
@@ -353,5 +526,10 @@ module.exports = {
   inferResponseGoal,
   buildSafetyConstraints,
   buildForbiddenClaims,
+  buildUnifiedForbiddenClaims,
   normalizeRecentMessagesForAdvisor,
+  classifyShortRealEstateFollowUp,
+  analyzeMemoryCohesion,
+  computeNameTimingHint,
+  outboundRowHadPropertyCard,
 };
