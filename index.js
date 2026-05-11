@@ -44,6 +44,12 @@ const {
 } = require('./conversation/mediaSignals');
 const { buildUnifiedConversationContext } = require('./conversation/contextFusion');
 const {
+  isDetailContinuation,
+  mergeIntentWithPreviousState,
+  extractCapturedDataFromState,
+  decideNextConversationStep,
+} = require('./conversation/contextPreservation');
+const {
   extractInboundMediaMetadata,
   extractInboundSignalText,
 } = require('./conversation/mediaIngestion');
@@ -87,7 +93,9 @@ const {
   sanitizeReply,
   safeJsonStringify,
   normalizePhoneNumber,
+  buildPhoneLookupValues,
   isUsefulContactName,
+  selectConversationReuseStrategy,
   splitContactName,
   extractWhatsAppReferral,
   normalizeOutboundMessages,
@@ -1383,29 +1391,44 @@ async function searchPropertiesWithFallbacks(state) {
 async function getOrCreateConversation(phone) {
   try {
     const normalizedPhone = normalizePhoneNumber(phone) || phone;
-    const phoneLookupValues = getPhoneLookupValues(normalizedPhone);
+    const phoneLookupValues = buildPhoneLookupValues(normalizedPhone);
     const { data: existing, error: findError } = await supabase
       .from('conversations')
       .select('*')
       .eq('channel', 'whatsapp')
       .in('phone', phoneLookupValues)
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(1);
+      .limit(25);
 
     if (findError) {
       console.error('Error buscando conversación:', findError);
       return { id: null, ai_state: getDefaultAiState() };
     }
 
-    if (existing && existing.length > 0) {
-      if (existing[0].phone !== normalizedPhone) {
+    const strategy = selectConversationReuseStrategy(existing || [], normalizedPhone);
+
+    if (strategy.hasMultipleReusableConversations) {
+      console.warn('multiple_reusable_conversations_detected', {
+        normalized_phone: normalizedPhone,
+        channel: 'whatsapp',
+        candidate_ids: (existing || [])
+          .filter((row) => row?.status !== 'closed')
+          .map((row) => row?.id)
+          .filter(Boolean),
+      });
+    }
+
+    if (strategy.reusableConversation) {
+      if (strategy.shouldNormalizeReusablePhone) {
         await supabase
           .from('conversations')
           .update({ phone: normalizedPhone, updated_at: nowIso() })
-          .eq('id', existing[0].id);
-        existing[0].phone = normalizedPhone;
+          .eq('id', strategy.reusableConversation.id);
+        strategy.reusableConversation.phone = normalizedPhone;
       }
-      return existing[0];
+      return strategy.reusableConversation;
     }
 
     const { data: created, error: createError } = await supabase
@@ -1417,6 +1440,7 @@ async function getOrCreateConversation(phone) {
         priority: 'medium',
         last_message_at: nowIso(),
         ai_state: getDefaultAiState(),
+        ...strategy.createSeed,
       })
       .select()
       .single();
@@ -1544,22 +1568,6 @@ async function maybeCreateFollowupRequest({
     console.error('FATAL maybeCreateFollowupRequest:', err);
     return null;
   }
-}
-
-function getPhoneLookupValues(phone) {
-  const normalized = normalizePhoneNumber(phone) || phone;
-  const values = new Set([normalized, String(phone || '').trim()].filter(Boolean));
-
-  if (normalized) {
-    values.add(`+${normalized}`);
-    if (normalized.startsWith('521') && normalized.length === 13) {
-      const legacyMx = `52${normalized.slice(3)}`;
-      values.add(legacyMx);
-      values.add(`+${legacyMx}`);
-    }
-  }
-
-  return Array.from(values).filter(Boolean);
 }
 
 async function ensureContactForConversation({
@@ -2101,6 +2109,16 @@ app.post('/webhook', async (req, res) => {
         now: nowIso(),
       });
 
+
+      // Preserve intent if continuing with details
+      const isContinuation = isDetailContinuation(text, previousAiState);
+      if (isContinuation && previousAiState?.lead_flow && unifiedContext.normalizedIntent) {
+        unifiedContext.normalizedIntent = mergeIntentWithPreviousState(
+          unifiedContext.normalizedIntent,
+          previousAiState,
+          {}
+        );
+      }
       if (cleanSpaces(unifiedContext?.effectiveText || '')) {
         text = cleanSpaces(unifiedContext.effectiveText);
       }

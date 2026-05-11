@@ -24,12 +24,15 @@ function detectIntent(message, prevState = null) {
 
   const wantsSell =
     text.includes('quiero vender') ||
-    text.includes('vender') ||
-    text.includes('vendo') ||
     text.includes('vender mi casa') ||
     text.includes('vender mi propiedad') ||
+    text.includes('vender mi depa') ||
+    text.includes('vender mi departamento') ||
+    text.includes('vendo mi casa') ||
+    text.includes('vendo mi propiedad') ||
     text.includes('venta mi casa') ||
-    text.includes('venta mi propiedad');
+    text.includes('venta mi propiedad') ||
+    text.includes('necesito vender mi');
 
   const wantsSellerGeneric =
     text.includes('quiero vender una propiedad') ||
@@ -78,14 +81,8 @@ function detectIntent(message, prevState = null) {
     text.includes('busco depa') ||
     text.includes('busco departamento') ||
     text.includes('busco terreno') ||
-    text.includes('tienes casas') ||
-    text.includes('tienen casas') ||
-    text.includes('tienes departamentos') ||
-    text.includes('tienen departamentos') ||
-    text.includes('tienes depas') ||
-    text.includes('tienen depas') ||
-    text.includes('comprar') ||
-    text.includes('busco una propiedad');
+    text.includes('busco una propiedad') ||
+    text.includes('quiero informacion');
 
   const implicitDemand =
     text.includes('tienes propiedades') ||
