@@ -74,7 +74,18 @@ function isPlaybookStepComplete(step, state = {}, context = {}) {
 
   if (step === 'ask_budget') return state.budget_max != null;
   if (step === 'ask_zone') return !!state.location_text || !!state.location_any;
-  if (step === 'offer_options_or_agent') return hasResults || !!state.wants_human || !!state.handoff_ready || !!state.handoff_sent;
+  if (step === 'offer_options_or_agent') {
+    const hadPriorResults =
+      Number(state.last_search_result_count || 0) > 0 ||
+      (Array.isArray(state.last_shown_property_ids) && state.last_shown_property_ids.length > 0);
+    return (
+      hasResults ||
+      hadPriorResults ||
+      !!state.wants_human ||
+      !!state.handoff_ready ||
+      !!state.handoff_sent
+    );
+  }
 
   if (step === 'ask_property_type') return !!state.property_type;
   if (step === 'ask_location') return !!state.location_text;
@@ -171,4 +182,5 @@ module.exports = {
   getNextPlaybookStep,
   getPlaybookAwaitingField,
   buildPlaybookReply,
+  isPlaybookStepComplete,
 };
