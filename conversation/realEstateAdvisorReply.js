@@ -11,6 +11,7 @@ const { openai } = require('../services/openaiService');
 const {
   normalizeRecentMessagesForAdvisor,
   buildAdvisorResponseDraftContext,
+  classifyShortRealEstateFollowUp,
 } = require('./advisorDraftContext');
 const { getPublicPropertyUrl } = require('../utils/helpers');
 
@@ -32,30 +33,11 @@ function getLastOutboundTextFromDbRows(rows = []) {
 }
 
 /**
- * Seguimiento consultivo dentro de flujo inmobiliario (demanda/oferta).
- * No reemplaza el parser completo; evita salidas tipo formulario para preguntas cortas.
+ * Seguimiento consultivo (PR3: delega en classifyShortRealEstateFollowUp).
  */
 function detectRealEstateConsultativeFollowUp(text, leadFlow) {
-  if (!leadFlow || (leadFlow !== 'demand' && leadFlow !== 'offer')) return null;
-  const t = normalizeText(String(text || ''));
-  if (!t) return null;
-
-  const checks = [
-    {
-      reason: 'listing_link_public',
-      re: /(publicad|publicada|publicado|link|liga|url|pdf|brochure|pasame|pásame|mandame|mándame|en luxetty|en la pagina|en la página)/,
-    },
-    { reason: 'more_options', re: /(otras opciones|más opciones|mas opciones|que más|qué más|hay más|algo más|tienes otra|otra opcion|otra opción|muestrame mas|muéstrame más)/ },
-    { reason: 'price_followup', re: /(precio|cuanto cuesta|cuánto cuesta|cuanto vale|cuánto vale|cuanto es|cuánto es)/ },
-    { reason: 'location_followup', re: /(ubicacion|ubicación|dónde está|donde esta|en que zona|en qué zona|direccion|dirección)/ },
-    { reason: 'availability', re: /(disponible|disponibilidad)/ },
-    { reason: 'visit_request', re: /(puedo verla|la puedo ver|agendar|visita|verla)/ },
-  ];
-
-  for (const c of checks) {
-    if (c.re.test(t)) return { reason: c.reason, leadFlow };
-  }
-  return null;
+  const hit = classifyShortRealEstateFollowUp(text, leadFlow);
+  return hit ? { reason: hit.reason, leadFlow } : null;
 }
 
 function hasRealEstateAdvisorTurnContext(state = {}, matchedProperties = []) {
@@ -89,6 +71,24 @@ function normalizeForSimilarity(s) {
     .trim();
 }
 
+function tokenJaccardSimilarity(a, b) {
+  const ta = normalizeForSimilarity(a)
+    .split(' ')
+    .filter((x) => x.length > 2);
+  const tb = normalizeForSimilarity(b)
+    .split(' ')
+    .filter((x) => x.length > 2);
+  if (!ta.length || !tb.length) return 0;
+  const setA = new Set(ta);
+  const setB = new Set(tb);
+  let inter = 0;
+  for (const x of setA) {
+    if (setB.has(x)) inter += 1;
+  }
+  const union = setA.size + setB.size - inter;
+  return union ? inter / union : 0;
+}
+
 function isCandidateTooSimilarToLastOutbound(candidateReply, lastOutboundText) {
   const a = normalizeForSimilarity(mergeReplyToString(candidateReply));
   const b = normalizeForSimilarity(lastOutboundText);
@@ -96,6 +96,7 @@ function isCandidateTooSimilarToLastOutbound(candidateReply, lastOutboundText) {
   if (a === b) return true;
   if (a.length >= 40 && b.length >= 40 && (a.includes(b) || b.includes(a))) return true;
   if (GENERIC_PLAYBOOK_SNIPPET && a.includes(GENERIC_PLAYBOOK_SNIPPET) && b.includes(GENERIC_PLAYBOOK_SNIPPET)) return true;
+  if (a.length >= 28 && b.length >= 28 && tokenJaccardSimilarity(a, b) >= 0.72) return true;
   return false;
 }
 
@@ -219,6 +220,7 @@ function lastOutboundHadPropertyCard(recentMessages = []) {
   return false;
 }
 
+/** @deprecated Usar buildUnifiedForbiddenClaims en draft; se mantiene por compatibilidad. */
 function buildForbiddenClaimsSummary(context = {}) {
   const parts = [];
   parts.push('No inventes precio, disponibilidad, fichas técnicas ni enlaces que no estén en los datos.');
@@ -263,10 +265,17 @@ async function generateAdvisorReplyForRealEstateTurn(context = {}, options = {})
       campaign_context: context.campaign_context || null,
       media_context: context.media_context || {},
       recent_messages: recent,
+      recent_db_messages: context.recent_db_messages_for_card_check || [],
       conversation_id: context.conversation_id,
       change_type: context.change_type,
     });
   }
+
+  const hadCard =
+    lastOutboundHadPropertyCard(context.recent_db_messages_for_card_check || []) ||
+    !!draft.memory_cohesion?.outbound_had_property_card;
+
+  const forbiddenList = Array.isArray(draft.forbidden_claims) ? [...draft.forbidden_claims] : [];
 
   const propFacts = lastProp
     ? {
@@ -276,15 +285,9 @@ async function generateAdvisorReplyForRealEstateTurn(context = {}, options = {})
         price: lastProp.price != null ? formatMoney(lastProp.price, lastProp.currency_code || 'MXN') : null,
         slug: lastProp.slug || null,
         public_listing_url: getPublicPropertyUrl(lastProp),
-        short: formatPropertyShort(lastProp),
+        ...(hadCard ? {} : { short: formatPropertyShort(lastProp) }),
       }
     : null;
-
-  const hadCard = lastOutboundHadPropertyCard(context.recent_db_messages_for_card_check || []);
-
-  const forbiddenList = Array.isArray(draft.forbidden_claims) ? [...draft.forbidden_claims] : [];
-  const summaryLine = buildForbiddenClaimsSummary({ last_suggested_property: lastProp });
-  if (summaryLine) forbiddenList.push(summaryLine);
 
   const facts = {
     lead_flow: context.current_lead_flow || state.lead_flow || draft.lead_flow,
@@ -304,6 +307,9 @@ async function generateAdvisorReplyForRealEstateTurn(context = {}, options = {})
     forbidden_claims_list: forbiddenList,
     conversation_summary: draft.conversation_summary,
     last_outbound_had_property_card: hadCard,
+    memory_cohesion: draft.memory_cohesion || null,
+    name_timing_hint: draft.name_timing_hint || 'standard',
+    advisor_followup_type: draft.metadata?.advisor_followup_type || null,
   };
 
   const consultantContext = buildPerseoConsultantContext(state, recent, {
@@ -325,6 +331,13 @@ async function generateAdvisorReplyForRealEstateTurn(context = {}, options = {})
     ? 'NO vuelvas a pegar la ficha completa ni el listado de bullets: resume o referencia "la opción que te compartí".'
     : 'Puedes describir brevemente la opción sin exceder 2–3 líneas de detalle.';
 
+  const nameHint =
+    draft.name_timing_hint === 'soft_close'
+      ? 'Si falta nombre (missing_name true), una sola pregunta corta al final; tono cercano, no invasivo.'
+      : draft.name_timing_hint === 'defer'
+      ? 'No pidas nombre en este turno (awaiting otro dato).'
+      : '';
+
   const messages = [
     { role: 'system', content: PERSEO_CONSULTANT_SYSTEM_PROMPT },
     { role: 'system', content: consultantContext },
@@ -337,7 +350,9 @@ async function generateAdvisorReplyForRealEstateTurn(context = {}, options = {})
         awaiting_field: draft.awaiting_field,
         missing_fields: draft.missing_fields,
         contact_context: draft.contact_context,
-      })}\n\nHECHOS_CONFIRMADOS_JSON:\n${safeJsonStringify(facts)}\n\n${antiRepeatHint}\n\n${linkHint}\n\n${cardHint}\n\nInstrucciones de salida:\n- Español de México, tono asesor humano (no formulario).\n- 2 a 4 frases; máximo 2 preguntas en total; preferible 1.\n- Si falta nombre (missing_name true), cierra incluyendo de forma natural: "Para registrarte bien, ¿me compartes tu nombre?"\n- Disponibilidad: no confirmes disponibilidad si forbidden_claims lo impide.\n- Visita: ofrece canalizar o siguiente paso; no digas que ya quedó agendada salvo confirmación en contexto.\n- PDF: si no hay documento analizado en contexto, dilo y ofrece asesor; no inventes PDF.\n- Precio: usa price en hechos si existe; si no, indica que un asesor confirma.\n- No inventes hechos que contradigan forbidden_claims_list.\n`,
+        advisor_followup_type: draft.metadata?.advisor_followup_type,
+        name_timing_hint: draft.name_timing_hint,
+      })}\n\nMEMORY_COHESION_JSON:\n${safeJsonStringify(draft.memory_cohesion || {})}\n\nHECHOS_CONFIRMADOS_JSON:\n${safeJsonStringify(facts)}\n\n${antiRepeatHint}\n\n${linkHint}\n\n${cardHint}\n\n${nameHint}\n\nInstrucciones de salida (PR3 polish):\n- Español México; tono asesor humano, cálido, no corporativo.\n- Máximo 2–3 frases cortas; 1 pregunta si hace falta.\n- Responde SOLO a lo que preguntó el usuario; sin reintro pitch largo.\n- No repitas datos, CTAs o intros ya cubiertos en MEMORY_COHESION / historial.\n- Si falta nombre (missing_name true), una pregunta natural al final (salvo name_timing_hint defer).\n- Disponibilidad: no confirmes sin hecho; visita: coordinar sin decir agendada; PDF: honesto sin inventar.\n- Precio: usa hechos; si no hay, asesor confirma.\n- Cumple forbidden_claims_list al pie de la letra.\n`,
     },
     { role: 'user', content: userMessage },
   ];
@@ -352,6 +367,8 @@ async function generateAdvisorReplyForRealEstateTurn(context = {}, options = {})
     cleanSpaces(response?.choices?.[0]?.message?.content || '') ||
     'Perfecto. Para no inventar datos, lo más seguro es que un asesor de Luxetty te confirme publicación, liga y disponibilidad al momento. ¿Te parece si lo canalizamos? Para registrarte bien, ¿me compartes tu nombre?';
 
+  const advisor_shortened_response = text.length > 0 && text.length <= 420;
+
   return {
     text,
     used_openai_advisor: true,
@@ -360,6 +377,9 @@ async function generateAdvisorReplyForRealEstateTurn(context = {}, options = {})
     draft,
     response_goal: draft.response_goal,
     advisor_mode: draft.advisor_mode,
+    reused_memory_context: !!(draft.memory_cohesion?.last_outbound_snippet || draft.memory_cohesion?.last_inbound_before_current),
+    advisor_followup_type: draft.metadata?.advisor_followup_type || null,
+    advisor_shortened_response,
   };
 }
 

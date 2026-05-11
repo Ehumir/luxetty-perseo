@@ -3183,6 +3183,10 @@ app.post('/webhook', async (req, res) => {
       response_reason: null,
       used_openai_advisor: false,
       repeated_template_prevented: false,
+      repeated_content_prevented: false,
+      reused_memory_context: false,
+      advisor_shortened_response: false,
+      advisor_followup_type: null,
       name_prompt_applied: false,
       advisor_mode_used: null,
       response_goal: null,
@@ -3382,6 +3386,9 @@ app.post('/webhook', async (req, res) => {
           replyRouting.used_openai_advisor = true;
           replyRouting.advisor_mode_used = advisory.advisor_mode || null;
           replyRouting.response_goal = advisory.response_goal || null;
+          replyRouting.reused_memory_context = !!advisory.reused_memory_context;
+          replyRouting.advisor_shortened_response = !!advisory.advisor_shortened_response;
+          replyRouting.advisor_followup_type = advisory.advisor_followup_type || null;
         } catch (advisorErr) {
           console.error('advisor_openai_failed', advisorErr?.message || advisorErr, {
             conversation_id: conversationId,
@@ -3625,6 +3632,9 @@ app.post('/webhook', async (req, res) => {
             replyRouting.used_openai_advisor = true;
             replyRouting.advisor_mode_used = advisory.advisor_mode || null;
             replyRouting.response_goal = advisory.response_goal || null;
+            replyRouting.reused_memory_context = !!advisory.reused_memory_context;
+            replyRouting.advisor_shortened_response = !!advisory.advisor_shortened_response;
+            replyRouting.advisor_followup_type = advisory.advisor_followup_type || null;
           } catch (offerAdvisorErr) {
             console.error('advisor_openai_failed', offerAdvisorErr?.message || offerAdvisorErr, {
               conversation_id: conversationId,
@@ -3899,8 +3909,17 @@ ${locationCatalog.rawNames.join(', ')}
             {
               user_message: text,
               recent_messages: chatRecent,
+              recent_db_messages_for_card_check: recentMessages,
               current_lead_flow: nextAiState.lead_flow,
               synthetic_state: synth,
+              signals: incomingSignals,
+              contact: linkedEntities.existingContact,
+              campaign_context: campaignContextForFusion?.campaignContext || null,
+              media_context: {
+                image_analysis_available: !!inboundContext?.media?.image_vision_success,
+                audio_transcription_available: !!inboundContext?.media?.audio_has_transcription,
+                document_analysis_available: false,
+              },
               last_suggested_property: matchedProperties[0] || null,
               suggested_properties: matchedProperties,
               budget: nextAiState.budget_max,
@@ -3919,14 +3938,19 @@ ${locationCatalog.rawNames.join(', ')}
           );
           reply = advisory.text;
           replyRouting.repeated_template_prevented = true;
+          replyRouting.repeated_content_prevented = true;
           replyRouting.used_openai_advisor = true;
           replyRouting.response_source = 'openai_advisor_anti_repeat';
           replyRouting.response_reason = 'anti_repeat_template';
+          replyRouting.reused_memory_context = !!advisory.reused_memory_context;
+          replyRouting.advisor_shortened_response = !!advisory.advisor_shortened_response;
+          replyRouting.advisor_followup_type = advisory.advisor_followup_type || null;
         } catch (guardErr) {
           console.error('anti_repeat_advisor_error', guardErr?.message || guardErr);
           reply =
             'Listo, lo veo. Para avanzar sin repetirnos: dime si lo que buscas ahora es validar la última opción (publicación o disponibilidad) o si quieres que afinemos más alternativas en tu zona y presupuesto.';
           replyRouting.repeated_template_prevented = true;
+          replyRouting.repeated_content_prevented = true;
           replyRouting.response_source = 'anti_repeat_static_fallback';
           replyRouting.response_reason = 'anti_repeat_template';
         }
