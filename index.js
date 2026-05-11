@@ -111,7 +111,6 @@ const {
 } = require('./conversation/qaCommands');
 const { appendNameRequestIfNeeded, hasValidHumanName } = require('./conversation/namePrompt');
 const {
-  detectRealEstateConsultativeFollowUp,
   hasRealEstateAdvisorTurnContext,
   mapConversationDbRowsToChatMessages,
   getLastOutboundTextFromDbRows,
@@ -119,6 +118,7 @@ const {
   generateAdvisorReplyForRealEstateTurn,
   buildSyntheticStateForAdvisor,
   mergeReplyToString,
+  shouldUseAdvisorForRealEstateTurn,
 } = require('./conversation/realEstateAdvisorReply');
 
 const app = express();
@@ -3184,6 +3184,8 @@ app.post('/webhook', async (req, res) => {
       used_openai_advisor: false,
       repeated_template_prevented: false,
       name_prompt_applied: false,
+      advisor_mode_used: null,
+      response_goal: null,
     };
 
     function shouldAskField(state, fieldName) {
@@ -3303,57 +3305,109 @@ app.post('/webhook', async (req, res) => {
         'Gracias a ti. Si surge algo más, aquí estoy para seguirte orientando con gusto.';
     } else if (nextAiState.direct_property_reference && nextAiState.property_code && matchedProperties.length === 0) {
       reply = `No encontré esa propiedad disponible en este momento. Si deseas, puedo ayudarte a buscar opciones similares. ¿Qué zona te interesa?`;
-    } else if (
-      !nextAiState.handoff_sent &&
-      detectRealEstateConsultativeFollowUp(text, nextAiState.lead_flow) &&
-      hasRealEstateAdvisorTurnContext(nextAiState, matchedProperties)
-    ) {
-      const follow = detectRealEstateConsultativeFollowUp(text, nextAiState.lead_flow);
-      const chatRecent = mapConversationDbRowsToChatMessages(recentMessages);
-      const synth = buildSyntheticStateForAdvisor(nextAiState, matchedProperties);
-      try {
-        const advisory = await generateAdvisorReplyForRealEstateTurn(
-          {
-            user_message: text,
-            recent_messages: chatRecent,
-            current_lead_flow: nextAiState.lead_flow,
-            synthetic_state: synth,
-            last_suggested_property: matchedProperties[0] || null,
-            suggested_properties: matchedProperties,
-            budget: nextAiState.budget_max,
-            budget_currency: nextAiState.budget_currency,
-            zone:
-              nextAiState.location_text ||
-              (nextAiState.location_any ? 'Zona abierta según preferencias del usuario' : ''),
-            operation: nextAiState.operation_type,
-            missing_name: !hasValidHumanName(linkedEntities.existingContact, nextAiState),
-            next_step: nextAiState.next_step || null,
-            follow_up_reason: follow?.reason || null,
-            change_type: changeType || 'follow_up',
-          },
-          { model: OPENAI_MODEL }
-        );
-        reply = advisory.text;
-        replyRouting.response_source = advisory.response_source;
-        replyRouting.response_reason = advisory.response_reason;
-        replyRouting.used_openai_advisor = true;
-      } catch (advisorErr) {
-        console.error('generateAdvisorReplyForRealEstateTurn_error', advisorErr?.message || advisorErr);
-        reply =
-          'Con gusto reviso ese punto contigo. Para no inventar datos, un asesor de Luxetty puede confirmarte publicación, liga y disponibilidad al momento. ¿Te parece si lo canalizamos? Para registrarte bien, ¿me compartes tu nombre?';
-        replyRouting.response_source = 'advisor_fallback_static';
-        replyRouting.response_reason = follow?.reason || 'advisor_error';
+    } else if (!nextAiState.handoff_sent) {
+      const explicitHandoffEarly =
+        nextAiState.wants_human ||
+        normalizedText.includes('contacte un asesor') ||
+        normalizedText.includes('contacte un agente');
+
+      const skipAdvisorForLiteralPropertyPrice =
+        nextAiState.lead_flow === 'demand' &&
+        nextAiState.direct_property_reference &&
+        matchedProperties.length > 0 &&
+        isDirectPriceQuestion(text) &&
+        !nextAiState.wants_visit &&
+        !explicitHandoffEarly;
+
+      const mediaCtx = inboundContext?.media || {};
+      const advisorRoute = shouldUseAdvisorForRealEstateTurn({
+        ai_state: nextAiState,
+        signals: incomingSignals,
+        contact: linkedEntities.existingContact,
+        user_message: text,
+        suggested_properties: matchedProperties,
+        last_suggested_property: matchedProperties[0] || null,
+        campaign_context: campaignContextForFusion?.campaignContext || null,
+        media_context: {
+          requires_programmed_safety: !!(mediaCtx.attachment_detected_not_processed || mediaCtx.unsupported_media),
+          image_analysis_available: !!mediaCtx.image_vision_success,
+          audio_transcription_available: !!mediaCtx.audio_has_transcription,
+          document_analysis_available: false,
+        },
+        recent_db_messages: recentMessages,
+        conversation_id: conversationId,
+        change_type: changeType,
+        skip_advisor_for_literal_property_price: skipAdvisorForLiteralPropertyPrice,
+      });
+
+      if (advisorRoute.use) {
+        const chatRecent = mapConversationDbRowsToChatMessages(recentMessages);
+        const synth = buildSyntheticStateForAdvisor(nextAiState, matchedProperties);
+        try {
+          const advisory = await generateAdvisorReplyForRealEstateTurn(
+            {
+              user_message: text,
+              recent_messages: chatRecent,
+              recent_db_messages_for_card_check: recentMessages,
+              current_lead_flow: nextAiState.lead_flow,
+              synthetic_state: synth,
+              signals: incomingSignals,
+              contact: linkedEntities.existingContact,
+              campaign_context: campaignContextForFusion?.campaignContext || null,
+              media_context: {
+                image_analysis_available: !!mediaCtx.image_vision_success,
+                audio_transcription_available: !!mediaCtx.audio_has_transcription,
+                document_analysis_available: false,
+              },
+              last_suggested_property: matchedProperties[0] || null,
+              suggested_properties: matchedProperties,
+              draft_context: advisorRoute.draft,
+              budget: nextAiState.budget_max,
+              budget_currency: nextAiState.budget_currency,
+              zone:
+                nextAiState.location_text ||
+                (nextAiState.location_any ? 'Zona abierta según preferencias del usuario' : ''),
+              operation: nextAiState.operation_type,
+              missing_name: !hasValidHumanName(linkedEntities.existingContact, nextAiState),
+              next_step: nextAiState.next_step || null,
+              follow_up_reason: advisorRoute.reason,
+              change_type: changeType || 'follow_up',
+              conversation_id: conversationId,
+            },
+            { model: OPENAI_MODEL }
+          );
+          reply = advisory.text;
+          replyRouting.response_source = advisory.response_source;
+          replyRouting.response_reason = advisory.response_reason;
+          replyRouting.used_openai_advisor = true;
+          replyRouting.advisor_mode_used = advisory.advisor_mode || null;
+          replyRouting.response_goal = advisory.response_goal || null;
+        } catch (advisorErr) {
+          console.error('advisor_openai_failed', advisorErr?.message || advisorErr, {
+            conversation_id: conversationId,
+            response_reason: advisorRoute.reason,
+          });
+          console.error('generateAdvisorReplyForRealEstateTurn_error', advisorErr?.message || advisorErr);
+          reply =
+            'Con gusto reviso ese punto contigo. Para no inventar datos, un asesor de Luxetty puede confirmarte publicación, liga y disponibilidad al momento. ¿Te parece si lo canalizamos? Para registrarte bien, ¿me compartes tu nombre?';
+          replyRouting.response_source = 'advisor_fallback_static';
+          replyRouting.response_reason = advisorRoute.reason || 'advisor_error';
+        }
       }
-    } else if (shouldUsePlaybookReply(nextAiState, nextAiState.playbook_step)) {
+    }
+    if (reply == null && shouldUsePlaybookReply(nextAiState, nextAiState.playbook_step)) {
       const playbookReply = buildPlaybookReply(nextAiState.playbook_step, nextAiState);
       if (playbookReply) {
         const awaitingField = getPlaybookAwaitingField(nextAiState.playbook_step);
         reply = playbookReply;
+        replyRouting.response_source = 'programmed_template';
+        replyRouting.response_reason = nextAiState.playbook_step || 'playbook';
         if (awaitingField && shouldAskField(nextAiState, awaitingField)) {
           nextAiState.awaiting_field = awaitingField;
         }
       }
-    } else if (nextAiState.lead_flow === 'demand') {
+    }
+    if (reply == null && nextAiState.lead_flow === 'demand') {
       const explicitHandoffIntent =
         nextAiState.wants_human ||
         normalizedText.includes('contacte un asesor') ||
@@ -3509,12 +3563,29 @@ app.post('/webhook', async (req, res) => {
         reply = mediaReply;
       } else {
         reply = buildOfferReply(nextAiState, changeType, { signals: incomingSignals, text });
-        if (
-          !nextAiState.handoff_sent &&
-          detectRealEstateConsultativeFollowUp(text, 'offer') &&
-          hasRealEstateAdvisorTurnContext(nextAiState, matchedProperties)
-        ) {
-          const follow = detectRealEstateConsultativeFollowUp(text, 'offer');
+        const offerMediaCtx = inboundContext?.media || {};
+        const offerAdvisorRoute = shouldUseAdvisorForRealEstateTurn({
+          ai_state: nextAiState,
+          signals: incomingSignals,
+          contact: linkedEntities.existingContact,
+          user_message: text,
+          suggested_properties: matchedProperties,
+          last_suggested_property: matchedProperties[0] || null,
+          campaign_context: campaignContextForFusion?.campaignContext || null,
+          media_context: {
+            requires_programmed_safety: !!(
+              offerMediaCtx.attachment_detected_not_processed || offerMediaCtx.unsupported_media
+            ),
+            image_analysis_available: !!offerMediaCtx.image_vision_success,
+            audio_transcription_available: !!offerMediaCtx.audio_has_transcription,
+            document_analysis_available: false,
+          },
+          recent_db_messages: recentMessages,
+          conversation_id: conversationId,
+          change_type: changeType,
+          skip_advisor_for_literal_property_price: false,
+        });
+        if (!nextAiState.handoff_sent && offerAdvisorRoute.use) {
           try {
             const chatRecent = mapConversationDbRowsToChatMessages(recentMessages);
             const synth = buildSyntheticStateForAdvisor(nextAiState, matchedProperties);
@@ -3522,18 +3593,29 @@ app.post('/webhook', async (req, res) => {
               {
                 user_message: text,
                 recent_messages: chatRecent,
+                recent_db_messages_for_card_check: recentMessages,
                 current_lead_flow: 'offer',
                 synthetic_state: synth,
+                signals: incomingSignals,
+                contact: linkedEntities.existingContact,
+                campaign_context: campaignContextForFusion?.campaignContext || null,
+                media_context: {
+                  image_analysis_available: !!offerMediaCtx.image_vision_success,
+                  audio_transcription_available: !!offerMediaCtx.audio_has_transcription,
+                  document_analysis_available: false,
+                },
                 last_suggested_property: matchedProperties[0] || null,
                 suggested_properties: matchedProperties,
+                draft_context: offerAdvisorRoute.draft,
                 budget: nextAiState.budget_max,
                 budget_currency: nextAiState.budget_currency,
                 zone: nextAiState.location_text || '',
                 operation: nextAiState.operation_type,
                 missing_name: !hasValidHumanName(linkedEntities.existingContact, nextAiState),
                 next_step: nextAiState.next_step || null,
-                follow_up_reason: follow?.reason || null,
+                follow_up_reason: offerAdvisorRoute.reason,
                 change_type: changeType || 'follow_up',
+                conversation_id: conversationId,
               },
               { model: OPENAI_MODEL }
             );
@@ -3541,7 +3623,13 @@ app.post('/webhook', async (req, res) => {
             replyRouting.response_source = advisory.response_source;
             replyRouting.response_reason = advisory.response_reason;
             replyRouting.used_openai_advisor = true;
+            replyRouting.advisor_mode_used = advisory.advisor_mode || null;
+            replyRouting.response_goal = advisory.response_goal || null;
           } catch (offerAdvisorErr) {
+            console.error('advisor_openai_failed', offerAdvisorErr?.message || offerAdvisorErr, {
+              conversation_id: conversationId,
+              branch: 'offer',
+            });
             console.error('offer_generateAdvisorReply_error', offerAdvisorErr?.message || offerAdvisorErr);
           }
         }

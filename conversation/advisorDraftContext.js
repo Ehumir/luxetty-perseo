@@ -118,6 +118,12 @@ function inferResponseGoal(userMessage, aiState = {}, signals = {}) {
   if (t && /^(hola|buen[oa]s|hey)\b/.test(t) && t.length < 40 && !state.lead_flow) return 'greeting';
 
   if (signals.asks_only_valuation || state.asks_only_valuation) return 'valuation_soft';
+  if (/(valuar|valuacion|valuación|cuanto vale mi|cuánto vale mi|valor de mi|me urge vender|urgencia.*vender)/.test(t)) {
+    return 'valuation_soft';
+  }
+  if (/(quiero vender|vendo mi casa|poner en venta|vender mi casa|vender la casa)/.test(t)) {
+    return 'qualify_offer';
+  }
 
   if (/(publicad|publicada|link|liga|url|pdf|brochure)/.test(t)) return 'link_or_publication';
   if (/(otras opciones|más opciones|otra opcion|otra opción|que más|hay más)/.test(t)) return 'more_options';
