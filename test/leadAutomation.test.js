@@ -5,10 +5,11 @@ const {
   createOrReuseLeadFromConversation,
   detectLeadCreationOpportunity,
   extractCampaignReferralContext,
+  chooseCanonicalCompatibleLead,
 } = require('../services/leadAutomation');
 const { normalizePhoneNumber } = require('../utils/helpers');
 
-function makeQuery(table, db, filters = []) {
+function makeQuery(table, db, filters = [], opts = {}) {
   const api = {
     _update: null,
     _inserted: null,
@@ -30,6 +31,9 @@ function makeQuery(table, db, filters = []) {
       return api;
     },
     eq(key, value) {
+      if (api._update && table === 'conversations' && opts.failConversationSync) {
+        return Promise.resolve({ data: null, error: { message: 'forced_conversation_sync_failure' } });
+      }
       filters.push((row) => row[key] === value);
       return api;
     },
@@ -104,7 +108,7 @@ function makeQuery(table, db, filters = []) {
   return api;
 }
 
-function buildMockSupabase(db) {
+function buildMockSupabase(db, opts = {}) {
   let rpcCalls = 0;
 
   return {
@@ -113,7 +117,7 @@ function buildMockSupabase(db) {
     },
     from(table) {
       if (!db[table]) db[table] = [];
-      return makeQuery(table, db);
+      return makeQuery(table, db, [], opts);
     },
     async rpc(name, args) {
       rpcCalls += 1;
@@ -164,6 +168,7 @@ test('property interest without contact does not create lead', async () => {
   assert.equal(result.success, false);
   assert.equal(result.reason, 'missing_contact');
   assert.equal(db.leads.length, 0);
+  assert.equal(db.conversation_events.some((ev) => ev.type === 'conversation_link_synced'), false);
 });
 
 test('retries after contact is linked and then creates lead', async () => {
@@ -212,6 +217,8 @@ test('retries after contact is linked and then creates lead', async () => {
   assert.equal(db.leads.length, 1);
   assert.equal(db.leads[0].contact_id, 'contact-retry');
   assert.equal(db.conversations[0].lead_id, second.leadId);
+  assert.equal(db.conversations[0].contact_id, 'contact-retry');
+  assert.equal(db.conversations[0].ai_state?.lead_id, second.leadId);
 });
 
 test('property interest with existing conversation lead does not duplicate', async () => {
@@ -297,6 +304,154 @@ test('property interest links existing open lead by contact and property', async
   assert.equal(result.wasCreated, false);
   assert.equal(result.leadId, 'lead-2');
   assert.equal(db.leads.length, 1);
+  assert.equal(db.conversations[0].contact_id, 'contact-2');
+  assert.equal(db.conversations[0].lead_id, 'lead-2');
+});
+
+test('chooseCanonicalCompatibleLead prioritizes assigned agent, property, recency and id fallback', () => {
+  const leads = [
+    {
+      id: 'lead-a',
+      assigned_agent_profile_id: null,
+      interested_property_id: null,
+      updated_at: '2026-05-10T10:00:00.000Z',
+      created_at: '2026-05-10T10:00:00.000Z',
+    },
+    {
+      id: 'lead-b',
+      assigned_agent_profile_id: 'agent-1',
+      interested_property_id: null,
+      updated_at: '2026-05-10T09:00:00.000Z',
+      created_at: '2026-05-10T09:00:00.000Z',
+    },
+    {
+      id: 'lead-c',
+      assigned_agent_profile_id: 'agent-1',
+      interested_property_id: 'prop-1',
+      updated_at: '2026-05-10T08:00:00.000Z',
+      created_at: '2026-05-10T08:00:00.000Z',
+    },
+  ];
+
+  assert.equal(chooseCanonicalCompatibleLead(leads)?.id, 'lead-c');
+
+  const byUpdated = chooseCanonicalCompatibleLead([
+    { id: 'lead-u1', assigned_agent_profile_id: null, interested_property_id: 'prop-1', updated_at: '2026-05-10T08:00:00.000Z', created_at: '2026-05-10T07:00:00.000Z' },
+    { id: 'lead-u2', assigned_agent_profile_id: null, interested_property_id: 'prop-1', updated_at: '2026-05-10T09:00:00.000Z', created_at: '2026-05-10T06:00:00.000Z' },
+  ]);
+  assert.equal(byUpdated?.id, 'lead-u2');
+
+  const byCreated = chooseCanonicalCompatibleLead([
+    { id: 'lead-c1', assigned_agent_profile_id: null, interested_property_id: 'prop-1', updated_at: '2026-05-10T09:00:00.000Z', created_at: '2026-05-10T06:00:00.000Z' },
+    { id: 'lead-c2', assigned_agent_profile_id: null, interested_property_id: 'prop-1', updated_at: '2026-05-10T09:00:00.000Z', created_at: '2026-05-10T07:00:00.000Z' },
+  ]);
+  assert.equal(byCreated?.id, 'lead-c2');
+
+  const byId = chooseCanonicalCompatibleLead([
+    { id: 'lead-id-1', assigned_agent_profile_id: null, interested_property_id: null, updated_at: null, created_at: null },
+    { id: 'lead-id-2', assigned_agent_profile_id: null, interested_property_id: null, updated_at: null, created_at: null },
+  ]);
+  assert.equal(byId?.id, 'lead-id-2');
+});
+
+test('multiple compatible leads pick canonical and prevent duplicate insert', async () => {
+  const db = {
+    leads: [
+      {
+        id: 'lead-older',
+        contact_id: 'contact-m',
+        lead_type: 'demand',
+        interested_in_operation: 'sale',
+        interested_property_id: 'prop-m',
+        assigned_agent_profile_id: null,
+        updated_at: '2026-05-10T10:00:00.000Z',
+        created_at: '2026-05-10T09:00:00.000Z',
+        is_active: true,
+        is_archived: false,
+        notes_summary: 'older',
+      },
+      {
+        id: 'lead-canonical',
+        contact_id: 'contact-m',
+        lead_type: 'demand',
+        interested_in_operation: 'sale',
+        interested_property_id: 'prop-m',
+        assigned_agent_profile_id: 'agent-x',
+        updated_at: '2026-05-10T08:00:00.000Z',
+        created_at: '2026-05-10T08:00:00.000Z',
+        is_active: true,
+        is_archived: false,
+        notes_summary: 'canonical',
+      },
+    ],
+    contacts: [{ id: 'contact-m', whatsapp: '5218555555555' }],
+    conversations: [{ id: 'conv-m', phone: '5218555555555', channel: 'whatsapp', lead_id: null, contact_id: 'contact-m' }],
+    conversation_events: [],
+    pipeline_stages: [{ id: 'stage-new', code: 'new', lead_type: 'demand', is_active: true, stage_order: 1 }],
+  };
+
+  const supabase = buildMockSupabase(db);
+  const result = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'demand',
+      direct_property_reference: true,
+      property_code: 'LUX-M0001',
+      asks_property_details: true,
+      intent_type: 'property_interest',
+      operation_type: 'sale',
+    },
+    contactId: 'contact-m',
+    propertyId: 'prop-m',
+    property: { id: 'prop-m', listing_id: 'LUX-M0001', operation_type: 'sale' },
+    logger: console,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.wasCreated, false);
+  assert.equal(result.leadId, 'lead-canonical');
+  assert.equal(db.leads.length, 2, 'no new lead insert when compatible leads exist');
+  assert.equal(db.conversations[0].lead_id, 'lead-canonical');
+  assert.equal(db.conversations[0].contact_id, 'contact-m');
+  assert.equal(db.conversation_events.some((ev) => ev.type === 'multiple_compatible_leads_detected'), true);
+  assert.equal(db.conversation_events.some((ev) => ev.type === 'canonical_lead_selected'), true);
+  assert.equal(db.conversation_events.some((ev) => ev.type === 'lead_duplicate_prevented'), true);
+  assert.equal(db.conversation_events.some((ev) => ev.type === 'conversation_link_synced'), true);
+});
+
+test('syncConversation failure is reported as warning and event', async () => {
+  const db = {
+    leads: [],
+    contacts: [{ id: 'contact-sync', whatsapp: '5218666666666' }],
+    conversations: [{ id: 'conv-sync', phone: '5218666666666', channel: 'whatsapp', lead_id: null, contact_id: 'contact-sync' }],
+    conversation_events: [],
+    pipeline_stages: [{ id: 'stage-new', code: 'new', lead_type: 'demand', is_active: true, stage_order: 1 }],
+  };
+
+  const supabase = buildMockSupabase(db, { failConversationSync: true });
+  const result = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'demand',
+      direct_property_reference: true,
+      property_code: 'LUX-SYNC1',
+      asks_property_details: true,
+      intent_type: 'property_interest',
+      operation_type: 'sale',
+    },
+    contactId: 'contact-sync',
+    propertyId: 'prop-sync',
+    property: { id: 'prop-sync', listing_id: 'LUX-SYNC1', operation_type: 'sale' },
+    logger: console,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(Array.isArray(result.warnings), true);
+  assert.equal(result.warnings.length > 0, true);
+  assert.equal(result.warnings[0].code, 'conversation_sync_failed');
+  assert.equal(db.conversation_events.some((ev) => ev.type === 'conversation_link_sync_failed'), true);
 });
 
 test('contact without property context does not create lead', async () => {
