@@ -1754,6 +1754,98 @@ async function upsertContactForConversation(conversationRow, state, phone, extra
   });
 }
 
+function hasLeadRetryPropertyContext(state = {}, property = null) {
+  return Boolean(
+    property?.id ||
+      state?.detected_property_id ||
+      state?.interested_property_id ||
+      state?.property_code ||
+      state?.direct_property_code
+  );
+}
+
+async function maybeRetryLeadAfterContactLinked({
+  conversationId,
+  conversationRow,
+  nextAiState,
+  contactId,
+  property = null,
+  messageText = '',
+  referralContext = null,
+  rawPayload = null,
+  unifiedContext = null,
+}) {
+  if (!contactId) {
+    console.log('LEAD_RETRY_SKIPPED_NO_CONTACT', {
+      conversation_id: conversationId,
+      lead_id: conversationRow?.lead_id || null,
+    });
+    return { success: false, reason: 'retry_skipped_no_contact' };
+  }
+
+  if (conversationRow?.lead_id) {
+    return { success: false, reason: 'retry_skipped_already_linked' };
+  }
+
+  if (nextAiState?.lead_retry_after_contact_linked_attempted_at) {
+    return { success: false, reason: 'retry_already_attempted' };
+  }
+
+  const hasPropertyContext = hasLeadRetryPropertyContext(nextAiState, property);
+  const hasCommercialIntent = nextAiState?.lead_flow === 'demand' || nextAiState?.intent_type === 'property_interest';
+  const hasDirectPropertyReference = nextAiState?.direct_property_reference === true;
+
+  if (!hasPropertyContext || !hasCommercialIntent || !hasDirectPropertyReference) {
+    console.log('LEAD_RETRY_SKIPPED_NO_PROPERTY_CONTEXT', {
+      conversation_id: conversationId,
+      has_property_context: hasPropertyContext,
+      has_commercial_intent: hasCommercialIntent,
+      has_direct_property_reference: hasDirectPropertyReference,
+    });
+    return { success: false, reason: 'retry_skipped_no_property_context' };
+  }
+
+  nextAiState.lead_retry_after_contact_linked_attempted_at = nowIso();
+  console.log('LEAD_RETRY_AFTER_CONTACT_LINKED', {
+    conversation_id: conversationId,
+    contact_id: contactId,
+    property_id: property?.id || nextAiState?.detected_property_id || nextAiState?.interested_property_id || null,
+    property_code: nextAiState?.property_code || nextAiState?.direct_property_code || null,
+  });
+
+  const result = await maybeCreateOrReuseLeadWithEngine({
+    conversationId,
+    conversationRow,
+    nextAiState,
+    contactId,
+    property,
+    messageText,
+    referralContext,
+    rawPayload,
+    unifiedContext,
+  });
+
+  if (result?.success) {
+    nextAiState.lead_retry_after_contact_linked_result = 'success';
+    nextAiState.lead_retry_after_contact_linked_success_at = nowIso();
+    console.log('LEAD_RETRY_SUCCESS', {
+      conversation_id: conversationId,
+      lead_id: result.leadId || null,
+      was_created: !!result.wasCreated,
+    });
+  } else {
+    nextAiState.lead_retry_after_contact_linked_result = 'failed';
+    nextAiState.lead_retry_after_contact_linked_failed_at = nowIso();
+    console.warn('LEAD_RETRY_FAILED', {
+      conversation_id: conversationId,
+      reason: result?.reason || 'unknown',
+      error: result?.error || null,
+    });
+  }
+
+  return result;
+}
+
 function shouldEscalateDemand(state, properties, text) {
   const normalized = normalizeText(text);
 
@@ -2529,7 +2621,7 @@ app.post('/webhook', async (req, res) => {
         waName: waProfileDisplayName,
         rawPayload: inboundRawPayload,
       });
-      const leadAutomationResult = await maybeCreateOrReuseLeadWithEngine({
+      const leadAutomationResult = await maybeRetryLeadAfterContactLinked({
         conversationId,
         conversationRow,
         nextAiState: directState,
@@ -3655,39 +3747,37 @@ ${locationCatalog.rawNames.join(', ')}
         rawPayload: inboundRawPayload,
       });
 
-      if (contactId) {
-        const leadAutomationResult = await maybeCreateOrReuseLeadWithEngine({
-          conversationId,
-          conversationRow,
-          nextAiState,
-          contactId,
-          property: propertyForLead,
-          messageText: text,
-          referralContext: normalizedReferral,
-          rawPayload: inboundRawPayload,
-          unifiedContext: nextAiState?.context_fusion || null,
+      const leadAutomationResult = await maybeRetryLeadAfterContactLinked({
+        conversationId,
+        conversationRow,
+        nextAiState,
+        contactId,
+        property: propertyForLead,
+        messageText: text,
+        referralContext: normalizedReferral,
+        rawPayload: inboundRawPayload,
+        unifiedContext: nextAiState?.context_fusion || null,
+      });
+
+      if (
+        leadAutomationResult?.handoffTriggered &&
+        !lastAssistantMessage?.content?.includes('Para darte una atención más precisa, puedo canalizar')
+      ) {
+        reply = buildIntelligentHandoffReply();
+        nextAiState.handoff_ready = true;
+        nextAiState.handoff_sent = true;
+
+        const refreshedMessages = [
+          ...(conversations.get(from) || []).slice(0, -1),
+          { role: 'assistant', content: reply },
+        ];
+        conversations.set(from, refreshedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
+
+        await saveConversationEvent(conversationId, 'intelligent_handoff_message_sent', {
+          lead_id: leadAutomationResult.leadId || null,
+          assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
+          source: 'ai_agent',
         });
-
-        if (
-          leadAutomationResult?.handoffTriggered &&
-          !lastAssistantMessage?.content?.includes('Para darte una atención más precisa, puedo canalizar')
-        ) {
-          reply = buildIntelligentHandoffReply();
-          nextAiState.handoff_ready = true;
-          nextAiState.handoff_sent = true;
-
-          const refreshedMessages = [
-            ...(conversations.get(from) || []).slice(0, -1),
-            { role: 'assistant', content: reply },
-          ];
-          conversations.set(from, refreshedMessages.slice(-MAX_SHORT_MEMORY_MESSAGES));
-
-          await saveConversationEvent(conversationId, 'intelligent_handoff_message_sent', {
-            lead_id: leadAutomationResult.leadId || null,
-            assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
-            source: 'ai_agent',
-          });
-        }
       }
     }
 

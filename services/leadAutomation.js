@@ -1561,11 +1561,15 @@ async function createOrReuseLeadFromConversation({
       property_id: propertyId || null,
     });
 
-    if (!contactId && !propertyId) {
+    if (!contactId) {
       logWarn(logger, 'LEAD_CREATION_FAILED', { conversation_id: conversationId, reason: 'missing_contact' });
-      logWarn(logger, 'LEAD_AUTOMATION_SKIPPED_MISSING_CONTACT', { conversation_id: conversationId });
-      await saveConversationEvent(supabase, conversationId, 'lead_not_created_missing_contact', {
-        reason: 'missing_contact',
+      logWarn(logger, 'LEAD_AUTOMATION_SKIPPED_MISSING_CONTACT', {
+        conversation_id: conversationId,
+        property_id: propertyId || null,
+      });
+      await saveConversationEvent(supabase, conversationId, 'lead_contact_missing_but_property_interest_detected', {
+        property_id: propertyId || null,
+        reason: 'contact_missing_property_interest',
       });
       return {
         success: false,
@@ -1576,17 +1580,6 @@ async function createOrReuseLeadFromConversation({
         assignmentResult: null,
         reason: 'missing_contact',
       };
-    }
-
-    if (!contactId && propertyId) {
-      log(logger, 'LEAD_AUTOMATION_CONTACTLESS_PROPERTY_FLOW', {
-        conversation_id: conversationId,
-        property_id: propertyId,
-      });
-      await saveConversationEvent(supabase, conversationId, 'lead_contact_missing_but_property_interest_detected', {
-        property_id: propertyId,
-        reason: 'contact_missing_property_interest',
-      });
     }
 
     if (aiState?.direct_property_reference && (aiState.property_code || aiState.direct_property_code) && !propertyId) {
@@ -1794,7 +1787,7 @@ async function createOrReuseLeadFromConversation({
       }
     }
 
-    if (!lead && !contactId) {
+    if (!lead) {
       lead = await findCompatibleLeadByPhoneAndProperty(supabase, {
         normalizedPhone: normalizedConversationPhone,
         leadType,
