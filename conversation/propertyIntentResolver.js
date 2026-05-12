@@ -116,19 +116,6 @@ function resolvePropertyIntent(text, aiState = {}) {
   const prev = aiState && typeof aiState === 'object' ? aiState : {};
   const t = normalizeText(text);
 
-  if (isPropertySpecificConversation(prev) && !extractPropertyCode(text)) {
-    const ppr = require('./playbookPriorityResolver');
-    if (ppr.shouldSoftExitPropertyMode(text, prev)) {
-      return {
-        __buyerDominantInventory: true,
-        active_playbook: ppr.PLAYBOOKS.BUYER_SEARCH,
-        lead_flow: prev.lead_flow || 'demand',
-        property_specific_intent: false,
-        direct_property_reference: false,
-      };
-    }
-  }
-
   if (shouldExitPropertyMode(text, prev)) {
     return {
       __clearPropertyIntent: true,

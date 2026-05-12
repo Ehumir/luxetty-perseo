@@ -410,9 +410,8 @@ function substituteForbiddenGenericDemandReply(messages, context = {}) {
 
   const redundant = replyDemandsUnknownBudgetOrZone(merged, aiState);
 
-  const playbookPriorityResolver = require('./playbookPriorityResolver');
   const propertyIntentResolver = require('./propertyIntentResolver');
-  if (playbookPriorityResolver.shouldUsePropertySpecificFlow(aiState) && forbiddenCtx && (bad || redundant)) {
+  if (propertyIntentResolver.isPropertySpecificConversation(aiState) && forbiddenCtx && (bad || redundant)) {
     const row = Object.prototype.hasOwnProperty.call(context, 'resolvedPropertyRow') ? context.resolvedPropertyRow : null;
     const reply = propertyIntentResolver.buildPropertyModeReply({
       text,

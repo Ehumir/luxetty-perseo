@@ -164,21 +164,6 @@ function getDefaultAiState() {
     handoff_ready: false,
     handoff_sent: false,
     closing_message_sent: false,
-
-    active_playbook: null,
-    secondary_playbook: null,
-    previous_playbook: null,
-    conversational_phase: null,
-    active_intent: null,
-    secondary_intent: null,
-    contextual_subject: null,
-    contextual_reference: null,
-    contextual_subject_code: null,
-    seller_context_active: false,
-    buyer_context_active: false,
-    mixed_interest: false,
-
-    visit_coordination_pending: false,
   };
 }
 
