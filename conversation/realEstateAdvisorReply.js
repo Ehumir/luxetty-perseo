@@ -14,6 +14,7 @@ const {
   classifyShortRealEstateFollowUp,
 } = require('./advisorDraftContext');
 const { getPublicPropertyUrl } = require('../utils/helpers');
+const { getAdvisorFailureFallbackReply } = require('./routeEvaluator');
 
 const GENERIC_PLAYBOOK_SNIPPET = normalizeText(
   'Con esa información puedo orientarte mejor. ¿Prefieres ver opciones disponibles o que un asesor de Luxetty te contacte?'
@@ -102,6 +103,7 @@ function isCandidateTooSimilarToLastOutbound(candidateReply, lastOutboundText) {
 
 const ADVISOR_ALLOWED_RESPONSE_GOALS = new Set([
   'qualify_demand',
+  'qualify_demand_and_capture_name',
   'qualify_offer',
   'property_followup',
   'more_options',
@@ -159,6 +161,17 @@ function shouldUseAdvisorForRealEstateTurn(params = {}) {
     change_type: params.change_type,
   });
 
+  const routeD =
+    params.route_evaluator_decision && typeof params.route_evaluator_decision === 'object'
+      ? params.route_evaluator_decision
+      : aiState.route_evaluator_decision && typeof aiState.route_evaluator_decision === 'object'
+      ? aiState.route_evaluator_decision
+      : null;
+
+  if (routeD && routeD.should_use_programmed_reply && !routeD.should_use_advisor_reply) {
+    return { use: false, reason: 'route_evaluator_programmed', draft };
+  }
+
   const mode = draft.advisor_mode;
   const goal = draft.response_goal;
 
@@ -190,15 +203,43 @@ function shouldUseAdvisorForRealEstateTurn(params = {}) {
   const offerOrValuationFromText =
     (goal === 'qualify_offer' || goal === 'valuation_soft') && userMessage.length > 0;
 
-  const contextOk =
+  let contextOk =
     hasHydratedContext ||
     hasFollowUpPattern ||
-    (hasMinimalDemand && (goal === 'qualify_demand' || goal === 'price_followup' || goal === 'location_followup')) ||
+    (hasMinimalDemand &&
+      (goal === 'qualify_demand' ||
+        goal === 'qualify_demand_and_capture_name' ||
+        goal === 'price_followup' ||
+        goal === 'location_followup')) ||
     hasCampaign ||
     (hasSuggested && (goal === 'property_followup' || goal === 'link_or_publication' || goal === 'visit_intent')) ||
     hasOfferValuation ||
     (aiState.lead_flow === 'offer' && goal === 'qualify_offer' && !!pc?.location_text) ||
     offerOrValuationFromText;
+
+  if (routeD?.should_use_advisor_reply) {
+    if (
+      routeD.route === 'demand_initial' &&
+      aiState.lead_flow === 'demand' &&
+      pc &&
+      !!pc.operation_type &&
+      (!!pc.location_text || !!pc.location_any)
+    ) {
+      contextOk = true;
+    }
+    if (routeD.route === 'demand_followup' && (routeD.person_name_candidate || signals.full_name)) {
+      contextOk = true;
+    }
+    if (
+      (routeD.route === 'property_interest' || routeD.route === 'property_followup') &&
+      (routeD.property_code || aiState.property_code || matched.length)
+    ) {
+      contextOk = true;
+    }
+    if (routeD.route === 'offer_followup' && aiState.lead_flow === 'offer') {
+      contextOk = true;
+    }
+  }
 
   if (!contextOk) {
     return { use: false, reason: 'insufficient_advisor_context', draft };
@@ -363,9 +404,15 @@ async function generateAdvisorReplyForRealEstateTurn(context = {}, options = {})
     temperature: 0.45,
   });
 
+  const sigForRoute = context.signals && typeof context.signals === 'object' ? context.signals : {};
+  const routeEval = sigForRoute.route_evaluator_decision;
   const text =
     cleanSpaces(response?.choices?.[0]?.message?.content || '') ||
-    'Perfecto. Para no inventar datos, lo más seguro es que un asesor de Luxetty te confirme publicación, liga y disponibilidad al momento. ¿Te parece si lo canalizamos? Para registrarte bien, ¿me compartes tu nombre?';
+    getAdvisorFailureFallbackReply({
+      route: routeEval?.route || draft.metadata?.route_evaluator_route || null,
+      response_goal: draft.response_goal,
+      location_text: draft.property_context?.location_text || routeEval?.location_text || null,
+    });
 
   const advisor_shortened_response = text.length > 0 && text.length <= 420;
 

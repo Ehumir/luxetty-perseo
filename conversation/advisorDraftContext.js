@@ -146,7 +146,7 @@ function computeNameTimingHint(contact, aiState, responseGoal) {
   }
   if (
     aiState?.lead_flow === 'demand' &&
-    responseGoal === 'qualify_demand' &&
+    (responseGoal === 'qualify_demand' || responseGoal === 'qualify_demand_and_capture_name') &&
     aiState?.budget_max != null &&
     aiState?.location_text &&
     (Number(aiState.last_search_result_count) > 0 ||
@@ -463,24 +463,46 @@ function buildAdvisorResponseDraftContext(context) {
   const contact_context = buildContactContext(contact, aiState);
   const should_ask_name = contact_context.should_ask_name;
 
-  const advisor_mode = inferAdvisorMode({
+  const routeDecision = signals.route_evaluator_decision;
+
+  let advisor_mode = inferAdvisorMode({
     ai_state: aiState,
     signals,
     campaign_context: campaignContext,
     media_context: mediaContext,
   });
 
-  const response_goal = inferResponseGoal(userMessage, aiState, { ...signals, contact });
+  let response_goal = inferResponseGoal(userMessage, aiState, { ...signals, contact });
+
+  if (routeDecision && typeof routeDecision === 'object' && routeDecision.should_use_advisor_reply) {
+    if (typeof routeDecision.response_goal === 'string' && routeDecision.response_goal.trim()) {
+      response_goal = routeDecision.response_goal.trim();
+    }
+    if (typeof routeDecision.advisor_mode === 'string' && routeDecision.advisor_mode.trim()) {
+      advisor_mode = routeDecision.advisor_mode.trim();
+    }
+  }
 
   const recentDbOnly = Array.isArray(safe.recent_db_messages) ? safe.recent_db_messages : [];
   const memory_cohesion = analyzeMemoryCohesion(recentDbOnly, aiState, userMessage);
   const advisor_followup_type = classifyShortRealEstateFollowUp(userMessage, aiState.lead_flow)?.reason || null;
   const name_timing_hint = computeNameTimingHint(contact, aiState, response_goal);
 
-  const forbidden_claims = buildUnifiedForbiddenClaims({
+  let forbidden_claims = buildUnifiedForbiddenClaims({
     last_suggested_property,
     media_context: mediaContext,
   });
+  if (routeDecision && Array.isArray(routeDecision.forbidden_claims) && routeDecision.forbidden_claims.length) {
+    const extra = routeDecision.forbidden_claims.map((x) => String(x || '').trim()).filter(Boolean);
+    const seen = new Set(forbidden_claims.map((x) => normalizeText(String(x).slice(0, 72))));
+    for (const line of extra) {
+      const k = normalizeText(String(line).slice(0, 72));
+      if (k && !seen.has(k)) {
+        seen.add(k);
+        forbidden_claims.push(line);
+      }
+    }
+  }
 
   const crm_actions_taken = Array.isArray(safe.crm_actions_taken)
     ? safe.crm_actions_taken.map((x) => (typeof x === 'string' ? x : safeJsonStringify(x))).slice(0, 20)
@@ -492,6 +514,7 @@ function buildAdvisorResponseDraftContext(context) {
     change_type: safe.change_type != null ? String(safe.change_type) : null,
     advisor_followup_type,
     name_timing_hint,
+    route_evaluator_route: routeDecision?.route || null,
   };
 
   return {
