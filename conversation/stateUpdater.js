@@ -72,6 +72,7 @@ function nullPropertyIntentSnapshot() {
     property_intro_shown_for_code: null,
     property_last_follow_up_intent: null,
     property_pending_user_question: null,
+    visit_coordination_pending: false,
     current_property_code: null,
     current_interested_property_id: null,
     property_history: [],
@@ -88,6 +89,38 @@ function nullPropertyIntentSnapshot() {
 function mergePropertyIntentFields(prev, signals, changeType) {
   if (signals.__clearPropertyIntent) {
     return nullPropertyIntentSnapshot();
+  }
+
+  if (signals.__buyerDominantInventory && !cleanSpaces(String(signals.property_code || ''))) {
+    const incoming = cleanSpaces(String(signals.property_code || ''));
+    const prevCode = cleanSpaces(String(prev.property_code || prev.direct_property_code || ''));
+    const mergedCode = incoming || prevCode || null;
+    const hist = Array.isArray(prev.property_history) ? [...prev.property_history] : [];
+    const byCode =
+      prev.property_context_by_code && typeof prev.property_context_by_code === 'object'
+        ? { ...prev.property_context_by_code }
+        : {};
+    const anchor =
+      cleanSpaces(String(prev.current_property_code || mergedCode || hist[0]?.code || '')) || null;
+    return {
+      property_code: mergedCode,
+      direct_property_code: mergedCode,
+      direct_property_reference: false,
+      property_specific_intent: false,
+      interested_property_id: prev.interested_property_id ?? null,
+      property_context: prev.property_context ?? null,
+      property_generic_cta_shown_for_code: prev.property_generic_cta_shown_for_code ?? null,
+      property_intro_shown_for_code: prev.property_intro_shown_for_code ?? null,
+      property_last_follow_up_intent: null,
+      property_pending_user_question: null,
+      visit_coordination_pending: false,
+      property_history: hist,
+      property_context_by_code: byCode,
+      current_property_code: anchor,
+      current_interested_property_id:
+        prev.current_interested_property_id != null ? String(prev.current_interested_property_id) : null,
+      contextual_subject_code: anchor,
+    };
   }
 
   if (signals.__softExitPropertyMode) {
@@ -179,6 +212,33 @@ function mergePropertyIntentFields(prev, signals, changeType) {
   }
   if (Object.prototype.hasOwnProperty.call(signals, 'property_context')) {
     property_context = signals.property_context;
+  }
+
+  if (
+    (signals.active_playbook === 'buyer_search' || signals.__buyerDominantInventory) &&
+    !incoming &&
+    mergedCode
+  ) {
+    return {
+      property_code: mergedCode,
+      direct_property_code: mergedCode,
+      direct_property_reference: false,
+      property_specific_intent: false,
+      interested_property_id,
+      property_context,
+      property_generic_cta_shown_for_code: prev.property_generic_cta_shown_for_code ?? null,
+      property_intro_shown_for_code: prev.property_intro_shown_for_code ?? null,
+      property_last_follow_up_intent: null,
+      property_pending_user_question: null,
+      visit_coordination_pending: false,
+      property_history: Array.isArray(prev.property_history) ? prev.property_history : [],
+      property_context_by_code:
+        prev.property_context_by_code && typeof prev.property_context_by_code === 'object'
+          ? prev.property_context_by_code
+          : {},
+      current_property_code: cleanSpaces(String(prev.current_property_code || mergedCode || '')) || null,
+      current_interested_property_id: prev.current_interested_property_id ?? null,
+    };
   }
 
   return {
@@ -570,6 +630,7 @@ function mergeConversationalMachineFields(next, signals) {
     'seller_context_active',
     'buyer_context_active',
     'mixed_interest',
+    'visit_coordination_pending',
   ];
   for (const k of keys) {
     if (Object.prototype.hasOwnProperty.call(signals, k) && signals[k] !== undefined) {
