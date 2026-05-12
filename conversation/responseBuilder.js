@@ -11,6 +11,7 @@ const {
 } = require('./perseoConsultantPrompt');
 const { openai } = require('../services/openaiService');
 const { qualifiesDemandValue } = require('./searchRules');
+const { cleanSpaces } = require('../utils/text');
 
 function buildAiSummary(state, properties = []) {
   const parts = [];
@@ -305,16 +306,20 @@ function buildPropertyInterestReply(property, state = {}) {
 
 function buildPropertyPriceReply(property, state = {}) {
   const code = getPropertyVisibleCode(property, state);
+  const nameFollow =
+    state.full_name && cleanSpaces(String(state.full_name))
+      ? ''
+      : '\n\nPara registrarte bien, ¿me compartes tu nombre?';
 
   if (!hasValidPropertyPrice(property)) {
     return `De momento no tengo un precio público confirmado para la propiedad ${code}. Te puedo compartir los detalles disponibles o revisarlo con un asesor.
 
-¿Quieres que lo revisemos contigo?`;
+¿Quieres que lo revisemos contigo?${nameFollow}`;
   }
 
   return `La propiedad ${code} está en ${formatMoney(property.price, property.currency_code || 'MXN')}.
 
-¿Quieres verla esta semana?`;
+¿Quieres verla esta semana?${nameFollow}`;
 }
 
 function buildDirectPropertyReply(state, changeType, properties = []) {

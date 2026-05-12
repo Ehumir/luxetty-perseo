@@ -78,6 +78,14 @@ function getDefaultAiState() {
     last_media_unsupported: false,
     property_image_candidate: false,
     legal_or_property_document_candidate: false,
+
+    property_code: null,
+    direct_property_code: null,
+    direct_property_reference: false,
+    property_specific_intent: false,
+    interested_property_id: null,
+    property_context: null,
+
     last_audio_transcription: null,
     has_audio_without_transcription: false,
     last_image_vision_status: null,

@@ -120,8 +120,9 @@ describe('conversationEngineV2 e2e', () => {
       lead_flow: 'demand',
       operation_type: 'sale',
       full_name: 'Ana',
-      property_code: 'A0470',
+      property_code: 'LUX-A0470',
       direct_property_reference: true,
+      property_specific_intent: true,
       location_text: 'Cumbres',
     };
     const t = '¿Sigue disponible?';
@@ -147,7 +148,7 @@ describe('conversationEngineV2 e2e', () => {
         }),
       }
     );
-    assert.equal(out.nextAiState.property_code || prev.property_code, 'A0470');
+    assert.equal(out.nextAiState.property_code || prev.property_code, 'LUX-A0470');
     assert.match(String(out.reply), /disponibilidad|confirm|asesor/i);
     assert.doesNotMatch(String(out.reply), /s[ií] est[aá] disponible/i);
   });

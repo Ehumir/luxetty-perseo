@@ -207,13 +207,25 @@ function mergeContextualSignals(parsedSignals = {}, previousAiState = {}, nextAi
   const raw = cleanSpaces(String(text || ''));
   const t = normalizeText(raw);
 
+  const propertyCodeCtx = cleanSpaces(
+    String(prevSnap.property_code || built.property_code || sig.property_code || prevSnap.direct_property_code || '')
+  );
+  const propertyMode =
+    !!propertyCodeCtx &&
+    (prevSnap.property_specific_intent ||
+      built.property_specific_intent ||
+      sig.property_specific_intent ||
+      prevSnap.direct_property_reference ||
+      built.direct_property_reference ||
+      sig.direct_property_reference);
+
   const demandish =
     prevSnap.lead_flow === 'demand' || built.lead_flow === 'demand' || sig.lead_flow === 'demand';
   const hasLoc = !!cleanSpaces(String(prevSnap.location_text || built.location_text || sig.location_text || ''));
 
   let budget =
     sig.budget_max != null && Number.isFinite(Number(sig.budget_max)) ? Number(sig.budget_max) : null;
-  if (budget == null && demandish && hasLoc) {
+  if (!propertyMode && budget == null && demandish && hasLoc) {
     budget = extractMaxPrice(raw);
     if (budget == null) budget = parseMdpBudget(raw);
   }
@@ -224,7 +236,7 @@ function mergeContextualSignals(parsedSignals = {}, previousAiState = {}, nextAi
   }
 
   let bedrooms = sig.bedrooms != null && Number.isFinite(Number(sig.bedrooms)) ? Number(sig.bedrooms) : null;
-  if (bedrooms == null) {
+  if (!propertyMode && bedrooms == null) {
     bedrooms = extractBedrooms(raw);
     if (bedrooms == null) bedrooms = parseBedroomsFromCuartos(raw);
   }
@@ -234,7 +246,7 @@ function mergeContextualSignals(parsedSignals = {}, previousAiState = {}, nextAi
   }
 
   const feats = parseFeatureTokens(raw);
-  if (feats.length && demandish) {
+  if (feats.length && demandish && !propertyMode) {
     patch.must_have_features = mergeUniqueStrings(built.must_have_features, feats);
     patch.lead_flow = built.lead_flow || prevSnap.lead_flow || sig.lead_flow || 'demand';
   }
@@ -254,7 +266,7 @@ function mergeContextualSignals(parsedSignals = {}, previousAiState = {}, nextAi
   const prevBudget =
     prevSnap.budget_max != null && Number.isFinite(Number(prevSnap.budget_max)) ? Number(prevSnap.budget_max) : null;
 
-  if (isCheaperRequest(raw) && (baseBudget != null || prevBudget != null)) {
+  if (!propertyMode && isCheaperRequest(raw) && (baseBudget != null || prevBudget != null)) {
     const ref = baseBudget ?? prevBudget;
     const pct = /\b(\d{1,2})\s*%/.test(t) ? Number(t.match(/\b(\d{1,2})\s*%/)?.[1]) : null;
     const factor = pct != null && pct > 0 && pct < 80 ? 1 - pct / 100 : 0.85;
@@ -262,11 +274,11 @@ function mergeContextualSignals(parsedSignals = {}, previousAiState = {}, nextAi
     patch.needs_fresh_search = true;
   }
 
-  if (isAnotherOptionRequest(raw)) {
+  if (!propertyMode && isAnotherOptionRequest(raw)) {
     patch.needs_fresh_search = true;
   }
 
-  if (isOptionsRequestText(raw)) {
+  if (!propertyMode && isOptionsRequestText(raw)) {
     patch.needs_fresh_search = true;
   }
 
@@ -389,6 +401,18 @@ function substituteForbiddenGenericDemandReply(messages, context = {}) {
   const bad = isGenericConsultiveReply(merged);
 
   const redundant = replyDemandsUnknownBudgetOrZone(merged, aiState);
+
+  const propertyIntentResolver = require('./propertyIntentResolver');
+  if (propertyIntentResolver.isPropertySpecificConversation(aiState) && forbiddenCtx && (bad || redundant)) {
+    const row = Object.prototype.hasOwnProperty.call(context, 'resolvedPropertyRow') ? context.resolvedPropertyRow : null;
+    const reply = propertyIntentResolver.buildPropertyModeReply({
+      text,
+      aiState,
+      propertyRow: row,
+      hasValidName,
+    });
+    return { messages: reply, statePatch: {} };
+  }
 
   if (!forbiddenCtx || (!bad && !redundant)) {
     return { messages, statePatch: {} };

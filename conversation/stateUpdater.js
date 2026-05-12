@@ -1,4 +1,5 @@
 const { normalizeAiState, getDefaultAiState } = require('./aiState');
+const { cleanSpaces } = require('../utils/text');
 
 function mergeUnique(listA = [], listB = []) {
   return Array.from(new Set([...(Array.isArray(listA) ? listA : []), ...(Array.isArray(listB) ? listB : [])]));
@@ -57,6 +58,90 @@ function detectStateChange(prevState, signals) {
   if (budgetChanged || signals.bedrooms_any) return 'minor_update';
 
   return 'append_info';
+}
+
+function nullPropertyIntentSnapshot() {
+  return {
+    property_code: null,
+    direct_property_code: null,
+    direct_property_reference: false,
+    property_specific_intent: false,
+    interested_property_id: null,
+    property_context: null,
+  };
+}
+
+/**
+ * Consolida intención por código de propiedad (parser + propertyIntentResolver).
+ * @param {object} prev
+ * @param {object} signals
+ * @param {string} changeType
+ */
+function mergePropertyIntentFields(prev, signals, changeType) {
+  if (signals.__clearPropertyIntent) {
+    return nullPropertyIntentSnapshot();
+  }
+
+  if (changeType === 'restart_flow') {
+    const incoming = cleanSpaces(String(signals.property_code || ''));
+    if (!incoming) {
+      return nullPropertyIntentSnapshot();
+    }
+    return {
+      property_code: incoming,
+      direct_property_code: incoming,
+      direct_property_reference: true,
+      property_specific_intent: !!(signals.property_specific_intent || signals.direct_property_reference),
+      interested_property_id: null,
+      property_context: null,
+    };
+  }
+
+  const incoming = cleanSpaces(String(signals.property_code || ''));
+  const prevCode = cleanSpaces(String(prev.property_code || prev.direct_property_code || ''));
+  const mergedCode = incoming || prevCode || null;
+  const codeChanged = !!(incoming && incoming !== prevCode);
+
+  const directRef = !!(
+    mergedCode &&
+    (signals.direct_property_reference ||
+      signals.property_specific_intent ||
+      !!incoming ||
+      prev.direct_property_reference ||
+      prev.property_specific_intent)
+  );
+
+  const specific = !!(
+    mergedCode &&
+    (signals.property_specific_intent ||
+      prev.property_specific_intent ||
+      signals.direct_property_reference ||
+      !!incoming)
+  );
+
+  let interested_property_id = prev.interested_property_id ?? null;
+  let property_context = prev.property_context ?? null;
+
+  if (codeChanged) {
+    interested_property_id = null;
+    property_context = null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(signals, 'interested_property_id')) {
+    interested_property_id = signals.interested_property_id;
+  }
+  if (Object.prototype.hasOwnProperty.call(signals, 'property_context')) {
+    property_context = signals.property_context;
+  }
+
+  return {
+    property_code: mergedCode,
+    direct_property_code: mergedCode,
+    direct_property_reference: directRef && !!mergedCode,
+    property_specific_intent: specific && !!mergedCode,
+    interested_property_id,
+    property_context,
+  };
 }
 
 function buildNextState(prevState, signals, changeType) {
@@ -403,6 +488,8 @@ function buildNextState(prevState, signals, changeType) {
       next.playbook_step = null;
     }
   }
+
+  Object.assign(next, mergePropertyIntentFields(prev, signals, changeType));
 
   next.last_change_type = changeType;
   return next;
