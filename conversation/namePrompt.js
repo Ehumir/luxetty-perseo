@@ -189,6 +189,25 @@ function appendNameRequestIfNeeded(messages, context = {}) {
     return { messages, statePatch: {}, setAwaitingFullName: false };
   }
 
+  if (context.nameAppendMode === 'name_only') {
+    const fragment = 'Para registrarte bien, ¿me compartes tu nombre?';
+    const last = arr[arr.length - 1];
+    const combined = `${last} ${fragment}`.replace(/\s+/g, ' ').trim();
+    const nextArr = [...arr.slice(0, -1), combined];
+    const outMessages = Array.isArray(messages) ? nextArr : combined;
+    const nextIdx = (Number(aiState?.name_prompt_variant_index || 0) + 1) % 48;
+    const statePatch = {
+      name_prompt_variant_index: nextIdx,
+      name_prompt_last_at: nowIso(),
+      name_prompt_last_signature: normalizeText(fragment).slice(0, 120),
+    };
+    const setAwaitingFullName = !waiting || waiting === 'full_name';
+    if (!setAwaitingFullName && waiting) {
+      statePatch.pending_name_capture = true;
+    }
+    return { messages: outMessages, statePatch, setAwaitingFullName };
+  }
+
   const profile = cleanSpaces(String(waProfileDisplayName || ''));
   let fragment = null;
 

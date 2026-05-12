@@ -34,6 +34,7 @@ const {
   replyAlreadyAsksName: replyAlreadyAsksNameFromPrompt,
 } = require('./conversation/namePrompt');
 const contextualMemoryResolver = require('./conversation/contextualMemoryResolver');
+const { mergeSignalsWithMulti, extractMultiSignals } = require('./conversation/multiSignalExtractor');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -238,6 +239,15 @@ function replyAlreadyAsksName(reply) {
   return replyAlreadyAsksNameFromPrompt(reply);
 }
 
+function operationalDemandContextComplete(aiState = {}) {
+  return (
+    aiState?.lead_flow === 'demand' &&
+    !!cleanSpaces(String(aiState?.location_text || '')) &&
+    aiState?.budget_max != null &&
+    Number.isFinite(Number(aiState.budget_max))
+  );
+}
+
 function enforceNameCapture(reply, context = {}) {
   const {
     contact = null,
@@ -260,6 +270,8 @@ function enforceNameCapture(reply, context = {}) {
     return { reply: insist, applied: true, reason: 'awaiting_full_name_insist' };
   }
 
+  const nameAppendMode = operationalDemandContextComplete(aiState) ? 'name_only' : 'default';
+
   const packed = appendNameRequestIfNeeded(reply, {
     contact,
     aiState,
@@ -268,6 +280,7 @@ function enforceNameCapture(reply, context = {}) {
     userInboundText,
     leadFlow,
     wantsVisit: false,
+    nameAppendMode,
   });
   return { reply: packed.messages, applied: true, reason: 'append_name_request' };
 }
@@ -293,9 +306,23 @@ function hasClearRealEstateIntent(signals = {}, text = '', aiState = {}) {
   );
 }
 
-function buildConsultiveFallbackReply({ text, signals, aiState }) {
+function buildConsultiveFallbackReply({ text, signals, aiState, contact = null, waProfileName = null }) {
   const t = normalizeText(text);
   const loc = cleanSpaces(signals?.location_text || aiState?.location_text || '');
+  const hasName = hasValidHumanName(contact, aiState);
+
+  if (
+    contextualMemoryResolver.isOptionsRequestText(text) &&
+    aiState?.lead_flow === 'demand' &&
+    contextualMemoryResolver.hasOperationalContext(aiState)
+  ) {
+    return contextualMemoryResolver.buildContextualDemandReply({
+      aiState,
+      text,
+      hasValidName: hasName,
+      matchedProperties: [],
+    });
+  }
 
   if (signals?.lead_flow === 'offer' || t.includes('vender') || t.includes('venta') || t.includes('valu')) {
     const zoneAsk = loc ? '' : ' Y dime también en qué zona está la propiedad.';
@@ -303,6 +330,13 @@ function buildConsultiveFallbackReply({ text, signals, aiState }) {
   }
 
   if ((signals?.lead_flow === 'demand' || t.includes('busco') || t.includes('comprar') || t.includes('rentar')) && loc) {
+    const hasBudget = aiState?.budget_max != null && Number.isFinite(Number(aiState.budget_max));
+    if (hasBudget) {
+      if (hasName) {
+        return `Claro, sigo con tu búsqueda en ${loc}. ¿Quieres afinar recámaras, amenidades o zona más específica?`;
+      }
+      return `Claro, sigo con tu búsqueda en ${loc}. Para registrarte bien, ¿me compartes tu nombre?`;
+    }
     return `Claro, te ayudo a buscar casa en ${loc}. Para registrarte bien, ¿me compartes tu nombre? Y dime también tu presupuesto aproximado.`;
   }
 
@@ -584,7 +618,10 @@ app.post('/webhook', async (req, res) => {
     });
 
     const inboundContext = { media: { type: message?.type || 'text' } };
-    const parsedSignals = parseMessageSignals(text, previousAiState, inboundContext);
+    const parsedSignals = mergeSignalsWithMulti(
+      parseMessageSignals(text, previousAiState, inboundContext),
+      extractMultiSignals(text, previousAiState)
+    );
 
     const changeType = detectStateChange(previousAiState, parsedSignals);
     let nextAiState = buildNextState(previousAiState, parsedSignals, changeType);
@@ -622,7 +659,13 @@ app.post('/webhook', async (req, res) => {
       responseSource = v2.responseSource || 'engine_v2';
       logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
     } else {
-      reply = buildConsultiveFallbackReply({ text, signals: parsedSignals, aiState: nextAiState });
+      reply = buildConsultiveFallbackReply({
+        text,
+        signals: parsedSignals,
+        aiState: nextAiState,
+        contact,
+        waProfileName,
+      });
       logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: false });
     }
 

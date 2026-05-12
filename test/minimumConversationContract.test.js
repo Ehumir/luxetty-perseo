@@ -12,10 +12,12 @@ const {
   isGenericConsultiveReply,
 } = require('../conversation/contextualMemoryResolver');
 
+const { mergeSignalsWithMulti, extractMultiSignals } = require('../conversation/multiSignalExtractor');
+
 const { _private: idx } = require('../index');
 
 function advanceState(prev, text, inboundContext = { media: { type: 'text' } }) {
-  const parsed = parseMessageSignals(text, prev, inboundContext);
+  const parsed = mergeSignalsWithMulti(parseMessageSignals(text, prev, inboundContext), extractMultiSignals(text, prev));
   const changeType = detectStateChange(prev, parsed);
   let next = buildNextState(prev, parsed, changeType);
   Object.assign(next, mergeContextualSignals(parsed, prev, next, text));
@@ -30,7 +32,13 @@ test('contrato mínimo: flujo Cumbres → 8M → recámaras → opciones → nom
   state = r.next;
   assert.equal(state.lead_flow, 'demand');
   assert.equal(state.location_text, 'Cumbres');
-  let reply = idx.buildConsultiveFallbackReply({ text: 'Hola, busco casa en Cumbres', signals: r.parsed, aiState: state });
+  let reply = idx.buildConsultiveFallbackReply({
+    text: 'Hola, busco casa en Cumbres',
+    signals: r.parsed,
+    aiState: state,
+    contact: null,
+    waProfileName: null,
+  });
   assert.match(reply, /compartes tu nombre/i);
   assert.match(reply, /presupuesto/i);
 
