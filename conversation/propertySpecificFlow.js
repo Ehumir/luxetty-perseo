@@ -12,6 +12,20 @@ const propertyInventoryService = require('../services/propertyInventoryService')
 
 const GENERIC_CTA_PHRASE = '¿te gustaría que te comparta detalles, precio, ubicación o agendar una visita?';
 
+const ROBOT_MENU_SNIPPETS = [
+  'dime qué quieres revisar',
+  'puedo seguir con',
+  'te gustaría que te comparta detalles',
+  'detalles, precio, ubicación, disponibilidad o visita',
+  'precio, ubicación o agendar una visita',
+  'detalles, precio, ubicación o agendar',
+];
+
+function replyContainsRoboticMenu(text = '') {
+  const t = normalizeText(String(text || ''));
+  return ROBOT_MENU_SNIPPETS.some((s) => t.includes(s));
+}
+
 function buildPublicPropertyUrl(property) {
   return propertyInventoryService.buildPublicPropertyUrl(property);
 }
@@ -46,8 +60,9 @@ function outboundContainsGenericCta(recentMessages = []) {
   const tail = list.slice(-6);
   for (const m of tail) {
     if (m?.direction !== 'outbound') continue;
-    const body = normalizeText(String(m?.message_text || ''));
-    if (body.includes(normalizeText(GENERIC_CTA_PHRASE))) return true;
+    const body = String(m?.message_text || '');
+    if (replyContainsRoboticMenu(body)) return true;
+    if (normalizeText(body).includes(normalizeText(GENERIC_CTA_PHRASE))) return true;
   }
   return false;
 }
@@ -103,6 +118,12 @@ function markPropertyReplyProgress(aiState, meta = {}) {
 
 function isNameComplaint(t) {
   return (
+    t.includes('ya te di mi nombre') ||
+    t.includes('ya te dije mi nombre') ||
+    t.includes('no me lees') ||
+    t.includes('de que hablas') ||
+    t.includes('de qué hablas') ||
+    t.includes('me pueden ayudar') ||
     t.includes('no me preguntaste') ||
     t.includes('no me preguntaste por mi nombre') ||
     t.includes('no me preguntaste mi nombre') ||
@@ -265,7 +286,7 @@ function nameTail(hasName, waProfileName, aiState = {}) {
   if (aiState.awaiting_field === 'full_name') {
     return ' Cuando puedas, compárteme solo tu nombre y con eso lo registro bien.';
   }
-  return ' Para registrarte bien, ¿me compartes tu nombre?';
+  return ' Para canalizarte con un asesor y, si aplica, confirmar disponibilidad, ¿me compartes tu nombre?';
 }
 
 function advisorTail(hasName) {
@@ -276,12 +297,8 @@ function advisorTail(hasName) {
 }
 
 function buildNameComplaintReply({ aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
-  const hasName =
-    typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
-  if (hasName) {
-    return 'Listo, gracias por compartirlo. ¿En qué más te ayudo con la propiedad?';
-  }
-  return 'Tienes razón, disculpa. Para registrarte bien, ¿me compartes tu nombre?';
+  const leadEntryPointRouter = require('./leadEntryPointRouter');
+  return leadEntryPointRouter.buildComplaintRecoveryReply({ aiState, contact, waProfileName });
 }
 
 function buildPropertyLinkReply({ property, aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
@@ -306,21 +323,24 @@ function buildPropertyIntroReply({
 }) {
   const hasName =
     typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
+  const fn = firstNameFromFull(aiState.full_name);
+  const lead = !hasName
+    ? 'Hola, soy el asistente de Luxetty. Con gusto te ayudo. '
+    : fn
+      ? `Hola, ${fn}. `
+      : 'Hola. ';
   const code = getDisplayCode(property, aiState);
   const zone = getZoneLabel(property, aiState);
   const zonePhrase = zone ? ` en ${zone}` : '';
   const url = property && property.id ? buildPublicPropertyUrl(property) : null;
   const opLabel = property && property.id ? propertyInventoryService.propertyOperationLabel(property) : '';
-  const opSentence =
-    opLabel === 'en venta'
-      ? ' Está en venta.'
-      : opLabel === 'en renta'
-        ? ' Está en renta.'
-        : opLabel === 'en venta y en renta'
-          ? ' Está en venta y en renta.'
-          : opLabel && opLabel !== 'operación no confirmada en inventario'
-            ? ` ${opLabel.charAt(0).toUpperCase()}${opLabel.slice(1)}.`
-            : '';
+  let opSentence = '';
+  if (opLabel === 'en venta') opSentence = 'Está en venta.';
+  else if (opLabel === 'en renta') opSentence = 'Está en renta.';
+  else if (opLabel === 'en venta y en renta') opSentence = 'Está en venta y en renta.';
+  else if (opLabel && opLabel !== 'operación no confirmada en inventario') {
+    opSentence = `${opLabel.charAt(0).toUpperCase()}${opLabel.slice(1)}.`;
+  }
   const p = property && property.id ? pickNumericPrice(property) : null;
   const priceSentence =
     p != null
@@ -334,20 +354,21 @@ function buildPropertyIntroReply({
       : '';
 
   if (!property || !property.id) {
-    return `No encontré una propiedad activa con el código ${code || 'indicado'}. Si quieres, puedo ayudarte a revisar otras opciones similares.${nameTail(hasName, waProfileName, aiState)}`;
+    return `${lead}No encontré una propiedad activa con el código ${code || 'indicado'}. Si quieres, puedo ayudarte a revisar otras opciones similares.${nameTail(hasName, waProfileName, aiState)}`.trim();
   }
 
   if (url) {
-    return `Claro, con gusto. Ya ubiqué la propiedad ${code}${zonePhrase}.${opSentence}${priceSentence}${micro}
+    const opBit = opSentence ? ` ${opSentence}` : '';
+    const namedFollow = hasName
+      ? '\n\nSi quieres, puedo ayudarte a confirmar disponibilidad o coordinar visita con un asesor.'
+      : '';
+    return `${lead}Ya ubiqué la propiedad ${code}${zonePhrase}.${opBit}${priceSentence}${micro}
 
-Te comparto la liga para que puedas verla con calma:
-
-${url}
-
-También puedo ayudarte a confirmar precio, disponibilidad o agendar una visita.${nameTail(hasName, waProfileName, aiState)}`.trim();
+Te dejo la ficha:
+${url}${namedFollow}${nameTail(hasName, waProfileName, aiState)}`.trim();
   }
 
-  return `Claro, con gusto. Ya ubiqué la propiedad ${code}${zonePhrase}.${opSentence}${priceSentence}${micro} En este momento no tengo un enlace público verificado para compartirte aquí; un asesor de Luxetty puede enviarte la ficha correcta.${advisorTail(hasName)}${nameTail(hasName, waProfileName, aiState)}`.trim();
+  return `${lead}Ya ubiqué la propiedad ${code}${zonePhrase}.${opSentence ? ` ${opSentence}` : ''}${priceSentence}${micro} En este momento no tengo un enlace público verificado para compartirte aquí; un asesor de Luxetty puede enviarte la ficha correcta.${advisorTail(hasName)}${nameTail(hasName, waProfileName, aiState)}`.trim();
 }
 
 function buildPropertyDetailsReply({ property, aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
@@ -517,7 +538,7 @@ function buildFrustrationRecoveryReply({
     return buildPropertyLinkReply({ property, aiState, contact, waProfileName, hasRegisteredName });
   }
 
-  return `Tienes razón, me fui por una respuesta muy general. Retomo: estás preguntando por ${code}. Te puedo ayudar con detalles, precio, disponibilidad o visita. ¿Qué quieres confirmar primero?${nameTail(hasName, waProfileName, aiState)}`;
+  return `Tienes razón, me fui por una respuesta muy general. Retomo: estás preguntando por ${code}. ¿Quieres que canalemos una visita con un asesor o prefieres confirmar disponibilidad primero?${nameTail(hasName, waProfileName, aiState)}`;
 }
 
 function buildContinuePropertyInterestReply({
@@ -530,9 +551,9 @@ function buildContinuePropertyInterestReply({
   const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const code = getDisplayCode(property, aiState);
   if (!property || !property.id) {
-    return `Sigo con tu interés en ${code || 'esa propiedad'}. Cuando quieras, dime si prefieres detalles, precio, ubicación, disponibilidad o visita.${nameTail(hasName, waProfileName, aiState)}`;
+    return `Sigo con tu interés en ${code || 'esa propiedad'}. ¿Quieres que canalemos una visita con un asesor o revisamos disponibilidad primero?${nameTail(hasName, waProfileName, aiState)}`;
   }
-  return `Listo, seguimos con ${code}. Dime qué quieres revisar: detalles, precio, ubicación, disponibilidad o visita.${nameTail(hasName, waProfileName, aiState)}`;
+  return `Listo, seguimos con ${code}. Si te parece, dime si quieres confirmar disponibilidad o coordinar una visita con un asesor.${nameTail(hasName, waProfileName, aiState)}`;
 }
 
 function buildGenericPropertyFollowUpReply({
@@ -549,9 +570,9 @@ function buildGenericPropertyFollowUpReply({
     return `¿En qué más te ayudo con ${code || 'tu consulta'}?${nameTail(hasName, waProfileName, aiState)}`;
   }
   if (shouldAvoidRepeatedPropertyCTA(aiState, recentMessages)) {
-    return `Dime qué quieres revisar de ${code}: detalles, precio, ubicación, disponibilidad o visita.${nameTail(hasName, waProfileName, aiState)}`;
+    return `Sigo con ${code}. ¿Prefieres que revisemos disponibilidad o coordinamos visita con un asesor?${nameTail(hasName, waProfileName, aiState)}`;
   }
-  return `Claro, ya ubiqué la propiedad ${code}. ${GENERIC_CTA_PHRASE.charAt(0).toUpperCase()}${GENERIC_CTA_PHRASE.slice(1)}${nameTail(hasName, waProfileName, aiState)}`;
+  return `Ya ubiqué ${code}. Si quieres, puedo ayudarte a confirmar disponibilidad o canalizar una visita con un asesor.${nameTail(hasName, waProfileName, aiState)}`;
 }
 
 /**

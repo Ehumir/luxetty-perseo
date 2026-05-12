@@ -124,6 +124,8 @@ function getDefaultAiState() {
     contact_number_confirmed: null,
     confirmed_phone: null,
     campaign_context: null,
+    /** Última pauta detectada (propiedad vs captación) para retomar tono tras capturar nombre. */
+    entry_point_last: null,
     current_intent: null,
     last_clear_intent: null,
     pending_question: null,
