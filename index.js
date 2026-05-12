@@ -38,6 +38,8 @@ const { mergeSignalsWithMulti, extractMultiSignals } = require('./conversation/m
 const propertyIntentResolver = require('./conversation/propertyIntentResolver');
 const propertySpecificFlow = require('./conversation/propertySpecificFlow');
 const propertyInventoryService = require('./services/propertyInventoryService');
+const contextualReferenceResolver = require('./conversation/contextualReferenceResolver');
+const conversationalStateMachine = require('./conversation/conversationalStateMachine');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -326,6 +328,15 @@ function buildConsultiveFallbackReply({
   const loc = cleanSpaces(signals?.location_text || aiState?.location_text || '');
   const conversationNameOk = hasConversationCapturedFullName(aiState);
   const hasName = hasValidHumanName(contact, aiState);
+
+  if (
+    conversationNameOk &&
+    (t.includes('ya te di') || t.includes('ya dije') || t.includes('te dije')) &&
+    t.includes('nombre')
+  ) {
+    const fn = cleanSpaces(String(aiState.full_name || '')).split(/\s+/).filter(Boolean)[0];
+    return fn ? `Sí ${fn}, ya quedó registrado. ¿En qué más te apoyo?` : 'Sí, ya quedó registrado. ¿En qué más te apoyo?';
+  }
 
   if (propertyIntentResolver.isPropertySpecificConversation(aiState)) {
     return propertyIntentResolver.buildPropertyModeReply({
@@ -663,6 +674,31 @@ app.post('/webhook', async (req, res) => {
       extractMultiSignals(text, previousAiState)
     );
     Object.assign(parsedSignals, propertyIntentResolver.resolvePropertyIntent(text, previousAiState));
+
+    const ctxResolved = contextualReferenceResolver.resolveContextualPropertyCode({
+      text,
+      aiState: previousAiState,
+      recentMessages,
+    });
+    if (ctxResolved.propertyCode && !parsedSignals.property_code) {
+      Object.assign(parsedSignals, contextualReferenceResolver.buildPropertySignalsFromResolution(ctxResolved));
+    }
+    Object.assign(
+      parsedSignals,
+      conversationalStateMachine.computeSignalPatch({
+        text,
+        prevAiState: previousAiState,
+        parsedSignals,
+      })
+    );
+    Object.assign(
+      parsedSignals,
+      conversationalStateMachine.applySellerLocationStickyPatch({
+        text,
+        prevAiState: previousAiState,
+        parsedSignals,
+      })
+    );
 
     const changeType = detectStateChange(previousAiState, parsedSignals);
     let nextAiState = buildNextState(previousAiState, parsedSignals, changeType);
