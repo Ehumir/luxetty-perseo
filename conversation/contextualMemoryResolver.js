@@ -63,6 +63,11 @@ function isOptionsRequestText(text) {
   const t = normalizeText(text);
   if (!t) return false;
   return (
+    t.includes('dame opciones') ||
+    t.includes('dame opcion') ||
+    t.includes('dame opción') ||
+    t.includes('pasame opciones') ||
+    t.includes('pásame opciones') ||
     t.includes('tienes opciones') ||
     t.includes('hay opciones') ||
     t.includes('opciones disponibles') ||
@@ -70,6 +75,23 @@ function isOptionsRequestText(text) {
     t.includes('qué opciones') ||
     (t.includes('opciones') && t.includes('?'))
   );
+}
+
+function replyDemandsUnknownBudgetOrZone(replyText, aiState = {}) {
+  const rt = normalizeText(String(replyText || ''));
+  const st = aiState && typeof aiState === 'object' ? aiState : {};
+  const hasBudget = st.budget_max != null && Number.isFinite(Number(st.budget_max));
+  const hasLoc = !!cleanSpaces(String(st.location_text || ''));
+  const hasBedrooms = st.bedrooms != null && Number.isFinite(Number(st.bedrooms));
+
+  if (hasBudget && (rt.includes('presupuesto aproximado') || rt.includes('cual es tu presupuesto'))) return true;
+  if (hasBudget && rt.includes('dime tambien tu presupuesto')) return true;
+  if (hasLoc && hasBudget && rt.includes('te ayudo a buscar casa en') && rt.includes('presupuesto')) return true;
+  if (hasLoc && hasBudget && hasBedrooms && rt.includes('recamaras') && rt.includes('filtrar por recamaras'))
+    return false;
+  if (hasLoc && rt.includes('en que zona') && rt.includes('propiedad')) return true;
+
+  return false;
 }
 
 function isCheaperRequest(text) {
@@ -248,6 +270,11 @@ function mergeContextualSignals(parsedSignals = {}, previousAiState = {}, nextAi
     patch.needs_fresh_search = true;
   }
 
+  const preserveKeys = ['budget_max', 'location_text', 'bedrooms', 'lead_flow', 'full_name', 'operation_type'];
+  for (const k of preserveKeys) {
+    if (patch[k] === null || patch[k] === undefined) delete patch[k];
+  }
+
   return patch;
 }
 
@@ -303,6 +330,18 @@ function buildContextualDemandReply(context = {}) {
     return [head, body, tail].filter(Boolean).join('\n');
   }
 
+  if (wantsOptions && loc && budget != null && br != null) {
+    const base = `Con ${bLabel} en ${loc} y ${br} recámaras puedo revisar opciones reales alineadas a lo que buscas. ¿Quieres que te comparta opciones disponibles o prefieres que un asesor valide inventario actualizado contigo?`;
+    if (!hasValidName) return `${base}\n\nPara registrarte bien, ¿me compartes tu nombre?`;
+    return base;
+  }
+
+  if (wantsOptions && loc && budget != null) {
+    const base = `Con ${bLabel} en ${loc} puedo revisar opciones reales alineadas a lo que buscas. ¿Quieres que te comparta opciones disponibles o prefieres que un asesor valide inventario actualizado contigo?`;
+    if (!hasValidName) return `${base}\n\nPara registrarte bien, ¿me compartes tu nombre?`;
+    return base;
+  }
+
   if (wantsOptions && (loc || budget != null)) {
     if (!hasValidName) {
       return `${honestNoInventory()}\n\nPara registrarte bien, ¿me compartes tu nombre?`;
@@ -349,7 +388,9 @@ function substituteForbiddenGenericDemandReply(messages, context = {}) {
   const forbiddenCtx = isGenericFallbackForbidden(aiState, text);
   const bad = isGenericConsultiveReply(merged);
 
-  if (!forbiddenCtx || !bad) {
+  const redundant = replyDemandsUnknownBudgetOrZone(merged, aiState);
+
+  if (!forbiddenCtx || (!bad && !redundant)) {
     return { messages, statePatch: {} };
   }
 
@@ -385,4 +426,6 @@ module.exports = {
   mergeContextualSignals,
   substituteForbiddenGenericDemandReply,
   formatMoneyMx,
+  isOptionsRequestText,
+  replyDemandsUnknownBudgetOrZone,
 };

@@ -21,6 +21,7 @@ const {
 } = require('./realEstateAdvisorReply');
 const { appendNameRequestIfNeeded, hasValidHumanName } = require('./namePrompt');
 const contextualMemoryResolver = require('./contextualMemoryResolver');
+const { mergeSignalsWithMulti, extractMultiSignals } = require('./multiSignalExtractor');
 const { OPENAI_MODEL } = require('../config/env');
 
 function isEngineV2Enabled() {
@@ -203,6 +204,7 @@ async function processConversationTurnV2(input = {}, options = {}) {
   const text = cleanSpaces(String(input.text ?? ''));
   const previousAiState = input.previousAiState && typeof input.previousAiState === 'object' ? input.previousAiState : {};
   let incomingSignals = input.parsedSignals && typeof input.parsedSignals === 'object' ? input.parsedSignals : {};
+  incomingSignals = mergeSignalsWithMulti(incomingSignals, extractMultiSignals(text, previousAiState));
 
   const orchContext = {
     text,
@@ -405,6 +407,15 @@ async function processConversationTurnV2(input = {}, options = {}) {
 
   let outboundMessages = reply;
   if (input.conversationId && input.skipNameAppend !== true && !skipNameAppend) {
+    const nameAppendMode =
+      nextAiState.lead_flow === 'demand' &&
+      cleanSpaces(String(nextAiState.location_text || '')) &&
+      nextAiState.budget_max != null &&
+      Number.isFinite(Number(nextAiState.budget_max)) &&
+      !hasValidHumanName(input.contact, nextAiState)
+        ? 'name_only'
+        : 'default';
+
     const namePack = appendNameRequestIfNeeded(reply, {
       contact: input.contact || null,
       aiState: nextAiState,
@@ -412,6 +423,7 @@ async function processConversationTurnV2(input = {}, options = {}) {
       userInboundText: text,
       leadFlow: nextAiState.lead_flow,
       wantsVisit: !!nextAiState.wants_visit,
+      nameAppendMode,
     });
     outboundMessages = namePack.messages;
     if (namePack.statePatch && typeof namePack.statePatch === 'object') {
