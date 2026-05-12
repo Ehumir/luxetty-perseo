@@ -114,6 +114,10 @@ const {
   shouldSkipOpenAIRouteEvaluator,
   getAdvisorFailureFallbackReply,
 } = require('./conversation/routeEvaluator');
+const {
+  processConversationTurnV2,
+  shouldUseConversationEngineV2,
+} = require('./conversation/conversationEngineV2');
 const { appendNameRequestIfNeeded, hasValidHumanName } = require('./conversation/namePrompt');
 const {
   hasRealEstateAdvisorTurnContext,
@@ -2376,6 +2380,168 @@ app.post('/webhook', async (req, res) => {
         }
       }
     }
+
+      if (
+        processingMode === 'respond' &&
+        shouldUseConversationEngineV2({
+          text,
+          parsedSignals: incomingSignals,
+          inboundContext,
+        })
+      ) {
+        try {
+          await saveConversationEvent(conversationId, 'engine_v2_started', {
+            engine_v2_enabled: true,
+          });
+          const recentEarly = await fetchRecentConversationMessages(conversationId, 20);
+          const v2out = await processConversationTurnV2({
+            text,
+            normalizedText,
+            conversationId,
+            phone: from,
+            previousAiState,
+            conversationRow,
+            contact: linkedEntities.existingContact,
+            lead: linkedEntities.existingLead,
+            recentMessages: recentEarly,
+            inboundContext,
+            unifiedContext: unifiedContext || null,
+            referralContext: normalizedReferral,
+            campaignContext: campaignContextForFusion?.campaignContext || null,
+            media: inboundContext?.media || {},
+            propertiesContext: { matchedProperties: [] },
+            parsedSignals: incomingSignals,
+            routeEvaluatorDecision: null,
+            waProfileDisplayName,
+            changeType: detectStateChange(previousAiState, incomingSignals),
+            getPropertyByCode,
+            searchPropertiesWithFallbacks,
+            logger: console,
+          });
+
+          let v2State = v2out.nextAiState;
+          let replyToSend = v2out.outboundMessages;
+
+          if (unifiedContext?.ok) {
+            v2State.context_fusion = {
+              ...(typeof v2State.context_fusion === 'object' ? v2State.context_fusion : {}),
+              should_create_or_update_lead: !!unifiedContext.shouldCreateOrUpdateLead,
+              updated_at: nowIso(),
+            };
+          }
+
+          const matchedFacts = Array.isArray(v2out.facts?.properties) ? v2out.facts.properties : [];
+          const campaignPropertyCodeForLead =
+            campaignContextForFusion?.campaignContext?.property_code || null;
+          const matchedListingForLead =
+            matchedFacts.length > 0 ? matchedFacts[0]?.listing_id || null : null;
+          const campaignMatchesTopProperty =
+            !!campaignPropertyCodeForLead &&
+            !!matchedListingForLead &&
+            String(campaignPropertyCodeForLead).toUpperCase().replace(/\s+/g, '') ===
+              String(matchedListingForLead).toUpperCase().replace(/\s+/g, '');
+
+          const shouldAttemptLeadAutomation =
+            !isGreetingOnly(text) &&
+            !isNonRealEstateCategory(v2State) &&
+            (v2State.lead_flow === 'demand' ||
+              v2State.lead_flow === 'offer' ||
+              v2State.direct_property_reference ||
+              v2State?.context_fusion?.should_create_or_update_lead ||
+              (matchedFacts.length > 0 && campaignMatchesTopProperty));
+
+          let leadAutomationResult = null;
+          if (shouldAttemptLeadAutomation) {
+            const propertyForLead =
+              matchedFacts.length > 0 &&
+              (v2State.direct_property_reference || campaignMatchesTopProperty)
+                ? matchedFacts[0]
+                : null;
+            const contactId = await upsertContactForConversation(conversationRow, v2State, from, {
+              waName: waProfileDisplayName,
+              rawPayload: inboundRawPayload,
+            });
+
+            leadAutomationResult = await maybeRetryLeadAfterContactLinked({
+              conversationId,
+              conversationRow,
+              nextAiState: v2State,
+              contactId,
+              property: propertyForLead,
+              messageText: text,
+              referralContext: normalizedReferral,
+              rawPayload: inboundRawPayload,
+              unifiedContext: v2State?.context_fusion || unifiedContext || null,
+            });
+
+            const lastOutboundV2 = getLastOutboundTextFromDbRows(recentEarly);
+            if (
+              leadAutomationResult?.handoffTriggered &&
+              !String(lastOutboundV2 || '').includes(
+                'Para darte una atención más precisa, puedo canalizar'
+              )
+            ) {
+              replyToSend = buildIntelligentHandoffReply();
+              v2State.handoff_ready = true;
+              v2State.handoff_sent = true;
+              await saveConversationEvent(conversationId, 'intelligent_handoff_message_sent', {
+                lead_id: leadAutomationResult.leadId || null,
+                assigned_agent_profile_id: leadAutomationResult.assignedAgentProfileId || null,
+                source: 'ai_agent',
+                engine_v2: true,
+              });
+            }
+          }
+
+          const responseSrc = String(v2out.responseSource || '');
+          const fallbackUsed =
+            responseSrc.includes('fallback') || responseSrc === 'engine_v2_programmed_safety';
+
+          await saveConversationEvent(conversationId, 'engine_v2_response', {
+            engine_v2_used: true,
+            engine_v2_enabled: true,
+            response_source: v2out.responseSource,
+            advisor_called: v2out.advisorCalled,
+            orchestrator_called: !!v2out.orchestratorDecision,
+            orchestrator_decision: v2out.orchestratorDecision || null,
+            reply_strategy: v2out.orchestratorDecision?.reply_strategy || null,
+            captured_fields: v2out.orchestratorDecision?.captured_fields || null,
+            crm_actions_recommended: v2out.crmActions || null,
+            property_actions_recommended: v2out.propertyActions || null,
+            early_return_blocked: true,
+            fallback_used: fallbackUsed,
+            fallback_reason: fallbackUsed ? responseSrc : null,
+            lead_automation: leadAutomationResult || null,
+          });
+
+          await saveConversationState(conversationId, v2State);
+
+          await saveOutboundMessages({
+            conversationId,
+            messages: replyToSend,
+            rawPayload: { perseo_metadata: { engine_v2: true } },
+          });
+
+          const v2MessagesStr =
+            normalizeOutboundMessages(replyToSend).join('\n\n') || String(replyToSend);
+          conversations.set(
+            from,
+            [
+              ...(conversations.get(from) || []),
+              { role: 'user', content: text },
+              { role: 'assistant', content: v2MessagesStr },
+            ].slice(-MAX_SHORT_MEMORY_MESSAGES)
+          );
+
+          await sendWhatsAppMessages(from, replyToSend);
+          return;
+        } catch (engineErr) {
+          console.error('PERSEO_ENGINE_V2_failed', engineErr);
+          await saveConversationEvent(conversationId, 'engine_v2_failed', {
+            message: String(engineErr?.message || engineErr),
+          });
+        }
+      }
 
       let routeEvaluatorDecision = null;
       if (!shouldSkipOpenAIRouteEvaluator({ text, messageType, inboundContext })) {

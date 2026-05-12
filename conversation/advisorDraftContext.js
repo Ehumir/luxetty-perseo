@@ -464,6 +464,7 @@ function buildAdvisorResponseDraftContext(context) {
   const should_ask_name = contact_context.should_ask_name;
 
   const routeDecision = signals.route_evaluator_decision;
+  const orchDecision = signals.orchestrator_decision;
 
   let advisor_mode = inferAdvisorMode({
     ai_state: aiState,
@@ -474,7 +475,22 @@ function buildAdvisorResponseDraftContext(context) {
 
   let response_goal = inferResponseGoal(userMessage, aiState, { ...signals, contact });
 
-  if (routeDecision && typeof routeDecision === 'object' && routeDecision.should_use_advisor_reply) {
+  if (orchDecision && signals.conversation_engine_v2 && typeof orchDecision === 'object') {
+    const g = orchDecision.reply_strategy?.goal;
+    if (g === 'capture_name') response_goal = 'qualify_demand_and_capture_name';
+    else if (g === 'qualify_demand') response_goal = 'qualify_demand';
+    else if (g === 'qualify_offer') response_goal = 'qualify_offer';
+    else if (g === 'answer_property_followup') response_goal = 'property_followup';
+    else if (g === 'create_lead_handoff') response_goal = 'qualify_demand';
+    else if (g === 'safety') response_goal = 'qualify_demand';
+
+    const stage = orchDecision.conversation_stage;
+    if (stage === 'seller_capture' || aiState.lead_flow === 'offer') advisor_mode = 'offer_active';
+    else if (stage === 'property_followup' || aiState.direct_property_reference) advisor_mode = 'property_active';
+    else if (aiState.lead_flow === 'demand') advisor_mode = 'demand_active';
+  }
+
+  if (routeDecision && typeof routeDecision === 'object' && routeDecision.should_use_advisor_reply && !signals.conversation_engine_v2) {
     if (typeof routeDecision.response_goal === 'string' && routeDecision.response_goal.trim()) {
       response_goal = routeDecision.response_goal.trim();
     }
@@ -504,6 +520,23 @@ function buildAdvisorResponseDraftContext(context) {
     }
   }
 
+  if (
+    orchDecision &&
+    signals.conversation_engine_v2 &&
+    Array.isArray(orchDecision.safety?.forbidden_claims) &&
+    orchDecision.safety.forbidden_claims.length
+  ) {
+    const extra = orchDecision.safety.forbidden_claims.map((x) => String(x || '').trim()).filter(Boolean);
+    const seen = new Set(forbidden_claims.map((x) => normalizeText(String(x).slice(0, 72))));
+    for (const line of extra) {
+      const k = normalizeText(String(line).slice(0, 72));
+      if (k && !seen.has(k)) {
+        seen.add(k);
+        forbidden_claims.push(line);
+      }
+    }
+  }
+
   const crm_actions_taken = Array.isArray(safe.crm_actions_taken)
     ? safe.crm_actions_taken.map((x) => (typeof x === 'string' ? x : safeJsonStringify(x))).slice(0, 20)
     : [];
@@ -515,6 +548,7 @@ function buildAdvisorResponseDraftContext(context) {
     advisor_followup_type,
     name_timing_hint,
     route_evaluator_route: routeDecision?.route || null,
+    orchestrator_stage: orchDecision?.conversation_stage || null,
   };
 
   return {
