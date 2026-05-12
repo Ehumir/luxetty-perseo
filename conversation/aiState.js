@@ -90,6 +90,11 @@ function getDefaultAiState() {
     property_last_follow_up_intent: null,
     property_pending_user_question: null,
 
+    current_property_code: null,
+    current_interested_property_id: null,
+    property_history: [],
+    property_context_by_code: {},
+
     last_audio_transcription: null,
     has_audio_without_transcription: false,
     last_image_vision_status: null,
@@ -190,6 +195,11 @@ function normalizeAiState(rawState) {
     missing_information: Array.isArray(rawState.missing_information)
       ? rawState.missing_information
       : [],
+    property_history: Array.isArray(rawState.property_history) ? rawState.property_history : [],
+    property_context_by_code:
+      rawState.property_context_by_code && typeof rawState.property_context_by_code === 'object'
+        ? rawState.property_context_by_code
+        : {},
   };
 
   if (!normalized.intent_type && normalized.playbook_type) {
