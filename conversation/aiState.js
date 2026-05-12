@@ -98,6 +98,8 @@ function getDefaultAiState() {
     rental_special_requirements: null,
 
     full_name: null,
+    /** Set when UI pidió nombre pero awaiting_field comercial sigue activo (p. ej. presupuesto). */
+    pending_name_capture: false,
     contact_name: null,
     owner_relation: null,
     contact_preference: null,

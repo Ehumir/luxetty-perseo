@@ -16,7 +16,8 @@
  *   • Números no autorizados continúan el flujo normal (no saben que el comando existe).
  *   • Toda ejecución se persiste en conversation_events (auditoría técnica).
  *
- * No eliminan: histórico real, contactos, leads.
+ * No elimina: histórico real en conversation_messages, contactos ni leads en Supabase
+ * (solo reemplaza ai_state y vacía memoria RAM corta del proceso).
  */
 
 // ─── Parser ───────────────────────────────────────────────────────────────────

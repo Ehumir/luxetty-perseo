@@ -231,6 +231,9 @@ function appendNameRequestIfNeeded(messages, context = {}) {
   };
 
   const setAwaitingFullName = !waiting || waiting === 'full_name';
+  if (!setAwaitingFullName && waiting) {
+    statePatch.pending_name_capture = true;
+  }
 
   return { messages: outMessages, statePatch, setAwaitingFullName };
 }
