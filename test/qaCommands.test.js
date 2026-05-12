@@ -22,6 +22,8 @@ const {
   isClosedQaSession,
   isQaLeadBlocked,
 } = require('../conversation/qaCommands');
+const { getDefaultAiState } = require('../conversation/aiState');
+const { REPLY_RESET, REPLY_CLOSE } = require('../conversation/qaSprint1Commands');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,15 +59,7 @@ function buildConversationRow(aiStateOverrides = {}) {
 }
 
 function getDefaultState() {
-  return {
-    lead_flow: null,
-    intent_type: null,
-    operation_type: null,
-    property_type: null,
-    location_text: null,
-    budget_max: null,
-    full_name: null,
-  };
+  return getDefaultAiState();
 }
 
 function nowIso() {
@@ -191,6 +185,9 @@ test('isQaCommandAllowed · normaliza + y espacios del número en allowlist', ()
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('handleQaCommand !reset · limpia estado, registra evento, responde OK', async () => {
+  const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '5218111111111';
+
   const eventLog = [];
   const stateHolder = {};
   const replyLog = [];
@@ -216,34 +213,31 @@ test('handleQaCommand !reset · limpia estado, registra evento, responde OK', as
   assert.equal(result.handled, true, 'debe retornar handled=true');
   assert.equal(result.command, 'reset');
 
-  // Estado limpio
   assert.equal(stateHolder.lead_flow, null, 'lead_flow debe limpiarse');
-  assert.equal(stateHolder.qa_test_active, true, 'qa_test_active debe activarse');
-  assert.equal(stateHolder.qa_lead_creation_blocked, false, 'no debe bloquear creación de lead tras reset QA');
-  assert.ok(stateHolder.qa_test_session_id, 'debe generar qa_test_session_id');
+  assert.equal(stateHolder.qa_test_active, undefined, 'Sprint1 reset no activa banderas qa_test_*');
 
-  // Memoria en RAM limpia
   const memAfter = memMap.get('5218111111111');
   assert.deepEqual(memAfter, [], 'debe limpiar la memoria en RAM del número');
 
-  // Evento de auditoría
-  const resetEvent = eventLog.find((e) => e.type === 'qa_command_reset');
-  assert.ok(resetEvent, 'debe persistir evento qa_command_reset');
+  const resetEvent = eventLog.find((e) => e.type === 'qa_reset_executed');
+  assert.ok(resetEvent, 'debe persistir evento qa_reset_executed');
   assert.equal(resetEvent.convId, 'conv-qa-001');
-  assert.equal(resetEvent.payload.qa_phone, '5218111111111');
-  assert.equal(resetEvent.payload.previous_lead_flow, 'offer');
-  assert.equal(resetEvent.payload.qa_reset_production, true);
+  assert.equal(resetEvent.payload.command, 'reset');
 
-  // Reply enviado
   assert.ok(replyLog.length > 0, 'debe enviar respuesta');
-  assert.equal(String(replyLog[0].messages), 'QA reset aplicado. Puedes iniciar una nueva prueba.');
+  assert.equal(String(replyLog[0].messages), REPLY_RESET);
+
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
 // handleQaCommand — !close
 // ═════════════════════════════════════════════════════════════════════════════
 
-test('handleQaCommand !close · marca sesión cerrada, bloquea lead, registra evento', async () => {
+test('handleQaCommand !close · marca conversación cerrada y limpia ai_state', async () => {
+  const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '5218111111111';
+
   const eventLog = [];
   const stateHolder = {};
   const replyLog = [];
@@ -252,6 +246,7 @@ test('handleQaCommand !close · marca sesión cerrada, bloquea lead, registra ev
     qa_test_active: true,
     qa_test_session_id: 'qa_12345_6789',
   });
+  let closedUpdate = null;
 
   const result = await handleQaCommand({
     command: 'close',
@@ -267,24 +262,24 @@ test('handleQaCommand !close · marca sesión cerrada, bloquea lead, registra ev
     getDefaultState,
     nowIso,
     metaMessageId: 'wamid-qa-002',
+    updateConversationFn: async (_client, _id, payload) => {
+      closedUpdate = payload;
+    },
   });
 
   assert.equal(result.handled, true);
   assert.equal(result.command, 'close');
 
-  // Estado de cierre
-  assert.equal(stateHolder.qa_test_closed, true, 'debe marcar qa_test_closed');
-  assert.equal(stateHolder.qa_test_active, false, 'debe desactivar qa_test_active');
-  assert.equal(stateHolder.qa_lead_creation_blocked, true, 'debe mantener bloqueo de lead');
-  assert.equal(stateHolder.handoff_ready, false, 'no debe triggear handoff');
-  assert.equal(stateHolder.closing_message_sent, true, 'debe marcar closing_message_sent');
+  assert.equal(stateHolder.lead_flow, null, 'ai_state operativo limpio');
+  assert.equal(stateHolder.qa_test_active, undefined, 'sin banderas qa legacy en close Sprint1');
 
-  // Evento de auditoría
-  const closeEvent = eventLog.find((e) => e.type === 'qa_command_close');
-  assert.ok(closeEvent, 'debe persistir evento qa_command_close');
+  const closeEvent = eventLog.find((e) => e.type === 'qa_conversation_closed');
+  assert.ok(closeEvent, 'debe persistir evento qa_conversation_closed');
+  assert.equal(closedUpdate?.status, 'closed');
 
-  // Reply
-  assert.equal(String(replyLog[0].messages), 'Caso cerrado para prueba.');
+  assert.equal(String(replyLog[0].messages), REPLY_CLOSE);
+
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -377,6 +372,9 @@ test('isQaCommandAllowed · número no autorizado no ejecuta comando', () => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 test('handleQaCommand !reset · contexto previo no se arrastra al nuevo estado', async () => {
+  const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '5218111111111';
+
   const stateHolder = {};
   const convRow = buildConversationRow({
     lead_flow: 'offer',
@@ -404,28 +402,30 @@ test('handleQaCommand !reset · contexto previo no se arrastra al nuevo estado',
     nowIso,
   });
 
-  // Ningún campo del contexto previo debe estar presente
   assert.equal(stateHolder.lead_flow, null, 'lead_flow debe ser null tras reset');
   assert.equal(stateHolder.location_text, null, 'location_text debe limpiarse');
   assert.equal(stateHolder.budget_max, null, 'budget_max debe limpiarse');
   assert.equal(stateHolder.full_name, null, 'full_name debe limpiarse');
-  assert.equal(stateHolder.has_mortgage, undefined, 'has_mortgage no debe arrastrarse');
-  assert.equal(stateHolder.urgent_sale_signal, undefined, 'urgent_sale_signal no debe arrastrarse');
+  assert.equal(stateHolder.has_mortgage, null, 'has_mortgage vuelve a default');
+  assert.equal(stateHolder.urgent_sale_signal, false, 'urgent_sale_signal vuelve a default');
+  assert.deepEqual(stateHolder.seller_scenarios, []);
 
-  // Solo deben existir las banderas QA
-  assert.equal(stateHolder.qa_test_active, true);
-  assert.equal(stateHolder.qa_lead_creation_blocked, false);
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Escenario: después de !close no se duplica lead (bloqueo activo)
 // ═════════════════════════════════════════════════════════════════════════════
 
-test('isQaLeadBlocked · estado cerrado bloquea creación de lead', async () => {
+test('handleQaCommand !close · no deja flags qa_lead_creation_blocked (Sprint1)', async () => {
+  const original = process.env.QA_ALLOWED_WHATSAPP_NUMBERS;
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = '5218111111111';
+
   const stateHolder = {};
   const convRow = buildConversationRow({
     qa_test_active: true,
     qa_test_session_id: 'qa_111_222',
+    qa_lead_creation_blocked: true,
   });
 
   await handleQaCommand({
@@ -441,15 +441,14 @@ test('isQaLeadBlocked · estado cerrado bloquea creación de lead', async () => 
     saveStateFn: buildMockSaveState(stateHolder),
     getDefaultState,
     nowIso,
+    updateConversationFn: async () => {},
   });
 
-  // isQaLeadBlocked debe retornar true para el estado guardado
-  assert.equal(isQaLeadBlocked(stateHolder), true,
-    'después de !close, isQaLeadBlocked debe ser true');
-  assert.equal(isClosedQaSession(stateHolder), true,
-    'debe ser sesión QA cerrada');
-  assert.equal(isActiveQaSession(stateHolder), false,
-    'no debe ser sesión activa después de close');
+  assert.equal(isQaLeadBlocked(stateHolder), false);
+  assert.equal(isClosedQaSession(stateHolder), false);
+  assert.equal(isActiveQaSession(stateHolder), false);
+
+  process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -524,7 +523,7 @@ test('interceptQaCommand · comando con espacios "  !reset  " funciona', async (
   });
 
   assert.equal(result.handled, true);
-  assert.equal(String(replyLog[0].messages), 'QA reset aplicado. Puedes iniciar una nueva prueba.');
+  assert.equal(String(replyLog[0].messages), REPLY_RESET);
 
   process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
@@ -551,7 +550,7 @@ test('interceptQaCommand · comando en mayúsculas "!RESET" funciona', async () 
   });
 
   assert.equal(result.handled, true);
-  assert.equal(String(replyLog[0].messages), 'QA reset aplicado. Puedes iniciar una nueva prueba.');
+  assert.equal(String(replyLog[0].messages), REPLY_RESET);
 
   process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
@@ -583,7 +582,8 @@ test('interceptQaCommand · número no autorizado no ejecuta QA', async () => {
   assert.equal(result.handled, false);
   assert.equal(replyLog.length, 0, 'no debe enviar reply QA');
   assert.equal(Object.keys(stateHolder).length, 0, 'no debe modificar estado QA');
-  assert.ok(eventLog.some((e) => e.type === 'qa_command_denied'));
+  assert.ok(eventLog.some((e) => e.type === 'qa_command_unauthorized'));
+  assert.equal(result.reason, 'qa_command_unauthorized');
 
   process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
@@ -607,6 +607,7 @@ test('interceptQaCommand · !close autorizado responde solo QA y corta pipeline'
     nowIso,
     metaMessageId: 'wamid-close-1',
     logger: { log() {} },
+    updateConversationFn: async () => {},
   });
 
   let openAiCalls = 0;
@@ -622,7 +623,7 @@ test('interceptQaCommand · !close autorizado responde solo QA y corta pipeline'
   }
 
   assert.equal(guard.handled, true);
-  assert.equal(String(replyLog[0].messages), 'Caso cerrado para prueba.');
+  assert.equal(String(replyLog[0].messages), REPLY_CLOSE);
   assert.equal(openAiCalls, 0, 'QA autorizado no debe llamar OpenAI');
   assert.equal(fallbackCalls, 0, 'QA autorizado no debe ejecutar fallback');
   assert.equal(contactCalls, 0, 'QA autorizado no debe crear contacto');

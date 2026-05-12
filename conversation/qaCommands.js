@@ -1,5 +1,8 @@
 'use strict';
 
+const { processSprint1QaInbound, parseSprint1StrictCommand } = require('./qaSprint1Commands');
+const { normalizeAiState: normalizeAiStateFromModule } = require('./aiState');
+
 /**
  * PERSEO — Comandos internos de QA
  *
@@ -172,7 +175,55 @@ async function handleQaCommand({
   getDefaultState,
   nowIso,
   metaMessageId = null,
+  normalizeAiState = normalizeAiStateFromModule,
+  updateConversationFn = null,
 }) {
+  const sprintTextByCommand = {
+    reset: '!reset',
+    close: '!close',
+    state: '!state',
+    leadcheck: '!leadcheck',
+  };
+
+  if (sprintTextByCommand[command]) {
+    const sprint = await processSprint1QaInbound({
+      text: sprintTextByCommand[command],
+      from,
+      conversationId,
+      conversationRow,
+      metaMessageId,
+      supabase,
+      getDefaultAiState: getDefaultState,
+      normalizeAiState,
+      nowIso,
+      saveEventFn,
+      saveStateFn,
+      updateConversationFn,
+      conversations,
+      isQaExecutionAllowed: isQaCommandAllowed,
+    });
+
+    if (sprint?.unauthorized) {
+      return { handled: false, command, reason: 'qa_command_unauthorized' };
+    }
+
+    let reply = '';
+    if (sprint?.handled && sprint.messages?.length) {
+      reply = sprint.messages.length === 1 ? sprint.messages[0] : sprint.messages.join('\n\n');
+    }
+    if (reply && sendReplyFn) {
+      try {
+        await sendReplyFn(from, reply);
+      } catch (sendErr) {
+        console.error('[qa_command] Error enviando reply:', sendErr?.message || sendErr);
+      }
+    }
+
+    console.log('[qa_command] executed', { command, from, conversation_id: conversationId });
+
+    return { handled: !!sprint?.handled, command, reply };
+  }
+
   // Sanitizar args: solo alfanumérico, guiones, underscores y espacios
   const safeArgs = (args || '').replace(/[^a-zA-Z0-9 _\-áéíóúüñÁÉÍÓÚÜÑ]/g, '').trim();
   const testSessionId = `qa_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`;
@@ -187,100 +238,33 @@ async function handleQaCommand({
     timestamp: nowIso(),
   };
 
-  if (command === 'reset') {
-    // Limpia el contexto en memoria (short-memory de OpenAI)
-    if (conversations && typeof conversations.set === 'function') {
-      conversations.set(from, []);
-    }
+  if (command !== 'case') {
+    return { handled: false, command, reply: null };
+  }
 
-    // Genera nuevo estado limpio con bandera de sesión de prueba
-    const freshState = {
-      ...getDefaultState(),
+  if (!safeArgs) {
+    reply = '⚠️ Usa: !case <nombre_del_caso>';
+  } else {
+    const currentState = conversationRow?.ai_state || getDefaultState();
+    const casedState = {
+      ...currentState,
       qa_test_active: true,
       qa_test_session_id: testSessionId,
-      qa_test_started_at: nowIso(),
-      qa_test_phone: from,
-      qa_reset_applied_at: nowIso(),
-      // Hotfix: no bloquear leads en QA reset — el panel necesita probar CRM end-to-end.
-      qa_lead_creation_blocked: false,
-    };
-
-    // Persiste el estado limpio (no toca histórico ni contactos)
-    await saveStateFn(conversationId, freshState);
-
-    // Evento de auditoría técnica
-    await saveEventFn(conversationId, 'qa_command_reset', {
-      ...auditBase,
-      action: 'conversation_context_cleared',
-      previous_lead_flow: conversationRow?.ai_state?.lead_flow || null,
-      previous_intent_type: conversationRow?.ai_state?.intent_type || null,
-      qa_reset_production: true,
-    });
-
-    reply = 'QA reset aplicado. Puedes iniciar una nueva prueba.';
-
-  } else if (command === 'close') {
-    // Marca la sesión de prueba como cerrada en el estado
-    const currentState = conversationRow?.ai_state || getDefaultState();
-    const closedState = {
-      ...currentState,
-      qa_test_active: false,
-      qa_test_closed: true,
-      qa_test_session_id: currentState.qa_test_session_id || testSessionId,
-      qa_test_closed_at: nowIso(),
-      // Bloquea lead creation para este caso cerrado
+      qa_test_case_name: safeArgs,
+      qa_test_case_started_at: nowIso(),
       qa_lead_creation_blocked: true,
-      // Evita seguimiento automático
-      handoff_ready: false,
-      handoff_sent: false,
-      closing_message_sent: true,
     };
 
-    await saveStateFn(conversationId, closedState);
+    await saveStateFn(conversationId, casedState);
 
-    // Actualizar la conversación con status qa_closed (no afecta leads reales)
-    try {
-      await supabase
-        .from('conversations')
-        .update({ qa_closed_at: nowIso() })
-        .eq('id', conversationId);
-    } catch (_err) {
-      // qa_closed_at puede no existir en el schema — no es bloqueante
-    }
-
-    await saveEventFn(conversationId, 'qa_command_close', {
+    await saveEventFn(conversationId, 'qa_command_case', {
       ...auditBase,
-      action: 'qa_test_session_closed',
-      qa_test_session_id: closedState.qa_test_session_id,
+      action: 'qa_test_case_labeled',
+      qa_test_case_name: safeArgs,
+      qa_test_session_id: testSessionId,
     });
 
-    reply = 'Caso cerrado para prueba.';
-
-  } else if (command === 'case') {
-    if (!safeArgs) {
-      reply = '⚠️ Usa: !case <nombre_del_caso>';
-    } else {
-      const currentState = conversationRow?.ai_state || getDefaultState();
-      const casedState = {
-        ...currentState,
-        qa_test_active: true,
-        qa_test_session_id: testSessionId,
-        qa_test_case_name: safeArgs,
-        qa_test_case_started_at: nowIso(),
-        qa_lead_creation_blocked: true,
-      };
-
-      await saveStateFn(conversationId, casedState);
-
-      await saveEventFn(conversationId, 'qa_command_case', {
-        ...auditBase,
-        action: 'qa_test_case_labeled',
-        qa_test_case_name: safeArgs,
-        qa_test_session_id: testSessionId,
-      });
-
-      reply = `Caso de prueba registrado: ${safeArgs}.`;
-    }
+    reply = `Caso de prueba registrado: ${safeArgs}.`;
   }
 
   // Envía la respuesta corta de confirmación al tester
@@ -317,9 +301,61 @@ async function interceptQaCommand({
   nowIso,
   metaMessageId = null,
   logger = console,
+  normalizeAiState = normalizeAiStateFromModule,
+  updateConversationFn = null,
 }) {
+  const sprint = await processSprint1QaInbound({
+    text,
+    from,
+    conversationId,
+    conversationRow,
+    metaMessageId,
+    supabase,
+    getDefaultAiState: getDefaultState,
+    normalizeAiState,
+    nowIso,
+    saveEventFn,
+    saveStateFn,
+    updateConversationFn,
+    conversations,
+    isQaExecutionAllowed: isQaCommandAllowed,
+  });
+
+  if (sprint?.unauthorized) {
+    logger.log('qa_command_unauthorized', sprint.payload);
+    if (saveEventFn && conversationId) {
+      await saveEventFn(conversationId, 'qa_command_unauthorized', sprint.payload);
+    }
+    return { handled: false, isQaCommand: true, reason: 'qa_command_unauthorized' };
+  }
+
+  if (sprint?.handled) {
+    const cmd = parseSprint1StrictCommand(text);
+    if (sendReplyFn && sprint.messages?.length) {
+      const out = sprint.messages.length === 1 ? sprint.messages[0] : sprint.messages.join('\n\n');
+      try {
+        await sendReplyFn(from, out);
+      } catch (sendErr) {
+        console.error('[qa_command] Error enviando reply:', sendErr?.message || sendErr);
+      }
+    }
+    logger.log('qa_sprint1_command_completed', { command: cmd, conversation_id: conversationId });
+    return {
+      handled: true,
+      isQaCommand: true,
+      command: cmd,
+      reply: sprint.messages?.[0] || null,
+    };
+  }
+
   const parsed = parseQaCommand(text);
   if (!parsed) return { handled: false, isQaCommand: false, reason: 'not_qa_command' };
+
+  if (parsed.command === 'reset' || parsed.command === 'close') {
+    return { handled: false, isQaCommand: false, reason: 'qa_non_strict_reset_close_ignored' };
+  }
+
+  if (parsed.command !== 'case') return { handled: false, isQaCommand: false, reason: 'not_qa_case' };
 
   const logBase = {
     conversation_id: conversationId || null,
@@ -332,14 +368,14 @@ async function interceptQaCommand({
 
   const allowed = isQaCommandAllowed(from);
   if (!allowed) {
-    logger.log('qa_command_denied', logBase);
+    logger.log('qa_command_unauthorized', logBase);
     if (saveEventFn && conversationId) {
-      await saveEventFn(conversationId, 'qa_command_denied', {
+      await saveEventFn(conversationId, 'qa_command_unauthorized', {
         ...logBase,
         reason: 'phone_not_authorized',
       });
     }
-    return { handled: false, isQaCommand: true, reason: 'qa_command_denied' };
+    return { handled: false, isQaCommand: true, reason: 'qa_command_unauthorized' };
   }
 
   logger.log('qa_command_authorized', logBase);
@@ -364,6 +400,8 @@ async function interceptQaCommand({
     getDefaultState,
     nowIso,
     metaMessageId,
+    normalizeAiState,
+    updateConversationFn,
   });
 
   logger.log('qa_command_completed', {

@@ -20,6 +20,7 @@ const { ensureContactForConversationCore } = require('./services/contactProvisio
 const { createOrReuseLeadFromConversation } = require('./services/leadAutomation');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
+const { processSprint1QaInbound, parseSprint1StrictCommand, isSprint1QaTesterPhone } = require('./conversation/qaSprint1Commands');
 const { parseMessageSignals } = require('./conversation/parsers');
 const { detectStateChange, buildNextState } = require('./conversation/stateUpdater');
 const {
@@ -51,10 +52,10 @@ function logEvent(type, payload = {}) {
   console.info(type, safeJsonStringify({ ...(payload || {}), ts: nowIso() }));
 }
 
-async function saveConversationEvent(conversationId, type, payload = {}, createdBy = null) {
+async function saveConversationEventToClient(client, conversationId, type, payload = {}, createdBy = null) {
   try {
-    if (!conversationId) return;
-    const { error } = await supabase.from('conversation_events').insert({
+    if (!conversationId || !client) return;
+    const { error } = await client.from('conversation_events').insert({
       conversation_id: conversationId,
       type,
       payload,
@@ -66,14 +67,22 @@ async function saveConversationEvent(conversationId, type, payload = {}, created
   }
 }
 
-async function updateConversationMeta(conversationId, payload) {
+async function saveConversationEvent(conversationId, type, payload = {}, createdBy = null) {
+  return saveConversationEventToClient(supabase, conversationId, type, payload, createdBy);
+}
+
+async function updateConversationMetaWithClient(client, conversationId, payload) {
   try {
-    if (!conversationId) return;
-    const { error } = await supabase.from('conversations').update(payload).eq('id', conversationId);
+    if (!conversationId || !client) return;
+    const { error } = await client.from('conversations').update(payload).eq('id', conversationId);
     if (error) console.error('conversation_meta_error', error);
   } catch (err) {
     console.error('conversation_meta_fatal', err);
   }
+}
+
+async function updateConversationMeta(conversationId, payload) {
+  return updateConversationMetaWithClient(supabase, conversationId, payload);
 }
 
 async function fetchRecentConversationMessages(conversationId, limit = 20) {
@@ -262,9 +271,11 @@ function enforceNameCapture(reply, context = {}) {
   return { reply: packed.messages, applied: true, reason: 'append_name_request' };
 }
 
-function hasClearRealEstateIntent(signals = {}, text = '') {
+function hasClearRealEstateIntent(signals = {}, text = '', aiState = {}) {
   if (signals?.lead_flow === 'demand' || signals?.lead_flow === 'offer') return true;
   if (signals?.property_code || signals?.direct_property_reference) return true;
+  if (aiState?.lead_flow === 'demand' || aiState?.lead_flow === 'offer') return true;
+  if (aiState?.direct_property_reference && (aiState?.property_code || aiState?.direct_property_code)) return true;
   const t = normalizeText(text);
   return (
     t.includes('busco') ||
@@ -341,6 +352,34 @@ async function sendWhatsAppMessages(to, messages) {
   return outbound;
 }
 
+/** Normaliza códigos tipo A0470 / LUX-A0470 para lookup en public.properties.listing_id */
+function normalizeListingCodeForLookup(raw) {
+  if (raw == null) return null;
+  const c = String(raw).trim().toUpperCase();
+  if (!c) return null;
+  if (c.startsWith('LUX-')) return c;
+  const m = c.match(/^([A-Z])(\d{4})$/);
+  if (m) return `LUX-${m[1]}${m[2]}`;
+  return c;
+}
+
+async function fetchPropertyByListingCode(db, rawCode) {
+  const listingId = normalizeListingCodeForLookup(rawCode);
+  if (!listingId || !db) return { property: null, propertyId: null };
+  try {
+    const { data, error } = await db
+      .from('properties')
+      .select('id, listing_id, operation_type, agent_profile_id')
+      .eq('listing_id', listingId)
+      .limit(1)
+      .maybeSingle();
+    if (error || !data?.id) return { property: null, propertyId: null };
+    return { property: data, propertyId: data.id };
+  } catch {
+    return { property: null, propertyId: null };
+  }
+}
+
 async function saveOutboundMessages({ conversationId, messages, rawPayload = {} }) {
   const outbound = normalizeOutboundMessages(messages);
   const rows = [];
@@ -356,6 +395,73 @@ async function saveOutboundMessages({ conversationId, messages, rawPayload = {} 
     if (row?.id) rows.push(row);
   }
   return { outbound, rows };
+}
+
+/**
+ * CRM post-respuesta: contacto provisional + lead (solo public.leads vía createOrReuseLeadFromConversation).
+ * @returns {{ hasIntent: boolean, canEnsureContact: boolean, contactId: string|null, leadResult: object|null }}
+ */
+async function runCleanOrchestratorCrmPhase({
+  supabase: db = supabase,
+  conversationId,
+  conversationRow,
+  nextAiState,
+  parsedSignals,
+  text,
+  contact,
+  from,
+  waProfileName,
+  rawPayload,
+  property = null,
+  propertyId = null,
+}) {
+  const hasIntent = hasClearRealEstateIntent(parsedSignals, text, nextAiState);
+  const canEnsureContact =
+    hasIntent && (hasValidHumanName(contact, nextAiState) || isUsefulWaProfileName(waProfileName));
+
+  let contactId = null;
+  if (canEnsureContact) {
+    contactId = await ensureContactForConversationCore({
+      supabase: db,
+      conversationRow,
+      state: nextAiState,
+      phone: from,
+      waName: waProfileName,
+      source: 'whatsapp',
+      rawPayload,
+      saveConversationEvent: (cid, type, payload, createdBy) =>
+        saveConversationEventToClient(db, cid, type, payload, createdBy),
+      updateConversationMeta: (cid, payload) => updateConversationMetaWithClient(db, cid, payload),
+    });
+  }
+
+  const resolvedPropertyId = propertyId != null ? propertyId : property?.id || null;
+
+  let leadResult = null;
+  if (hasIntent && contactId) {
+    logEvent('lead_create_attempted', { conversation_id: conversationId, contact_id: contactId });
+    leadResult = await createOrReuseLeadFromConversation({
+      supabase: db,
+      conversation: conversationRow,
+      aiState: nextAiState,
+      contactId,
+      propertyId: resolvedPropertyId,
+      property,
+      logger: console,
+    });
+
+    if (leadResult?.success && leadResult?.wasCreated) {
+      logEvent('lead_created', { conversation_id: conversationId, lead_id: leadResult.leadId || null });
+    } else if (leadResult?.success && !leadResult?.wasCreated) {
+      logEvent('lead_reused', { conversation_id: conversationId, lead_id: leadResult.leadId || null });
+    } else {
+      logEvent('lead_skipped', { conversation_id: conversationId, reason: leadResult?.reason || 'unknown' });
+    }
+  } else if (hasIntent && !contactId) {
+    logEvent('lead_skipped', { conversation_id: conversationId, reason: 'missing_contact' });
+  }
+
+  return { hasIntent, canEnsureContact, contactId, leadResult };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -430,6 +536,44 @@ app.post('/webhook', async (req, res) => {
       conversation_id: conversationId,
       inbound_message_id: inboundRow?.id || null,
     });
+
+    const sprintQa = await processSprint1QaInbound({
+      text,
+      from,
+      conversationId,
+      conversationRow,
+      metaMessageId,
+      supabase,
+      getDefaultAiState,
+      normalizeAiState,
+      nowIso,
+      saveEventFn: (cid, type, payload, createdBy) =>
+        saveConversationEventToClient(supabase, cid, type, payload, createdBy),
+      saveStateFn: saveConversationState,
+      updateConversationFn: updateConversationMetaWithClient,
+      conversations: null,
+      isQaExecutionAllowed: isSprint1QaTesterPhone,
+    });
+
+    if (sprintQa?.unauthorized) {
+      await saveConversationEvent(conversationId, 'qa_command_unauthorized', sprintQa.payload);
+      logEvent('qa_command_unauthorized', sprintQa.payload);
+    }
+
+    if (sprintQa?.handled) {
+      const cmd = parseSprint1StrictCommand(text);
+      const reply = sprintQa.messages;
+      await saveOutboundMessages({
+        conversationId,
+        messages: reply,
+        rawPayload: { perseo_metadata: { response_source: 'qa_sprint1', qa_command: cmd } },
+      });
+      logEvent('outbound_persisted', { conversation_id: conversationId });
+      await sendWhatsAppMessages(from, reply);
+      logEvent('whatsapp_sent', { conversation_id: conversationId });
+      res.sendStatus(200);
+      return;
+    }
 
     const recentMessages = await fetchRecentConversationMessages(conversationId, 20);
     const contact = await fetchContactByWhatsApp(from);
@@ -508,48 +652,32 @@ app.post('/webhook', async (req, res) => {
 
     await saveConversationState(conversationId, nextAiState);
 
-    // Contacto provisional: solo si intención inmobiliaria clara y ya hay nombre registrable (ai_state o WA útil).
-    const hasIntent = hasClearRealEstateIntent(parsedSignals, text);
-    const canEnsureContact =
-      hasIntent && (hasValidHumanName(contact, nextAiState) || isUsefulWaProfileName(waProfileName));
-
-    let contactId = null;
-    if (canEnsureContact) {
-      contactId = await ensureContactForConversationCore({
-        supabase,
-        conversationRow,
-        state: nextAiState,
-        phone: from,
-        waName: waProfileName,
-        source: 'whatsapp',
-        rawPayload: req.body || null,
-        saveConversationEvent,
-        updateConversationMeta,
-      });
+    let property = null;
+    let propertyId = null;
+    if (
+      nextAiState?.direct_property_reference &&
+      (nextAiState?.property_code || nextAiState?.direct_property_code)
+    ) {
+      const code = nextAiState.property_code || nextAiState.direct_property_code;
+      const resolved = await fetchPropertyByListingCode(supabase, code);
+      property = resolved.property;
+      propertyId = resolved.propertyId;
     }
 
-    if (hasIntent && contactId) {
-      logEvent('lead_create_attempted', { conversation_id: conversationId, contact_id: contactId });
-      const leadResult = await createOrReuseLeadFromConversation({
-        supabase,
-        conversation: conversationRow,
-        aiState: nextAiState,
-        contactId,
-        propertyId: null,
-        property: null,
-        logger: console,
-      });
-
-      if (leadResult?.success && leadResult?.wasCreated) {
-        logEvent('lead_created', { conversation_id: conversationId, lead_id: leadResult.leadId || null });
-      } else if (leadResult?.success && !leadResult?.wasCreated) {
-        logEvent('lead_reused', { conversation_id: conversationId, lead_id: leadResult.leadId || null });
-      } else {
-        logEvent('lead_skipped', { conversation_id: conversationId, reason: leadResult?.reason || 'unknown' });
-      }
-    } else if (hasIntent && !contactId) {
-      logEvent('lead_skipped', { conversation_id: conversationId, reason: 'missing_contact' });
-    }
+    await runCleanOrchestratorCrmPhase({
+      supabase,
+      conversationId,
+      conversationRow,
+      nextAiState,
+      parsedSignals,
+      text,
+      contact,
+      from,
+      waProfileName,
+      rawPayload: req.body || null,
+      property,
+      propertyId,
+    });
 
     await saveOutboundMessages({
       conversationId,
@@ -580,6 +708,9 @@ module.exports = {
     enforceNameCapture,
     buildConsultiveFallbackReply,
     hasClearRealEstateIntent,
+    runCleanOrchestratorCrmPhase,
+    normalizeListingCodeForLookup,
+    fetchPropertyByListingCode,
   },
 };
 
