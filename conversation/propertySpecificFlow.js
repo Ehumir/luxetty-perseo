@@ -3,8 +3,11 @@
 const { normalizeText, cleanSpaces } = require('../utils/text');
 const { formatMoney, formatPropertyTypeLabel } = require('../utils/formatting');
 const { hasValidHumanName } = require('./namePrompt');
-const { extractPropertyCode, pickNumericPrice } = require('./propertyIntentResolver');
-const playbookPriorityResolver = require('./playbookPriorityResolver');
+const {
+  extractPropertyCode,
+  isPropertySpecificConversation,
+  pickNumericPrice,
+} = require('./propertyIntentResolver');
 const propertyInventoryService = require('../services/propertyInventoryService');
 
 const GENERIC_CTA_PHRASE = '¿te gustaría que te comparta detalles, precio, ubicación o agendar una visita?';
@@ -83,14 +86,6 @@ function markPropertyReplyProgress(aiState, meta = {}) {
 
   if (intentType === 'property_intro' && code) {
     patch.property_intro_shown_for_code = code;
-  }
-
-  if (intentType === 'ask_visit') {
-    patch.visit_coordination_pending = true;
-  }
-  if (intentType === 'visit_schedule_follow_up') {
-    patch.visit_coordination_pending = false;
-    patch.property_pending_user_question = null;
   }
 
   if (intentType === 'frustration_recovery') {
@@ -241,28 +236,10 @@ function wantsInitialPropertyIntro(t, extracted, aiState) {
  * @param {object[]} recentMessages
  * @returns {{ type: string|null, detail?: object }}
  */
-function looksLikeVisitTimeAnswer(t) {
-  return (
-    t.includes('mañana') ||
-    t.includes('manana') ||
-    t.includes('hoy') ||
-    t.includes('pasado manana') ||
-    /\b(pm|am)\b/i.test(t) ||
-    /\b\d{1,2}:\d{2}\b/.test(t) ||
-    /a las\s+\d/i.test(t) ||
-    /las\s+\d/i.test(t) ||
-    /\b\d{1,2}\s*(pm|am)\b/i.test(t)
-  );
-}
-
 function classifyPropertyFollowUp(text, aiState = {}, recentMessages = []) {
-  if (!playbookPriorityResolver.shouldUsePropertySpecificFlow(aiState)) return { type: null };
+  if (!isPropertySpecificConversation(aiState)) return { type: null };
   const t = normalizeText(text);
   if (!t) return { type: null };
-
-  if (aiState.visit_coordination_pending && looksLikeVisitTimeAnswer(t)) {
-    return { type: 'visit_schedule_follow_up' };
-  }
 
   const extracted = extractPropertyCode(text);
   const code = cleanSpaces(String(aiState.property_code || aiState.direct_property_code || ''));
@@ -557,24 +534,6 @@ function buildFrustrationRecoveryReply({
   return `Tienes razón, me fui por una respuesta muy general. Retomo: estás preguntando por ${code}. Te puedo ayudar con detalles, precio, disponibilidad o visita. ¿Qué quieres confirmar primero?${nameTail(hasName, waProfileName, aiState)}`;
 }
 
-function buildVisitScheduleFollowUpReply({
-  property,
-  aiState = {},
-  contact = null,
-  waProfileName = null,
-  hasRegisteredName = null,
-  text = '',
-}) {
-  const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
-  const code = getDisplayCode(property, aiState);
-  const fn = firstNameFromFull(aiState.full_name);
-  const prefix = fn ? `Perfecto, ${fn}. ` : 'Perfecto. ';
-  const mention = code ? `para ${code}` : 'para esa visita';
-  const snippet = cleanSpaces(String(text || '').slice(0, 120));
-  const timeBit = snippet ? ` (${snippet})` : '';
-  return `${prefix}Puedo pedir que validen disponibilidad ${mention}${timeBit} y que un asesor de Luxetty te confirme.${nameTail(hasName, waProfileName, aiState)}`.trim();
-}
-
 function buildContinuePropertyInterestReply({
   property,
   aiState = {},
@@ -603,27 +562,10 @@ function buildGenericPropertyFollowUpReply({
   if (!property || !property.id) {
     return `¿En qué más te ayudo con ${code || 'tu consulta'}?${nameTail(hasName, waProfileName, aiState)}`;
   }
-  const repeatedMenu =
-    outboundContainedPhrase(recentMessages, 'dime qué quieres revisar') ||
-    outboundContainedPhrase(recentMessages, 'dime que quieres revisar');
   if (shouldAvoidRepeatedPropertyCTA(aiState, recentMessages)) {
-    const alt = repeatedMenu
-      ? `Puedo seguir con ${code}: detalles, precio, ubicación, disponibilidad o visita. ¿Qué prefieres?`
-      : `Dime qué quieres revisar de ${code}: detalles, precio, ubicación, disponibilidad o visita.`;
-    return `${alt}${nameTail(hasName, waProfileName, aiState)}`;
+    return `Dime qué quieres revisar de ${code}: detalles, precio, ubicación, disponibilidad o visita.${nameTail(hasName, waProfileName, aiState)}`;
   }
   return `Claro, ya ubiqué la propiedad ${code}. ${GENERIC_CTA_PHRASE.charAt(0).toUpperCase()}${GENERIC_CTA_PHRASE.slice(1)}${nameTail(hasName, waProfileName, aiState)}`;
-}
-
-function outboundContainedPhrase(recentMessages = [], needleNorm) {
-  const list = Array.isArray(recentMessages) ? recentMessages : [];
-  const tail = list.slice(-6);
-  for (const m of tail) {
-    if (m?.direction !== 'outbound') continue;
-    const body = normalizeText(String(m?.message_text || ''));
-    if (body.includes(needleNorm)) return true;
-  }
-  return false;
 }
 
 /**
@@ -662,8 +604,6 @@ function buildPropertySpecificReply(opts = {}) {
       return buildPropertyLocationReply(ctx);
     case 'ask_visit':
       return buildPropertyVisitReply(ctx);
-    case 'visit_schedule_follow_up':
-      return buildVisitScheduleFollowUpReply({ ...ctx, text });
     case 'ask_photos':
       return buildPropertyPhotosReply(ctx);
     case 'frustration_recovery':
@@ -687,7 +627,6 @@ module.exports = {
   buildPropertyAvailabilityReply,
   buildPropertyLocationReply,
   buildPropertyVisitReply,
-  looksLikeVisitTimeAnswer,
   shouldAvoidRepeatedPropertyCTA,
   markPropertyReplyProgress,
   buildPublicPropertyUrl,

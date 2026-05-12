@@ -46,7 +46,7 @@ test('resolvePropertyIntent: soft exit inventario sin código explícito', () =>
     property_history: [{ code: 'LUX-A0462', at: 't' }],
   };
   const patch = pr.resolvePropertyIntent('¿Tienes algo en Cumbres?', prev);
-  assert.equal(patch.__buyerDominantInventory, true);
+  assert.equal(patch.__softExitPropertyMode, true);
   assert.equal(patch.property_specific_intent, false);
 });
 
