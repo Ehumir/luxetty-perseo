@@ -38,6 +38,9 @@ const { mergeSignalsWithMulti, extractMultiSignals } = require('./conversation/m
 const propertyIntentResolver = require('./conversation/propertyIntentResolver');
 const propertySpecificFlow = require('./conversation/propertySpecificFlow');
 const propertyInventoryService = require('./services/propertyInventoryService');
+const leadEntryPointRouter = require('./conversation/leadEntryPointRouter');
+const nameFirstGuardrail = require('./conversation/nameFirstGuardrail');
+const { extractPossibleName } = require('./conversation/parsers');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -663,45 +666,14 @@ app.post('/webhook', async (req, res) => {
       extractMultiSignals(text, previousAiState)
     );
     Object.assign(parsedSignals, propertyIntentResolver.resolvePropertyIntent(text, previousAiState));
+    leadEntryPointRouter.applyEntryClassificationToSignals(parsedSignals, text, previousAiState);
+    const earlyExtractedName = extractPossibleName(text, previousAiState, parsedSignals.owner_relation);
+    if (earlyExtractedName) parsedSignals.full_name = earlyExtractedName;
 
     const changeType = detectStateChange(previousAiState, parsedSignals);
     let nextAiState = buildNextState(previousAiState, parsedSignals, changeType);
     Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
-
-    const engineV2 = isEngineV2Enabled() && shouldUseConversationEngineV2({ text, parsedSignals, inboundContext });
-
-    let reply;
-    let responseSource = 'fallback_consultive';
-
-    if (engineV2) {
-      const v2 = await processConversationTurnV2({
-        text,
-        conversationId,
-        phone: from,
-        previousAiState,
-        conversationRow,
-        contact,
-        lead: null,
-        recentMessages,
-        inboundContext,
-        unifiedContext: null,
-        referralContext: null,
-        campaignContext: null,
-        media: inboundContext.media,
-        propertiesContext: { matchedProperties: [] },
-        parsedSignals,
-        routeEvaluatorDecision: null,
-        waProfileDisplayName: waProfileName,
-        changeType,
-        logger: console,
-      });
-
-      reply = v2.outboundMessages;
-      nextAiState = v2.nextAiState || nextAiState;
-      Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
-      responseSource = v2.responseSource || 'engine_v2';
-      logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
-    }
+    Object.assign(nextAiState, leadEntryPointRouter.reassertEntryLeadFlow(nextAiState, parsedSignals.__entry_point_meta));
 
     let property = null;
     let propertyId = null;
@@ -745,7 +717,61 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
-    if (!engineV2) {
+    const engineV2 = isEngineV2Enabled() && shouldUseConversationEngineV2({ text, parsedSignals, inboundContext });
+
+    let reply;
+    let responseSource = 'fallback_consultive';
+    let nameFirstHandled = false;
+
+    const guard = nameFirstGuardrail.evaluateInboundTurn({
+      text,
+      previousAiState,
+      nextAiState,
+      contact,
+      waProfileName,
+      recentMessages,
+      propertyRow: property,
+      entryMeta: parsedSignals.__entry_point_meta,
+    });
+    if (guard.handled) {
+      reply = guard.reply;
+      Object.assign(nextAiState, guard.statePatch);
+      nameFirstHandled = true;
+      responseSource = 'name_first_guardrail';
+      logEvent('name_first_guardrail', { conversation_id: conversationId });
+    }
+
+    if (!nameFirstHandled && engineV2) {
+      const v2 = await processConversationTurnV2({
+        text,
+        conversationId,
+        phone: from,
+        previousAiState,
+        conversationRow,
+        contact,
+        lead: null,
+        recentMessages,
+        inboundContext,
+        unifiedContext: null,
+        referralContext: null,
+        campaignContext: null,
+        media: inboundContext.media,
+        propertiesContext: { matchedProperties: [] },
+        parsedSignals,
+        routeEvaluatorDecision: null,
+        waProfileDisplayName: waProfileName,
+        changeType,
+        logger: console,
+      });
+
+      reply = v2.outboundMessages;
+      nextAiState = v2.nextAiState || nextAiState;
+      Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
+      responseSource = v2.responseSource || 'engine_v2';
+      logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
+    }
+
+    if (!nameFirstHandled && !engineV2) {
       reply = buildConsultiveFallbackReply({
         text,
         signals: parsedSignals,
@@ -781,14 +807,16 @@ app.post('/webhook', async (req, res) => {
           .filter(Boolean)
       : [];
 
-    const enforced = enforceNameCapture(reply, {
-      contact,
-      aiState: nextAiState,
-      waProfileName,
-      recentOutboundTexts,
-      userInboundText: text,
-      leadFlow: nextAiState.lead_flow || parsedSignals.lead_flow || null,
-    });
+    const enforced = nameFirstHandled
+      ? { reply, applied: false }
+      : enforceNameCapture(reply, {
+          contact,
+          aiState: nextAiState,
+          waProfileName,
+          recentOutboundTexts,
+          userInboundText: text,
+          leadFlow: nextAiState.lead_flow || parsedSignals.lead_flow || null,
+        });
 
     if (enforced.applied) {
       logEvent('name_required_guardrail_applied', { conversation_id: conversationId, reason: enforced.reason || null });
@@ -803,7 +831,9 @@ app.post('/webhook', async (req, res) => {
 
     if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
       const mergedReplyText = Array.isArray(reply) ? reply.join('\n\n') : String(reply || '');
-      const intent = propertySpecificFlow.classifyPropertyFollowUp(text, nextAiState, recentMessages);
+      const intent = nameFirstHandled
+        ? { type: 'property_intro' }
+        : propertySpecificFlow.classifyPropertyFollowUp(text, nextAiState, recentMessages);
       Object.assign(
         nextAiState,
         propertySpecificFlow.markPropertyReplyProgress(nextAiState, {

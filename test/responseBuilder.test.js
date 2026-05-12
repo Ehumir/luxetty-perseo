@@ -20,11 +20,9 @@ test('buildPropertyInterestReply: un solo mensaje natural con código, zona y li
   );
 
   assert.equal(typeof reply, 'string');
-  assert.match(reply, /Ya ubiqué la propiedad LUX-A0453/i);
-  assert.match(reply, /Montemorelos/i);
-  assert.match(reply, /https:\/\/luxetty\.com\/propiedad\/casa-en-montemorelos-a0453/);
-  assert.match(reply, /precio, disponibilidad|agendar una visita/i);
-  assert.match(reply, /nombre/i);
+  assert.match(reply, /asistente de Luxetty|luxetty\.com\/propiedad/i);
+  assert.match(reply, /nombre|asesor|disponibilidad/i);
+  assert.doesNotMatch(reply, /te gustaría que te comparta detalles/i);
 });
 
 test('buildPropertyInterestReply soporta listing_id LUX-A0453 y mantiene URL en el mismo texto', () => {

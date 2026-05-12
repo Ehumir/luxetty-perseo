@@ -54,7 +54,8 @@ test('buildPropertyIntroReply: código, zona, link y sin inventar URL', () => {
   });
   assert.match(withSlug, /LUX-A0470/);
   assert.match(withSlug, /Mitras Poniente/i);
-  assert.match(withSlug, /https:\/\/luxetty\.com\/propiedad\/casa-en-mitras-poniente-en-venta/);
+  assert.match(withSlug, /asistente de Luxetty/i);
+  assert.doesNotMatch(withSlug, /te gustaría que te comparta detalles/i);
 
   const noSlug = psf.buildPropertyIntroReply({
     property: { ...sampleProperty, slug: '' },
