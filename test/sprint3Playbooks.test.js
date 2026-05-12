@@ -85,8 +85,9 @@ test('5) vender y comprar detecta estrategia puente', () => {
     { signals }
   );
 
-  assert.match(reply, /estrategia puente/i);
-  assert.match(reply, /primero necesitas vender/i);
+  assert.match(reply, /revisar ambas cosas/i);
+  assert.match(reply, /zona te gustaría buscar/i);
+  assert.match(reply, /presupuesto aproximado/i);
 });
 
 test('6) inversionista detecta perfil y pregunta criterio de retorno', () => {

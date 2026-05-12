@@ -510,6 +510,14 @@ function detectSellBuyBridge(message) {
   const text = normalizeText(message);
   return (
     text.includes('vender mi casa y comprar otra') ||
+    text.includes('comprar otra casa') ||
+    text.includes('comprar otra propiedad') ||
+    text.includes('tambien quiero comprar') ||
+    text.includes('también quiero comprar') ||
+    text.includes('tambien busco comprar') ||
+    text.includes('también busco comprar') ||
+    text.includes('tambien quiero comprar una') ||
+    text.includes('también quiero comprar una') ||
     text.includes('vender para comprar') ||
     text.includes('quiero vender y comprar') ||
     text.includes('quiero cambiarme de casa') ||
@@ -554,7 +562,14 @@ function detectComplaintFollowup(message) {
     text.includes('no me entendiste') ||
     text.includes('no entendio') ||
     text.includes('no entendió') ||
-    text.includes('no captaste')
+    text.includes('no captaste') ||
+    text.includes('ya te lo di') ||
+    text.includes('ya te lo dije') ||
+    text.includes('ya te respondi') ||
+    text.includes('ya te respondí') ||
+    text.includes('ya conteste') ||
+    text.includes('ya contesté') ||
+    text.includes('te lo acabo de decir')
   );
 }
 
@@ -861,7 +876,13 @@ function detectContactPreference(message) {
   return null;
 }
 
-function extractPossibleName(message, prevState = null) {
+function stateLacksUsefulHumanName(prevState) {
+  const n = prevState?.full_name;
+  if (!n) return true;
+  return !isUsefulContactName(n) || isInvalidContactName(n);
+}
+
+function extractPossibleName(message, prevState = null, ownerRelationHint = null) {
   const raw = cleanSpaces(message);
   const text = normalizeText(message);
 
@@ -880,22 +901,42 @@ function extractPossibleName(message, prevState = null) {
     }
   }
 
-  if (prevState?.awaiting_field === 'full_name') {
-    const notANameReply = new Set([
-      'info',
-      'informacion',
-      'información',
-      'hola',
-      'buenas',
-      'si',
-      'sí',
-      'ok',
-      'listo',
-      'gracias',
-      'no',
-      'cancelar',
-    ]);
-    if (notANameReply.has(text)) return null;
+  if (ownerRelationHint === 'owner' || ownerRelationHint === 'representative') {
+    return null;
+  }
+
+  if (prevState?.awaiting_field === 'location_text') {
+    const locGuess = extractLocation(message, prevState);
+    if (locGuess && cleanSpaces(String(locGuess)).length > 0) return null;
+  }
+
+  const notANameReply = new Set([
+    'info',
+    'informacion',
+    'información',
+    'hola',
+    'buenas',
+    'ok',
+    'listo',
+    'gracias',
+    'no',
+    'cancelar',
+  ]);
+  if (notANameReply.has(text)) return null;
+
+  const captureNameFromShortReply =
+    prevState?.awaiting_field === 'full_name' ||
+    !!prevState?.pending_name_capture ||
+    (stateLacksUsefulHumanName(prevState) &&
+      ['budget_max', 'location_text', 'property_type', 'bedrooms', 'rental_move_in_date', 'owner_relation'].includes(
+        prevState?.awaiting_field || ''
+      ));
+
+  if (captureNameFromShortReply) {
+    if (text === 'si' || text === 'sí') return null;
+    if (prevState?.lead_flow === 'offer' && prevState?.owner_relation == null) {
+      if (text === 'mia' || text === 'mía' || text === 'yo') return null;
+    }
 
     if (
       raw.length >= 3 &&
@@ -916,8 +957,13 @@ function extractPossibleName(message, prevState = null) {
   return null;
 }
 
-function detectOwnerRelation(message) {
+function detectOwnerRelation(message, prevState = null) {
   const text = normalizeText(message);
+  const raw = cleanSpaces(message || '');
+
+  const ownershipContext =
+    prevState?.awaiting_field === 'owner_relation' ||
+    (prevState?.lead_flow === 'offer' && prevState?.owner_relation == null);
 
   if (
     text.includes('es mia') ||
@@ -925,12 +971,26 @@ function detectOwnerRelation(message) {
     text.includes('es mi propiedad') ||
     text.includes('es propia') ||
     text.includes('soy el propietario') ||
-    text.includes('soy la propietaria')
+    text.includes('soy la propietaria') ||
+    text === 'mia' ||
+    text === 'mía' ||
+    text === 'yo' ||
+    text === 'soy yo' ||
+    raw.toLowerCase() === 'mía' ||
+    raw.toLowerCase() === 'mia'
   ) {
     return 'owner';
   }
 
+  if (ownershipContext && (text === 'si' || text === 'sí' || text === 'sip' || text === 'ok')) {
+    return 'owner';
+  }
+
   if (
+    text.includes('es de mi esposa') ||
+    text.includes('es de mi esposo') ||
+    text.includes('es de mi familia') ||
+    text.includes('es de un familiar') ||
     text.includes('ayudo a alguien') ||
     text.includes('de un familiar') ||
     text.includes('de mi mama') ||
@@ -944,6 +1004,44 @@ function detectOwnerRelation(message) {
   }
 
   return null;
+}
+
+/** Follow-up sobre una propiedad ya referida (evita return temprano programado en index). */
+function isPropertyConversationFollowUp(message) {
+  const t = normalizeText(message);
+  if (!t) return false;
+
+  return (
+    t.includes('precio') ||
+    t.includes('cuanto') ||
+    t.includes('cuánto') ||
+    t.includes('cuesta') ||
+    t.includes('vale') ||
+    t.includes('disponib') ||
+    t.includes('sigue en venta') ||
+    t.includes('sigue en renta') ||
+    t.includes('todavia') ||
+    t.includes('todavía') ||
+    t.includes('visita') ||
+    t.includes('verla') ||
+    t.includes('ver la') ||
+    t.includes('quiero ver') ||
+    t.includes('puedo ver') ||
+    t.includes('la puedo') ||
+    t.includes('agendar') ||
+    t.includes('link') ||
+    t.includes('liga') ||
+    t.includes('publicacion') ||
+    t.includes('publicación') ||
+    t.includes('pdf') ||
+    t.includes('ficha') ||
+    t.includes('fotos') ||
+    t.includes('video') ||
+    t.includes('mandame') ||
+    t.includes('mándame') ||
+    t.includes('pasame') ||
+    t.includes('pásame')
+  );
 }
 
 function extractPhoneNumber(message) {
@@ -1296,8 +1394,8 @@ function parseMessageSignals(message, prevState = getDefaultAiState(), messageCo
   const wrongContext = inboundBusinessCategory === 'wrong_context';
   const unclearNonRealEstate = inboundBusinessCategory === 'unclear_non_real_estate';
   const contactPreference = detectContactPreference(message);
-  let fullName = extractPossibleName(message, prevState);
-  const ownerRelation = detectOwnerRelation(message);
+  const ownerRelation = detectOwnerRelation(message, prevState);
+  let fullName = extractPossibleName(message, prevState, ownerRelation);
   const propertyCode = extractPropertyCode(message);
   const betterPhone =
     prevState?.awaiting_field === 'contact_number'
@@ -1488,6 +1586,7 @@ module.exports = {
   extractPhoneNumber,
   normalizeListingId,
   extractPropertyCode,
+  isPropertyConversationFollowUp,
   detectDirectPropertyReference,
   detectVisitIntent,
   detectHighInterest,

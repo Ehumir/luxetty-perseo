@@ -38,7 +38,7 @@ const { persistConversationReferral } = require('./services/referralService');
 const { ensureContactForConversationCore } = require('./services/contactProvisioning');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
-const { parseMessageSignals } = require('./conversation/parsers');
+const { parseMessageSignals, isPropertyConversationFollowUp } = require('./conversation/parsers');
 const {
   buildInboundMessageContext,
   buildMediaAcknowledgementReply,
@@ -1021,6 +1021,9 @@ async function applyNamePromptToReply(reply, {
   Object.assign(aiState, statePatch);
   if (setAwaitingFullName && (!aiState.awaiting_field || aiState.awaiting_field === 'full_name')) {
     aiState.awaiting_field = 'full_name';
+  }
+  if (statePatch.pending_name_capture) {
+    aiState.pending_name_capture = true;
   }
 
   return messages;
@@ -2392,6 +2395,17 @@ app.post('/webhook', async (req, res) => {
 
       const directPropertyAssignedAgentId = getAssignedAgentProfileIdFromProperty(property);
 
+      const prevNorm = previousAiState.property_code
+        ? normalizeListingId(previousAiState.property_code)
+        : null;
+      const skipEarlyProgrammedPropertyReply =
+        !!property &&
+        !!prevNorm &&
+        prevNorm === normalizedDirectCode &&
+        !!previousAiState.direct_property_reference &&
+        isPropertyConversationFollowUp(text);
+
+      if (!skipEarlyProgrammedPropertyReply) {
       console.log('DIRECT PROPERTY PRIORITY RESULT:', {
         requested_code: signals.property_code,
         normalized_code: normalizedDirectCode,
@@ -2570,6 +2584,7 @@ app.post('/webhook', async (req, res) => {
 
       await sendWhatsAppMessages(from, directReply);
       return;
+      }
     }
 
     if (incomingSignals.location_text && !incomingSignals.location_any) {
@@ -2609,9 +2624,14 @@ app.post('/webhook', async (req, res) => {
         (previousAiState.awaiting_field === 'location_text' && (!!incomingSignals.location_text || !!incomingSignals.location_any)) ||
         (previousAiState.awaiting_field === 'budget_max' && incomingSignals.budget_max != null) ||
         (previousAiState.awaiting_field === 'property_type' && !!incomingSignals.property_type) ||
-        (previousAiState.awaiting_field === 'bedrooms' && (incomingSignals.bedrooms != null || !!incomingSignals.bedrooms_any))
+        (previousAiState.awaiting_field === 'bedrooms' && (incomingSignals.bedrooms != null || !!incomingSignals.bedrooms_any)) ||
+        (previousAiState.awaiting_field === 'owner_relation' && !!incomingSignals.owner_relation)
       )
     ) {
+      nextAiState.awaiting_field = null;
+    }
+
+    if (incomingSignals.sell_buy_bridge && nextAiState.awaiting_field === 'owner_relation') {
       nextAiState.awaiting_field = null;
     }
 
@@ -2819,6 +2839,10 @@ app.post('/webhook', async (req, res) => {
     // ✅ No volver a pedir datos que ya existen en estado
     if (nextAiState.full_name && nextAiState.awaiting_field === 'full_name') {
       nextAiState.awaiting_field = null;
+    }
+
+    if (nextAiState.full_name && nextAiState.pending_name_capture) {
+      nextAiState.pending_name_capture = false;
     }
 
     if (nextAiState.contact_preference && nextAiState.awaiting_field === 'contact_preference') {
@@ -3321,7 +3345,8 @@ app.post('/webhook', async (req, res) => {
         matchedProperties.length > 0 &&
         isDirectPriceQuestion(text) &&
         !nextAiState.wants_visit &&
-        !explicitHandoffEarly;
+        !explicitHandoffEarly &&
+        !isPropertyConversationFollowUp(text);
 
       const mediaCtx = inboundContext?.media || {};
       const advisorRoute = shouldUseAdvisorForRealEstateTurn({
@@ -3801,9 +3826,28 @@ ${locationCatalog.rawNames.join(', ')}
     );
     reply = sanitizeReply(enrichReplyWithNextStepCta(reply, nextAiState.next_step));
 
-    // 🔒 Anti-loop: evitar repetir exactamente la misma respuesta
+    const replyAsString = mergeReplyToString(reply);
+    const replyNormForComplaint = normalizeText(replyAsString);
+    if (
+      incomingSignals.complaint_followup &&
+      (normalizeText(text).includes('ya te lo') ||
+        normalizeText(text).includes('ya te respond') ||
+        normalizeText(text).includes('ya conteste') ||
+        normalizeText(text).includes('ya contesté')) &&
+      (replyNormForComplaint.includes('compartes tu nombre') ||
+        replyNormForComplaint.includes('cómo te llamas') ||
+        replyNormForComplaint.includes('como te llamas'))
+    ) {
+      reply = 'Tienes razón, gracias. Lo tomo en cuenta para continuar.';
+      nextAiState.pending_name_capture = false;
+      if (nextAiState.awaiting_field === 'full_name') {
+        nextAiState.awaiting_field = null;
+      }
+    }
+
+    // 🔒 Anti-loop: misma respuesta exacta → priorizar advisor; sin template genérico "Entendido..."
     const lastMessages = conversations.get(from) || [];
-    const lastAssistantMessage = [...lastMessages].reverse().find(m => m.role === 'assistant');
+    const lastAssistantMessage = [...lastMessages].reverse().find((m) => m.role === 'assistant');
     const shouldPreserveContextualReply =
       !!incomingSignals.complaint_followup ||
       !!inboundContext?.media?.audio_without_transcription ||
@@ -3811,14 +3855,95 @@ ${locationCatalog.rawNames.join(', ')}
       !!inboundContext?.media?.audio_low_confidence ||
       !!inboundContext?.media?.audio_transcription_duplicate;
 
-
     if (
       lastAssistantMessage &&
-      lastAssistantMessage.content === reply &&
-      nextAiState.lead_flow !== 'demand' &&
+      lastAssistantMessage.content === replyAsString &&
       !shouldPreserveContextualReply
     ) {
-      reply = 'Entendido. ¿Puedes darme un poco más de detalle para orientarte mejor?';
+      const hasReContext =
+        nextAiState.lead_flow === 'demand' ||
+        nextAiState.lead_flow === 'offer' ||
+        nextAiState.direct_property_reference ||
+        (matchedProperties && matchedProperties.length > 0) ||
+        !!nextAiState.property_code;
+
+      let antiLoopHandled = false;
+      if (hasReContext && !nextAiState.handoff_sent) {
+        const mediaCtxLoop = inboundContext?.media || {};
+        try {
+          const dedupeRoute = shouldUseAdvisorForRealEstateTurn({
+            ai_state: nextAiState,
+            signals: incomingSignals,
+            contact: linkedEntities.existingContact,
+            user_message: text,
+            suggested_properties: matchedProperties,
+            last_suggested_property: matchedProperties[0] || null,
+            campaign_context: campaignContextForFusion?.campaignContext || null,
+            media_context: {
+              requires_programmed_safety: !!(
+                mediaCtxLoop.attachment_detected_not_processed || mediaCtxLoop.unsupported_media
+              ),
+              image_analysis_available: !!mediaCtxLoop.image_vision_success,
+              audio_transcription_available: !!mediaCtxLoop.audio_has_transcription,
+              document_analysis_available: false,
+            },
+            recent_db_messages: recentMessages,
+            conversation_id: conversationId,
+            change_type: changeType,
+            skip_advisor_for_literal_property_price: false,
+          });
+          if (dedupeRoute.use) {
+            const chatRecentLoop = mapConversationDbRowsToChatMessages(recentMessages);
+            const synthLoop = buildSyntheticStateForAdvisor(nextAiState, matchedProperties);
+            const advisoryLoop = await generateAdvisorReplyForRealEstateTurn(
+              {
+                user_message: text,
+                recent_messages: chatRecentLoop,
+                recent_db_messages_for_card_check: recentMessages,
+                current_lead_flow: nextAiState.lead_flow,
+                synthetic_state: synthLoop,
+                signals: incomingSignals,
+                contact: linkedEntities.existingContact,
+                campaign_context: campaignContextForFusion?.campaignContext || null,
+                media_context: {
+                  image_analysis_available: !!mediaCtxLoop.image_vision_success,
+                  audio_transcription_available: !!mediaCtxLoop.audio_has_transcription,
+                  document_analysis_available: false,
+                },
+                last_suggested_property: matchedProperties[0] || null,
+                suggested_properties: matchedProperties,
+                draft_context: dedupeRoute.draft,
+                budget: nextAiState.budget_max,
+                budget_currency: nextAiState.budget_currency,
+                zone:
+                  nextAiState.location_text ||
+                  (nextAiState.location_any ? 'Zona abierta según preferencias del usuario' : ''),
+                operation: nextAiState.operation_type,
+                missing_name: !hasValidHumanName(linkedEntities.existingContact, nextAiState),
+                next_step: nextAiState.next_step || null,
+                follow_up_reason: dedupeRoute.reason,
+                change_type: changeType || 'anti_loop_exact_repeat',
+                conversation_id: conversationId,
+                anti_repeat: true,
+              },
+              { model: OPENAI_MODEL }
+            );
+            reply = advisoryLoop.text;
+            replyRouting.used_openai_advisor = true;
+            replyRouting.response_source = advisoryLoop.response_source || 'openai_advisor';
+            replyRouting.response_reason = 'anti_loop_exact_repeat';
+            antiLoopHandled = true;
+          }
+        } catch (antiLoopErr) {
+          console.error('anti_loop_exact_repeat_advisor_error', antiLoopErr?.message || antiLoopErr);
+        }
+      }
+
+      if (!antiLoopHandled && lastAssistantMessage.content === mergeReplyToString(reply)) {
+        reply = 'Te sigo. Para orientarte mejor, dime si buscas comprar, vender o rentar.';
+        replyRouting.response_source = 'anti_loop_contextual_fallback';
+        replyRouting.response_reason = 'exact_repeat_short_fallback';
+      }
     }
 
     const updatedMessages = [
@@ -3966,6 +4091,22 @@ ${locationCatalog.rawNames.join(', ')}
       waProfileDisplayName: waProfileDisplayName,
       userText: text,
     });
+
+    const outboundOwnershipHint = normalizeText(mergeReplyToString(reply));
+    if (
+      nextAiState.lead_flow === 'offer' &&
+      !nextAiState.owner_relation &&
+      (outboundOwnershipHint.includes('propiedad es tuya') ||
+        outboundOwnershipHint.includes('apoyando a alguien'))
+    ) {
+      if (
+        !['contact_preference', 'contact_number_confirmed', 'contact_number'].includes(
+          nextAiState.awaiting_field
+        )
+      ) {
+        nextAiState.awaiting_field = 'owner_relation';
+      }
+    }
 
     replyRouting.name_prompt_applied =
       normalizeText(mergeReplyToString(reply)) !== normalizeText(mergeReplyToString(replyBeforeNamePrompt));

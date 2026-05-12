@@ -424,7 +424,7 @@ function buildOfferReply(state, changeType, context = {}) {
   }
 
   if (state.sell_buy_bridge || signals.sell_buy_bridge) {
-    return 'Tiene mucho sentido. Cuando se vende para comprar otra propiedad conviene planear una estrategia puente: valor de salida real, tiempos de venta y busqueda de reposicion. ¿Primero necesitas vender para poder comprar?';
+    return 'Perfecto, podemos revisar ambas cosas: vender tu propiedad y buscar una opción para comprar. Para la compra, ¿en qué zona te gustaría buscar y con qué presupuesto aproximado cuentas? Y para la venta sigo con los datos de tu propiedad cuando me indiques.';
   }
 
   if (state.remote_client || signals.remote_client) {
