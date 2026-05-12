@@ -3,29 +3,10 @@ const { isUsefulContactName, isInvalidContactName } = require('../utils/helpers'
 const { detectIntent } = require('./intent');
 const { getDefaultAiState } = require('./aiState');
 const { classifySellerScenarios } = require('./sellerScenarioClassifier');
+const { normalizePropertyCode, extractPropertyCode: extractPropertyCodeResolved } = require('./propertyIntentResolver');
 
 function normalizePropertyCodeFromText(rawValue) {
-  if (!rawValue) return null;
-
-  const text = String(rawValue)
-    .toUpperCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[–—−_./,#:;]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const fullMatch = text.match(/\bLUX\s*([A-Z])\s*(\d{4})\b/);
-  if (fullMatch) {
-    return `LUX-${fullMatch[1]}${fullMatch[2]}`;
-  }
-
-  const shortMatch = text.match(/\b([A-Z])\s*(\d{4})\b/);
-  if (shortMatch) {
-    return `LUX-${shortMatch[1]}${shortMatch[2]}`;
-  }
-
-  return null;
+  return normalizePropertyCode(rawValue);
 }
 
 function extractPropertyType(message) {
@@ -1063,26 +1044,7 @@ function normalizeListingId(rawValue) {
 }
 
 function extractPropertyCode(message) {
-  const raw = cleanSpaces(message || '');
-  if (!raw) return null;
-
-  const normalized = normalizePropertyCodeFromText(raw);
-  if (normalized) return normalized;
-
-  const patterns = [
-    /\b(?:propiedad|id|codigo|código)\s*[:#-]?\s*(LUX[\s\-]?[A-Z]\s?[0-9]{4}|[A-Z][0-9]{4})\b/i,
-    /\b(LUX[\s\-]?[A-Z]\s?[0-9]{4}|[A-Z][0-9]{4})\b/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = raw.match(pattern);
-    if (match?.[1]) {
-      const parsed = normalizePropertyCodeFromText(match[1]);
-      if (parsed) return parsed;
-    }
-  }
-
-  return null;
+  return extractPropertyCodeResolved(message);
 }
 
 function detectDirectPropertyReference(message) {

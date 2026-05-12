@@ -22,6 +22,7 @@ const { evaluateCommercialCloseDecision } = require('../conversation/inboundReli
 const { isGreetingOnly } = require('../utils/messageChecks');
 const { appendNameRequestIfNeeded, hasValidHumanName } = require('../conversation/namePrompt');
 const { PROPERTY_LUX_A0453 } = require('./fixtures/perseoRegressionFixtures');
+const propertyIntentResolver = require('../conversation/propertyIntentResolver');
 
 const WRONG_CHANNEL_RE = /Gracias por escribir\. Para ayudarte bien, este canal atiende/i;
 const BOT_RE = /soy un bot|no puedo ayudarte|error interno/i;
@@ -187,6 +188,7 @@ function simulateTurn({
   const prev = normalizeAiState(aiState);
   const inboundContext = {};
   const signals = parseMessageSignals(userText, prev, inboundContext);
+  Object.assign(signals, propertyIntentResolver.resolvePropertyIntent(userText, prev));
   const changeType = detectStateChange(prev, signals);
   let next = buildNextState(prev, signals, changeType);
 

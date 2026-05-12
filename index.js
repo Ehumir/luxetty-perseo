@@ -35,6 +35,7 @@ const {
 } = require('./conversation/namePrompt');
 const contextualMemoryResolver = require('./conversation/contextualMemoryResolver');
 const { mergeSignalsWithMulti, extractMultiSignals } = require('./conversation/multiSignalExtractor');
+const propertyIntentResolver = require('./conversation/propertyIntentResolver');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -306,10 +307,26 @@ function hasClearRealEstateIntent(signals = {}, text = '', aiState = {}) {
   );
 }
 
-function buildConsultiveFallbackReply({ text, signals, aiState, contact = null, waProfileName = null }) {
+function buildConsultiveFallbackReply({
+  text,
+  signals,
+  aiState,
+  contact = null,
+  waProfileName = null,
+  resolvedPropertyRow = undefined,
+}) {
   const t = normalizeText(text);
   const loc = cleanSpaces(signals?.location_text || aiState?.location_text || '');
   const hasName = hasValidHumanName(contact, aiState);
+
+  if (propertyIntentResolver.isPropertySpecificConversation(aiState)) {
+    return propertyIntentResolver.buildPropertyModeReply({
+      text,
+      aiState,
+      propertyRow: resolvedPropertyRow === undefined ? null : resolvedPropertyRow,
+      hasValidName: hasName,
+    });
+  }
 
   if (
     contextualMemoryResolver.isOptionsRequestText(text) &&
@@ -401,18 +418,41 @@ function normalizeListingCodeForLookup(raw) {
 async function fetchPropertyByListingCode(db, rawCode) {
   const listingId = normalizeListingCodeForLookup(rawCode);
   if (!listingId || !db) return { property: null, propertyId: null };
+  const wideSelect =
+    'id, listing_id, operation_type, agent_profile_id, price, sale_price, selling_price, rent_price, rent_amount, status, bedrooms, city, neighborhood, title';
   try {
-    const { data, error } = await db
+    let { data, error } = await db
       .from('properties')
-      .select('id, listing_id, operation_type, agent_profile_id')
+      .select(wideSelect)
       .eq('listing_id', listingId)
       .limit(1)
       .maybeSingle();
+    if (error) {
+      const r2 = await db
+        .from('properties')
+        .select('id, listing_id, operation_type, agent_profile_id')
+        .eq('listing_id', listingId)
+        .limit(1)
+        .maybeSingle();
+      data = r2.data;
+      error = r2.error;
+    }
     if (error || !data?.id) return { property: null, propertyId: null };
     return { property: data, propertyId: data.id };
   } catch {
     return { property: null, propertyId: null };
   }
+}
+
+function buildPropertyContextSnapshot(row) {
+  if (!row || !row.id) return null;
+  const price = propertyIntentResolver.pickNumericPrice(row);
+  return {
+    id: String(row.id),
+    listing_id: row.listing_id || null,
+    operation_type: row.operation_type || null,
+    price: price != null ? price : null,
+  };
 }
 
 async function saveOutboundMessages({ conversationId, messages, rawPayload = {} }) {
@@ -622,15 +662,18 @@ app.post('/webhook', async (req, res) => {
       parseMessageSignals(text, previousAiState, inboundContext),
       extractMultiSignals(text, previousAiState)
     );
+    Object.assign(parsedSignals, propertyIntentResolver.resolvePropertyIntent(text, previousAiState));
 
     const changeType = detectStateChange(previousAiState, parsedSignals);
     let nextAiState = buildNextState(previousAiState, parsedSignals, changeType);
     Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
 
+    const engineV2 = isEngineV2Enabled() && shouldUseConversationEngineV2({ text, parsedSignals, inboundContext });
+
     let reply;
     let responseSource = 'fallback_consultive';
 
-    if (isEngineV2Enabled() && shouldUseConversationEngineV2({ text, parsedSignals, inboundContext })) {
+    if (engineV2) {
       const v2 = await processConversationTurnV2({
         text,
         conversationId,
@@ -658,13 +701,31 @@ app.post('/webhook', async (req, res) => {
       Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
       responseSource = v2.responseSource || 'engine_v2';
       logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
-    } else {
+    }
+
+    let property = null;
+    let propertyId = null;
+    let resolvedPropertyRow = undefined;
+    if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
+      const codeForFetch = cleanSpaces(String(nextAiState.property_code || nextAiState.direct_property_code || ''));
+      if (codeForFetch) {
+        const resolved = await fetchPropertyByListingCode(supabase, codeForFetch);
+        property = resolved.property;
+        propertyId = resolved.propertyId;
+        resolvedPropertyRow = property;
+        nextAiState.interested_property_id = propertyId != null ? propertyId : null;
+        nextAiState.property_context = property ? buildPropertyContextSnapshot(property) : null;
+      }
+    }
+
+    if (!engineV2) {
       reply = buildConsultiveFallbackReply({
         text,
         signals: parsedSignals,
         aiState: nextAiState,
         contact,
         waProfileName,
+        resolvedPropertyRow,
       });
       logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: false });
     }
@@ -674,6 +735,7 @@ app.post('/webhook', async (req, res) => {
       aiState: nextAiState,
       hasValidName: hasValidHumanName(contact, nextAiState),
       matchedProperties: [],
+      resolvedPropertyRow,
     });
     Object.assign(nextAiState, subCtx.statePatch);
     reply = subCtx.messages;
@@ -710,18 +772,6 @@ app.post('/webhook', async (req, res) => {
     }
 
     await saveConversationState(conversationId, nextAiState);
-
-    let property = null;
-    let propertyId = null;
-    if (
-      nextAiState?.direct_property_reference &&
-      (nextAiState?.property_code || nextAiState?.direct_property_code)
-    ) {
-      const code = nextAiState.property_code || nextAiState.direct_property_code;
-      const resolved = await fetchPropertyByListingCode(supabase, code);
-      property = resolved.property;
-      propertyId = resolved.propertyId;
-    }
 
     await runCleanOrchestratorCrmPhase({
       supabase,

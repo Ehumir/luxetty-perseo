@@ -128,17 +128,21 @@ test('buildDemandReply for missing property does not invent details and offers s
 });
 
 test('buildPropertyPriceReply answers price directly after initial interest', () => {
-  const reply = buildPropertyPriceReply({
-    listing_id: 'LUX-A0470',
-    price: 2500000,
-  });
+  const replyNamed = buildPropertyPriceReply(
+    { listing_id: 'LUX-A0470', price: 2500000 },
+    { full_name: 'Jorge Pérez' }
+  );
 
   assert.equal(
-    reply,
+    replyNamed,
     `La propiedad LUX-A0470 está en $2,500,000 MXN.
 
 ¿Quieres verla esta semana?`
   );
+
+  const replyNoName = buildPropertyPriceReply({ listing_id: 'LUX-A0470', price: 2500000 }, {});
+  assert.match(replyNoName, /2,500,000/);
+  assert.match(replyNoName, /nombre/i);
 });
 
 test('lead vendedor pregunta cuanto cobras recibe objecion consultiva + pregunta base', () => {

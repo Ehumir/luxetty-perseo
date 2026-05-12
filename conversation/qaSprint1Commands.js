@@ -66,6 +66,8 @@ function formatStateSummary(conversationRow, aiState) {
     `bedrooms: ${safe(aiState?.bedrooms)}`,
     `must_have_features: ${safe(Array.isArray(aiState?.must_have_features) ? aiState.must_have_features.join(',') : aiState?.must_have_features)}`,
     `property_code: ${safe(aiState?.property_code)}`,
+    `property_specific_intent: ${safe(aiState?.property_specific_intent)}`,
+    `interested_property_id: ${safe(aiState?.interested_property_id)}`,
     `contact_id: ${safe(conversationRow?.contact_id)}`,
     `lead_id: ${safe(conversationRow?.lead_id)}`,
   ];

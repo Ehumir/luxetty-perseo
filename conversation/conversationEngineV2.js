@@ -205,6 +205,8 @@ async function processConversationTurnV2(input = {}, options = {}) {
   const previousAiState = input.previousAiState && typeof input.previousAiState === 'object' ? input.previousAiState : {};
   let incomingSignals = input.parsedSignals && typeof input.parsedSignals === 'object' ? input.parsedSignals : {};
   incomingSignals = mergeSignalsWithMulti(incomingSignals, extractMultiSignals(text, previousAiState));
+  const propertyIntentResolver = require('./propertyIntentResolver');
+  Object.assign(incomingSignals, propertyIntentResolver.resolvePropertyIntent(text, previousAiState));
 
   const orchContext = {
     text,
