@@ -147,20 +147,6 @@ function isPropertySpecificConversation(aiState = {}) {
   return false;
 }
 
-function formatMoneyMx(amount) {
-  const n = Number(amount);
-  if (!Number.isFinite(n)) return '';
-  try {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency',
-      currency: 'MXN',
-      maximumFractionDigits: 0,
-    }).format(n);
-  } catch {
-    return `$${Math.round(n).toLocaleString('es-MX')}`;
-  }
-}
-
 function pickNumericPrice(row) {
   if (!row || typeof row !== 'object') return null;
   const keys = ['price', 'sale_price', 'selling_price', 'rent_price', 'rent_amount', 'list_price'];
@@ -171,72 +157,28 @@ function pickNumericPrice(row) {
   return null;
 }
 
-function isVisitIntentText(text) {
-  const t = normalizeText(text);
-  if (!t) return false;
-  const phrases = [
-    'quiero verla',
-    'quiero verlo',
-    'quiero ver la propiedad',
-    'quiero visitar',
-    'quiero visitarla',
-    'quiero visitarlo',
-    'agendar visita',
-    'agendar una visita',
-    'agendar cita',
-    'quiero una cita',
-    'quiero ir a verla',
-    'quiero ir a verlo',
-    'la quiero ver',
-    'lo quiero ver',
-  ];
-  if (phrases.some((p) => t.includes(p))) return true;
-  if (t.includes('quiero ver') && (t.includes('casa') || t.includes('propiedad') || t.includes('depa'))) return true;
-  return false;
-}
-
 /**
- * Respuesta consultiva en modo propiedad (sin inventar disponibilidad).
- * @param {{ text: string, aiState: object, propertyRow: object|null, hasValidName?: boolean }} opts
+ * Respuesta consultiva en modo propiedad (delega en propertySpecificFlow).
+ * @param {{ text: string, aiState: object, propertyRow: object|null, hasValidName?: boolean, recentMessages?: object[], contact?: object, waProfileName?: string|null }} opts
  * @returns {string}
  */
 function buildPropertyModeReply(opts = {}) {
-  const { text = '', aiState = {}, propertyRow = null, hasValidName = false } = opts;
-  const t = normalizeText(text);
-  const code = cleanSpaces(String(aiState.property_code || aiState.direct_property_code || ''));
-  const displayCode = cleanSpaces(String(propertyRow?.listing_id || code || ''));
-
-  if (!propertyRow || !propertyRow.id) {
-    const c = displayCode || code;
-    return `No encontré una propiedad activa con el código ${c}. Si quieres, puedo ayudarte a revisar otras opciones similares.`;
-  }
-
-  if (t.includes('precio') || t.includes('cuesta') || t.includes('valor')) {
-    const p = pickNumericPrice(propertyRow);
-    if (p != null) {
-      const tail = hasValidName
-        ? '¿Te gustaría agendar una visita o que un asesor te comparta más detalle?'
-        : 'Para registrarte bien, ¿me compartes tu nombre? Y si quieres, te canalizo con un asesor para agendar visita.';
-      return `El precio que veo en sistema para ${displayCode} es ${formatMoneyMx(p)}. ${tail}`;
-    }
-    return `Sobre ${displayCode}, no tengo un precio numérico verificado en esta conversación; un asesor lo confirma con el inventario al día.`;
-  }
-
-  if (t.includes('disponible') || t.includes('disponibilidad')) {
-    return `Para disponibilidad al día de hoy de ${displayCode}, un asesor lo confirma en sistema; yo no cierro disponibilidad aquí sin ese dato. Si quieres, te canalizo con un asesor para validarlo.`;
-  }
-
-  if (isVisitIntentText(text) || t.includes('verla') || t.includes('verlo') || t.includes('visita')) {
-    const tail = hasValidName
-      ? '¿Qué día y horario te conviene más para agendar?'
-      : 'Para registrarte bien, ¿me compartes tu nombre? Así un asesor puede agendar visita contigo.';
-    return `Perfecto. Para ${displayCode} puedo canalizarte con un asesor para agendar visita o revisar horarios. ${tail}`;
-  }
-
-  const tail = hasValidName
-    ? '¿Te gustaría que te comparta detalles, precio, ubicación o agendar una visita?'
-    : '¿Te gustaría que te comparta detalles, precio, ubicación o agendar una visita? Para registrarte bien, ¿me compartes tu nombre?';
-  return `Claro, ya ubiqué la propiedad ${displayCode}. ${tail}`;
+  const propertySpecificFlow = require('./propertySpecificFlow');
+  const intent = propertySpecificFlow.classifyPropertyFollowUp(
+    opts.text || '',
+    opts.aiState || {},
+    opts.recentMessages || []
+  );
+  return propertySpecificFlow.buildPropertySpecificReply({
+    intent,
+    property: opts.propertyRow === undefined ? null : opts.propertyRow,
+    aiState: opts.aiState || {},
+    contact: opts.contact || null,
+    waProfileName: opts.waProfileName || null,
+    text: opts.text || '',
+    recentMessages: opts.recentMessages || [],
+    hasValidName: opts.hasValidName,
+  });
 }
 
 module.exports = {

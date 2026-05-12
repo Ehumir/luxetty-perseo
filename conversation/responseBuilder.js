@@ -12,6 +12,7 @@ const {
 const { openai } = require('../services/openaiService');
 const { qualifiesDemandValue } = require('./searchRules');
 const { cleanSpaces } = require('../utils/text');
+const propertySpecificFlow = require('./propertySpecificFlow');
 
 function buildAiSummary(state, properties = []) {
   const parts = [];
@@ -252,74 +253,22 @@ function getPropertySlugUrl(property = {}) {
   return `https://luxetty.com/propiedad/${cleanSlug}`;
 }
 
-function hasValidPropertyPrice(property = {}) {
-  const price = Number(property.price);
-  return Number.isFinite(price) && price > 0;
-}
-
-function buildPropertyAdvisorCta(state = {}, code = null) {
-  if (state.full_name) {
-    return `Si me autorizas, un asesor de Luxetty puede contactarte para apoyarte con detalles confirmados y visita de ${code || 'la propiedad'}. ¿Deseas que te contacte?`;
-  }
-
-  if (state.awaiting_field === 'full_name') {
-    return 'Cuando puedas, compárteme solo tu nombre y con eso lo canalizo con asesor.';
-  }
-
-  return 'Para que un asesor de Luxetty pueda apoyarte con detalles confirmados y visita, ¿me compartes tu nombre?';
-}
-
-function pickPropertyInterestOpening(hasUrl) {
-  const openings = hasUrl
-    ? [
-        'Claro. Te comparto la liga de la propiedad',
-        'Perfecto, aquí está la liga de la propiedad',
-        'Listo, te paso la liga de la propiedad',
-      ]
-    : [
-        'Claro, identifiqué la propiedad',
-        'Perfecto, ya identifiqué la propiedad',
-        'Listo, encontré la propiedad',
-      ];
-  return openings[Math.floor(Math.random() * openings.length)];
-}
-
 function buildPropertyInterestReply(property, state = {}) {
-  const code = getPropertyVisibleCode(property, state);
-  const location = getPropertyLocationLabel(property);
-  const url = getPropertySlugUrl(property);
-  const locationText = location ? ` en ${location}` : '';
-
-  if (!url) {
-    return [
-      `${pickPropertyInterestOpening(false)} ${code}${locationText}.`,
-      `Para compartirte información confirmada, voy a canalizar tu caso con un asesor de Luxetty. ${buildPropertyAdvisorCta(state, code)}`,
-    ];
-  }
-
-  return [
-    `${pickPropertyInterestOpening(true)} ${code}${locationText}.`,
-    url,
-    `${buildPropertyAdvisorCta(state, code)} También puedo pedir que confirmen disponibilidad y precio actual.`,
-  ];
+  return propertySpecificFlow.buildPropertyIntroReply({
+    property,
+    aiState: state,
+    contact: null,
+    waProfileName: null,
+  });
 }
 
 function buildPropertyPriceReply(property, state = {}) {
-  const code = getPropertyVisibleCode(property, state);
-  const nameFollow =
-    state.full_name && cleanSpaces(String(state.full_name))
-      ? ''
-      : '\n\nPara registrarte bien, ¿me compartes tu nombre?';
-
-  if (!hasValidPropertyPrice(property)) {
-    return `De momento no tengo un precio público confirmado para la propiedad ${code}. Te puedo compartir los detalles disponibles o revisarlo con un asesor.
-
-¿Quieres que lo revisemos contigo?${nameFollow}`;
-  }
-
-  return `La propiedad ${code} está en ${formatMoney(property.price, property.currency_code || 'MXN')}.
-
-¿Quieres verla esta semana?${nameFollow}`;
+  return propertySpecificFlow.buildPropertyPriceReply({
+    property,
+    aiState: state,
+    contact: null,
+    waProfileName: null,
+  });
 }
 
 function buildDirectPropertyReply(state, changeType, properties = []) {

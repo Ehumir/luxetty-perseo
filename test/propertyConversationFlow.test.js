@@ -66,8 +66,12 @@ test('pipeline: no fuerza plantilla genérica de demanda cuando hay propiedad', 
     hasValidName: true,
     matchedProperties: [],
     resolvedPropertyRow: null,
+    recentMessages: [],
+    contact: null,
+    waProfileName: null,
   });
-  assert.match(String(sub.messages), /No encontré|propiedad activa/i);
+  assert.match(String(sub.messages), /LUX-A0461/);
+  assert.doesNotMatch(String(sub.messages), /Dime un poco más de lo que buscas y te oriento/i);
 });
 
 test('pipeline: salir de property mode conserva lead_flow demand', () => {
@@ -94,7 +98,7 @@ test('buildConsultiveFallbackReply: intro propiedad encontrada', () => {
     direct_property_reference: true,
     property_specific_intent: true,
   });
-  const row = { id: 'p1', listing_id: 'LUX-A0461', price: 3_000_000 };
+  const row = { id: 'p1', listing_id: 'LUX-A0461', price: 3_000_000, slug: 'casa-lux-a0461' };
   const reply = idx.buildConsultiveFallbackReply({
     text: 'Me interesa',
     signals: { lead_flow: 'demand' },
@@ -102,7 +106,8 @@ test('buildConsultiveFallbackReply: intro propiedad encontrada', () => {
     contact: null,
     waProfileName: null,
     resolvedPropertyRow: row,
+    recentMessages: [],
   });
   assert.match(reply, /LUX-A0461/);
-  assert.match(reply, /ubicación|visita|detalles/i);
+  assert.match(reply, /ubicación|visita|detalles|precio|disponibilidad|liga|luxetty\.com/i);
 });

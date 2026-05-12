@@ -85,6 +85,10 @@ function getDefaultAiState() {
     property_specific_intent: false,
     interested_property_id: null,
     property_context: null,
+    property_generic_cta_shown_for_code: null,
+    property_intro_shown_for_code: null,
+    property_last_follow_up_intent: null,
+    property_pending_user_question: null,
 
     last_audio_transcription: null,
     has_audio_without_transcription: false,

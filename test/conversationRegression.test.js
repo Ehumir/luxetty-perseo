@@ -50,6 +50,7 @@ test('regression: me interesa esta propiedad detecta comercial y conduce a aseso
     'append_info',
     [
       {
+        id: 'prop-test-a0453',
         listing_id: 'LUX-A0453',
         neighborhood: 'Cumbres',
         slug: 'casa-cumbres-a0453',
@@ -118,14 +119,18 @@ test('regression: quiero una valuacion se trata como supply y no como compra', (
 });
 
 test('regression: precio con propiedad usa contexto y siguiente paso', () => {
-  const reply = buildPropertyPriceReply({
-    listing_id: 'LUX-A0460',
-    price: 3200000,
-  });
+  const reply = buildPropertyPriceReply(
+    {
+      id: 'x',
+      listing_id: 'LUX-A0460',
+      price: 3200000,
+    },
+    { property_code: 'LUX-A0460' }
+  );
 
   assert.match(reply, /LUX-A0460/);
-  assert.match(reply, /\$3,200,000 MXN/);
-  assert.match(reply, /Quieres verla esta semana/i);
+  assert.match(reply, /3[., ]?200[., ]?000|3,200,000/i);
+  assert.match(reply, /asesor/i);
   assert.doesNotMatch(reply, /no entiendo|soy un bot/i);
 });
 
