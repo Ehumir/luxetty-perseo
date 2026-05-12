@@ -33,6 +33,7 @@ const {
   hasValidHumanName,
   replyAlreadyAsksName: replyAlreadyAsksNameFromPrompt,
 } = require('./conversation/namePrompt');
+const contextualMemoryResolver = require('./conversation/contextualMemoryResolver');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -302,7 +303,7 @@ function buildConsultiveFallbackReply({ text, signals, aiState }) {
   }
 
   if ((signals?.lead_flow === 'demand' || t.includes('busco') || t.includes('comprar') || t.includes('rentar')) && loc) {
-    return `Hola, claro. Te puedo ayudar a buscar casa en ${loc}. ¿Tienes un presupuesto aproximado para esa zona?`;
+    return `Claro, te ayudo a buscar casa en ${loc}. Para registrarte bien, ¿me compartes tu nombre? Y dime también tu presupuesto aproximado.`;
   }
 
   if (t.includes('precio')) {
@@ -587,6 +588,7 @@ app.post('/webhook', async (req, res) => {
 
     const changeType = detectStateChange(previousAiState, parsedSignals);
     let nextAiState = buildNextState(previousAiState, parsedSignals, changeType);
+    Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
 
     let reply;
     let responseSource = 'fallback_consultive';
@@ -616,12 +618,22 @@ app.post('/webhook', async (req, res) => {
 
       reply = v2.outboundMessages;
       nextAiState = v2.nextAiState || nextAiState;
+      Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
       responseSource = v2.responseSource || 'engine_v2';
       logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
     } else {
       reply = buildConsultiveFallbackReply({ text, signals: parsedSignals, aiState: nextAiState });
       logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: false });
     }
+
+    const subCtx = contextualMemoryResolver.substituteForbiddenGenericDemandReply(reply, {
+      text,
+      aiState: nextAiState,
+      hasValidName: hasValidHumanName(contact, nextAiState),
+      matchedProperties: [],
+    });
+    Object.assign(nextAiState, subCtx.statePatch);
+    reply = subCtx.messages;
 
     const recentOutboundTexts = Array.isArray(recentMessages)
       ? recentMessages
@@ -649,6 +661,10 @@ app.post('/webhook', async (req, res) => {
     }
 
     reply = enforced.reply;
+
+    if (cleanSpaces(String(nextAiState.full_name || '')) && nextAiState.awaiting_field === 'full_name') {
+      nextAiState.awaiting_field = null;
+    }
 
     await saveConversationState(conversationId, nextAiState);
 
@@ -707,7 +723,9 @@ module.exports = {
     replyAlreadyAsksName,
     enforceNameCapture,
     buildConsultiveFallbackReply,
-    hasClearRealEstateIntent,
+    mergeContextualSignals: contextualMemoryResolver.mergeContextualSignals,
+    substituteForbiddenGenericDemandReply: contextualMemoryResolver.substituteForbiddenGenericDemandReply,
+    hasOperationalContext: contextualMemoryResolver.hasOperationalContext,
     runCleanOrchestratorCrmPhase,
     normalizeListingCodeForLookup,
     fetchPropertyByListingCode,
