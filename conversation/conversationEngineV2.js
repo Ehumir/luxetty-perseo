@@ -20,6 +20,7 @@ const {
   buildSyntheticStateForAdvisor,
 } = require('./realEstateAdvisorReply');
 const { appendNameRequestIfNeeded, hasValidHumanName } = require('./namePrompt');
+const contextualMemoryResolver = require('./contextualMemoryResolver');
 const { OPENAI_MODEL } = require('../config/env');
 
 function isEngineV2Enabled() {
@@ -233,8 +234,29 @@ async function processConversationTurnV2(input = {}, options = {}) {
   pushLog('orchestrator_decision', orchestratorDecision);
 
   if (orchestratorDecision?.safety?.requires_programmed_reply) {
-    const reply = buildSafeEngineFallback({ ...input, parsedSignals: incomingSignals, orchestratorDecision });
-    const nextAiState = { ...previousAiState };
+    const mergedSig0 = mergeCapturedIntoSignals(incomingSignals, orchestratorDecision);
+    const changeType0 = detectStateChange(previousAiState, mergedSig0);
+    let nextAiState0 = buildNextState(previousAiState, mergedSig0, changeType0);
+    nextAiState0 = applyDecisionToAiState(orchestratorDecision, nextAiState0);
+    applyOrchestratorToAwaitingField(nextAiState0, orchestratorDecision);
+    Object.assign(nextAiState0, contextualMemoryResolver.mergeContextualSignals(mergedSig0, previousAiState, nextAiState0, text));
+    let reply0 = buildSafeEngineFallback({
+      ...input,
+      parsedSignals: mergedSig0,
+      previousAiState: nextAiState0,
+      orchestratorDecision,
+    });
+    const sub0 = contextualMemoryResolver.substituteForbiddenGenericDemandReply(reply0, {
+      text,
+      aiState: nextAiState0,
+      hasValidName: hasValidHumanName(input.contact, nextAiState0),
+      matchedProperties: [],
+    });
+    Object.assign(nextAiState0, sub0.statePatch);
+    reply0 = sub0.messages;
+    if (cleanSpaces(String(nextAiState0.full_name || '')) && nextAiState0.awaiting_field === 'full_name') {
+      nextAiState0.awaiting_field = null;
+    }
     logEngine(logger, {
       engine_v2_used: true,
       orchestrator_called: orchestratorCalled,
@@ -246,11 +268,11 @@ async function processConversationTurnV2(input = {}, options = {}) {
       fallback_reason: orchestratorDecision?.safety?.reason || 'safety',
     });
     return {
-      reply,
-      outboundMessages: reply,
-      nextAiState,
-      crmActions: buildCrmActionsFromOrchestrator(orchestratorDecision, nextAiState, input.contact),
-      propertyActions: buildPropertyActionsFromOrchestrator(orchestratorDecision, nextAiState),
+      reply: reply0,
+      outboundMessages: reply0,
+      nextAiState: nextAiState0,
+      crmActions: buildCrmActionsFromOrchestrator(orchestratorDecision, nextAiState0, input.contact),
+      propertyActions: buildPropertyActionsFromOrchestrator(orchestratorDecision, nextAiState0),
       facts: buildEngineFacts({ ...input, propertiesContext: { matchedProperties: [] } }),
       responseSource: 'engine_v2_programmed_safety',
       advisorCalled: false,
@@ -266,6 +288,7 @@ async function processConversationTurnV2(input = {}, options = {}) {
   let nextAiState = buildNextState(previousAiState, incomingSignals, changeType);
   nextAiState = applyDecisionToAiState(orchestratorDecision, nextAiState);
   applyOrchestratorToAwaitingField(nextAiState, orchestratorDecision);
+  Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(incomingSignals, previousAiState, nextAiState, text));
 
   /** Propiedad explícita */
   let matchedProperties = Array.isArray(input.propertiesContext?.matchedProperties)
@@ -399,6 +422,19 @@ async function processConversationTurnV2(input = {}, options = {}) {
     }
   }
 
+  const subReply = contextualMemoryResolver.substituteForbiddenGenericDemandReply(outboundMessages, {
+    text,
+    aiState: nextAiState,
+    hasValidName: hasValidHumanName(input.contact, nextAiState),
+    matchedProperties,
+  });
+  Object.assign(nextAiState, subReply.statePatch);
+  outboundMessages = subReply.messages;
+
+  if (cleanSpaces(String(nextAiState.full_name || '')) && nextAiState.awaiting_field === 'full_name') {
+    nextAiState.awaiting_field = null;
+  }
+
   const crmActions = buildCrmActionsFromOrchestrator(orchestratorDecision, nextAiState, input.contact);
   const propertyActions = buildPropertyActionsFromOrchestrator(orchestratorDecision, nextAiState);
 
@@ -438,6 +474,16 @@ async function processConversationTurnV2(input = {}, options = {}) {
     out.outboundMessages = out.reply;
     out.responseSource = 'engine_v2_validate_fallback';
   }
+
+  const subValidate = contextualMemoryResolver.substituteForbiddenGenericDemandReply(out.outboundMessages, {
+    text,
+    aiState: out.nextAiState,
+    hasValidName: hasValidHumanName(input.contact, out.nextAiState),
+    matchedProperties,
+  });
+  Object.assign(out.nextAiState, subValidate.statePatch);
+  out.outboundMessages = subValidate.messages;
+  out.reply = subValidate.messages;
 
   return out;
 }

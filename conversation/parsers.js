@@ -215,9 +215,18 @@ function extractBedrooms(message) {
   if (match) return Number(match[1]);
 
   match = text.match(/\b(\d+)\b/);
-  if (match && text.length <= 10) return Number(match[1]);
-
-  return null;
+  if (match && text.length <= 10) {
+    if (
+      text.includes('millon') ||
+      text.includes('mdp') ||
+      text.includes('peso') ||
+      text.includes('mxn') ||
+      text.includes('usd')
+    ) {
+      return null;
+    }
+    return Number(match[1]);
+  }
 }
 
 function extractBathrooms(message) {
