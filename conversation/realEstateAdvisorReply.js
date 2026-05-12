@@ -161,6 +161,17 @@ function shouldUseAdvisorForRealEstateTurn(params = {}) {
     change_type: params.change_type,
   });
 
+  const orchFull = signals.orchestrator_decision;
+  if (
+    signals.conversation_engine_v2 &&
+    orchFull &&
+    typeof orchFull === 'object' &&
+    orchFull.reply_strategy?.source === 'advisor' &&
+    !orchFull.safety?.requires_programmed_reply
+  ) {
+    return { use: true, reason: 'conversation_engine_v2', draft };
+  }
+
   const routeD =
     params.route_evaluator_decision && typeof params.route_evaluator_decision === 'object'
       ? params.route_evaluator_decision
