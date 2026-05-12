@@ -24,6 +24,13 @@ const contextualMemoryResolver = require('./contextualMemoryResolver');
 const { mergeSignalsWithMulti, extractMultiSignals } = require('./multiSignalExtractor');
 const contextualReferenceResolver = require('./contextualReferenceResolver');
 const conversationalStateMachine = require('./conversationalStateMachine');
+const { buildAdvisorContext } = require('./advisorContextBuilder');
+const { generateAdvisorReply } = require('./openAiAdvisorResponder');
+const {
+  shouldActivateRecoveryMode,
+  buildRecoveryContext,
+  generateRecoveryResponse,
+} = require('./conversationRecoveryMode');
 const { OPENAI_MODEL } = require('../config/env');
 
 function isEngineV2Enabled() {
@@ -187,6 +194,18 @@ function buildPropertyActionsFromOrchestrator(orch, nextAiState) {
       budget_currency: nextAiState.budget_currency,
     },
   };
+}
+
+function detectRepeatCount(recentMessages = [], needle = '') {
+  const normNeedle = normalizeText(String(needle || ''));
+  if (!normNeedle) return 0;
+  const list = Array.isArray(recentMessages) ? recentMessages : [];
+  return list
+    .slice(-8)
+    .filter((m) => m?.direction === 'outbound')
+    .map((m) => normalizeText(String(m?.message_text || '')))
+    .filter((txt) => txt && (txt === normNeedle || txt.includes(normNeedle)))
+    .length;
 }
 
 /**
@@ -407,9 +426,24 @@ async function processConversationTurnV2(input = {}, options = {}) {
   let fallbackUsed = false;
   let fallbackReason = null;
 
+  let advisorContext = null;
   try {
     advisorCalled = true;
-    const advisory = await advisorGen(advisorCtx, { model: input.openaiModel || OPENAI_MODEL });
+    advisorContext = buildAdvisorContext({
+      aiState: nextAiState,
+      currentProperty: matchedProperties[0] || null,
+      recentMessages: input.recentMessages || [],
+      contactId: input.conversationRow?.contact_id || null,
+      leadId: input.conversationRow?.lead_id || null,
+      user_message: text,
+      conversation_id: input.conversationId || null,
+      contact: input.contact || null,
+    });
+    const advisory = await generateAdvisorReply(advisorContext, {
+      model: input.openaiModel || OPENAI_MODEL,
+      openaiClient: input.openaiClient,
+      generateAdvisorReplyForRealEstateTurn: advisorGen,
+    });
     reply = advisory.text;
   } catch (e) {
     fallbackUsed = true;
@@ -433,6 +467,29 @@ async function processConversationTurnV2(input = {}, options = {}) {
       orchestratorDecision,
     });
     responseSource = 'engine_v2_safe_fallback';
+  }
+
+  const recoveryProbe = {
+    ...(advisorContext || {}),
+    user_message: text,
+    generated_reply: String(reply || ''),
+    repeat_count: detectRepeatCount(input.recentMessages || [], String(reply || '')),
+    anti_loop_detected: detectRepeatCount(input.recentMessages || [], String(reply || '')) >= 1,
+  };
+  if (shouldActivateRecoveryMode(recoveryProbe)) {
+    try {
+      const recoveryOut = await generateRecoveryResponse(buildRecoveryContext(recoveryProbe), {
+        model: input.openaiModel || OPENAI_MODEL,
+        openaiClient: input.openaiClient,
+        generateAdvisorReplyForRealEstateTurn: advisorGen,
+      });
+      if (cleanSpaces(String(recoveryOut?.text || ''))) {
+        reply = recoveryOut.text;
+        responseSource = 'engine_v2_recovery';
+      }
+    } catch (e) {
+      pushLog('recovery_error', String(e?.message || e));
+    }
   }
 
   const skipNameAppend = orchestratorDecision?.reply_strategy?.goal === 'capture_name';

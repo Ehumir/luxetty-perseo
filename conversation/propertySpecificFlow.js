@@ -5,6 +5,7 @@ const { formatMoney, formatPropertyTypeLabel } = require('../utils/formatting');
 const { hasValidHumanName } = require('./namePrompt');
 const { extractPropertyCode, pickNumericPrice } = require('./propertyIntentResolver');
 const playbookPriorityResolver = require('./playbookPriorityResolver');
+const { routePropertyFollowUpIntent, looksLikeVisitTimeProposal } = require('./propertyFollowUpIntentRouter');
 const propertyInventoryService = require('../services/propertyInventoryService');
 
 const GENERIC_CTA_PHRASE = '¿te gustaría que te comparta detalles, precio, ubicación o agendar una visita?';
@@ -242,17 +243,7 @@ function wantsInitialPropertyIntro(t, extracted, aiState) {
  * @returns {{ type: string|null, detail?: object }}
  */
 function looksLikeVisitTimeAnswer(t) {
-  return (
-    t.includes('mañana') ||
-    t.includes('manana') ||
-    t.includes('hoy') ||
-    t.includes('pasado manana') ||
-    /\b(pm|am)\b/i.test(t) ||
-    /\b\d{1,2}:\d{2}\b/.test(t) ||
-    /a las\s+\d/i.test(t) ||
-    /las\s+\d/i.test(t) ||
-    /\b\d{1,2}\s*(pm|am)\b/i.test(t)
-  );
+  return looksLikeVisitTimeProposal(t);
 }
 
 function classifyPropertyFollowUp(text, aiState = {}, recentMessages = []) {
@@ -260,8 +251,18 @@ function classifyPropertyFollowUp(text, aiState = {}, recentMessages = []) {
   const t = normalizeText(text);
   if (!t) return { type: null };
 
-  if (aiState.visit_coordination_pending && looksLikeVisitTimeAnswer(t)) {
+  if (aiState.visit_coordination_pending && looksLikeVisitTimeAnswer(t) && !isVisitIntent(t)) {
     return { type: 'visit_schedule_follow_up' };
+  }
+
+  const routed = routePropertyFollowUpIntent(text, aiState);
+  if (routed?.type) {
+    if (routed.type === 'visit_time_proposed') {
+      return { type: aiState.visit_coordination_pending ? 'visit_schedule_follow_up' : 'ask_visit' };
+    }
+    if (routed.type === 'ask_all_available_info') return { type: 'ask_details' };
+    if (routed.type === 'ask_agent_identity') return { type: 'ask_visit' };
+    return { type: routed.type };
   }
 
   const extracted = extractPropertyCode(text);
