@@ -51,7 +51,7 @@ test('B2) interceptQaCommand !reset sin allowlist: no handled, isQaCommand true'
 
   assert.equal(result.handled, false);
   assert.equal(result.isQaCommand, true);
-  assert.equal(result.reason, 'qa_command_denied');
+  assert.equal(result.reason, 'qa_command_unauthorized');
 
   process.env.QA_ALLOWED_WHATSAPP_NUMBERS = original || '';
 });
