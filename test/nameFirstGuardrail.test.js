@@ -42,3 +42,36 @@ test('evaluateInboundTurn: captura de nombre tras awaiting_field', () => {
   assert.match(String(r.reply || ''), /Gracias/i);
   assert.match(String(r.reply || ''), /Jorge/i);
 });
+
+test('evaluateInboundTurn: captura nombre aunque el perfil WA ya sea un nombre (no bloquear por requiresName)', () => {
+  const r = guard.evaluateInboundTurn({
+    text: 'Jorge',
+    previousAiState: {
+      awaiting_field: 'full_name',
+      pending_name_capture: true,
+      full_name: null,
+      entry_point_last: { entry_type: 'property_ad', property_code: 'LUX-A0470' },
+      property_code: 'LUX-A0470',
+      direct_property_code: 'LUX-A0470',
+      property_specific_intent: true,
+      direct_property_reference: true,
+    },
+    nextAiState: {
+      awaiting_field: 'full_name',
+      full_name: 'Jorge',
+      property_code: 'LUX-A0470',
+      direct_property_code: 'LUX-A0470',
+      property_specific_intent: true,
+      direct_property_reference: true,
+    },
+    contact: null,
+    waProfileName: 'Jorge',
+    recentMessages: [{ direction: 'inbound', message_text: 'hola' }],
+    propertyRow: null,
+    entryMeta: { entry_type: 'unknown' },
+  });
+  assert.equal(r.handled, true);
+  assert.doesNotMatch(String(r.reply || ''), /compartes tu nombre/i);
+  assert.match(String(r.reply || ''), /Gracias,\s*Jorge/i);
+  assert.match(String(r.reply || ''), /LUX-A0470/i);
+});

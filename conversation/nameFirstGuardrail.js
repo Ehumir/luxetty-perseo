@@ -80,9 +80,10 @@ function shouldInterceptIdentityQuestion(text = '') {
 }
 
 function shouldInterceptAfterNameCapture(context = {}) {
-  const { previousAiState = {}, nextAiState = {}, contact = null, waProfileName = null } = context;
-  if (!requiresName(contact, previousAiState, waProfileName)) return false;
-  if (previousAiState?.awaiting_field !== 'full_name') return false;
+  const { previousAiState = {}, nextAiState = {} } = context;
+  const waitingName =
+    previousAiState?.awaiting_field === 'full_name' || !!previousAiState?.pending_name_capture;
+  if (!waitingName) return false;
   const nowName = cleanSpaces(String(nextAiState?.full_name || ''));
   const prevName = cleanSpaces(String(previousAiState?.full_name || ''));
   return !!nowName && nowName !== prevName;
@@ -199,12 +200,17 @@ function evaluateInboundTurn(context = {}) {
       patch.awaiting_field = null;
     }
 
+    const reply = leadEntryPointRouter.buildNameAcknowledgementReply(nextAiState.full_name, {
+      entry: effMeta,
+      aiState: nextAiState,
+    });
+    console.log('[NAME_CAPTURE_OK]', {
+      full_name: cleanSpaces(String(nextAiState.full_name || '')),
+      property_code: cleanSpaces(String(nextAiState.property_code || nextAiState.direct_property_code || '')),
+    });
     return {
       handled: true,
-      reply: leadEntryPointRouter.buildNameAcknowledgementReply(nextAiState.full_name, {
-        entry: effMeta,
-        aiState: nextAiState,
-      }),
+      reply,
       statePatch: patch,
       skipEnforce: true,
       skipEngineV2: true,
