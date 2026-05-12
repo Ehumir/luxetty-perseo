@@ -40,6 +40,7 @@ const propertySpecificFlow = require('./conversation/propertySpecificFlow');
 const propertyInventoryService = require('./services/propertyInventoryService');
 const contextualReferenceResolver = require('./conversation/contextualReferenceResolver');
 const conversationalStateMachine = require('./conversation/conversationalStateMachine');
+const playbookPriorityResolver = require('./conversation/playbookPriorityResolver');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -338,7 +339,7 @@ function buildConsultiveFallbackReply({
     return fn ? `Sí ${fn}, ya quedó registrado. ¿En qué más te apoyo?` : 'Sí, ya quedó registrado. ¿En qué más te apoyo?';
   }
 
-  if (propertyIntentResolver.isPropertySpecificConversation(aiState)) {
+  if (playbookPriorityResolver.shouldUsePropertySpecificFlow(aiState)) {
     return propertyIntentResolver.buildPropertyModeReply({
       text,
       aiState,
@@ -742,7 +743,7 @@ app.post('/webhook', async (req, res) => {
     let property = null;
     let propertyId = null;
     let resolvedPropertyRow = undefined;
-    if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
+    if (playbookPriorityResolver.shouldUsePropertySpecificFlow(nextAiState)) {
       const codeForFetch = cleanSpaces(String(nextAiState.property_code || nextAiState.direct_property_code || ''));
       if (codeForFetch) {
         const hintZone = cleanSpaces(String(parsedSignals.location_text || nextAiState.location_text || ''));
@@ -794,7 +795,7 @@ app.post('/webhook', async (req, res) => {
       logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: false });
     }
 
-    const subHasName = propertyIntentResolver.isPropertySpecificConversation(nextAiState)
+    const subHasName = playbookPriorityResolver.shouldUsePropertySpecificFlow(nextAiState)
       ? hasConversationCapturedFullName(nextAiState)
       : hasValidHumanName(contact, nextAiState);
     const subCtx = contextualMemoryResolver.substituteForbiddenGenericDemandReply(reply, {
@@ -837,7 +838,7 @@ app.post('/webhook', async (req, res) => {
 
     reply = enforced.reply;
 
-    if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
+    if (playbookPriorityResolver.shouldUsePropertySpecificFlow(nextAiState)) {
       const mergedReplyText = Array.isArray(reply) ? reply.join('\n\n') : String(reply || '');
       const intent = propertySpecificFlow.classifyPropertyFollowUp(text, nextAiState, recentMessages);
       Object.assign(

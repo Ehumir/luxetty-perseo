@@ -177,6 +177,8 @@ function getDefaultAiState() {
     seller_context_active: false,
     buyer_context_active: false,
     mixed_interest: false,
+
+    visit_coordination_pending: false,
   };
 }
 

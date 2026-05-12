@@ -1,6 +1,7 @@
 'use strict';
 
 const { normalizeText, cleanSpaces } = require('../utils/text');
+const playbookPriorityResolver = require('./playbookPriorityResolver');
 
 const PLAYBOOKS = {
   PROPERTY_SPECIFIC: 'property_specific',
@@ -15,18 +16,7 @@ const PLAYBOOKS = {
  * Pregunta amplia de inventario / zonas: salir de property_specific hacia buyer_search sin borrar historial.
  */
 function shouldSoftExitPropertyToBuyerSearch(text) {
-  const t = normalizeText(text);
-  if (!t) return false;
-
-  if (/\btienes\s+(algo|opciones|cosas)\b/.test(t) && /\ben\b/.test(t)) return true;
-  if (/\bhay\s+(algo|opciones|cosas)\b/.test(t) && /\ben\b/.test(t)) return true;
-  if (/\bque\s+tienen\b/.test(t) && /\ben\b/.test(t)) return true;
-  if (/\bque\s+tienes\b/.test(t) && /\ben\b/.test(t)) return true;
-  if (/\bmanejan\b/.test(t) && /\ben\b/.test(t)) return true;
-  if (t.includes('busco algo') && /\ben\b/.test(t)) return true;
-  if (t.includes('buscar algo') && /\ben\b/.test(t)) return true;
-
-  return false;
+  return playbookPriorityResolver.shouldSoftExitPropertyMode(text, {});
 }
 
 function explicitBuyerPivot(text) {
@@ -65,6 +55,17 @@ function computeSignalPatch({ text, prevAiState = {}, parsedSignals = {} } = {})
     patch.secondary_intent = patch.seller_context_active ? 'seller_listing' : null;
     patch.conversational_phase = 'discovery';
     patch.contextual_subject = 'inventory_search';
+    return patch;
+  }
+
+  if (playbookPriorityResolver.shouldElevateBuyerSearchOverProperty(text, prev, p)) {
+    patch.active_playbook = PLAYBOOKS.BUYER_SEARCH;
+    patch.previous_playbook = prev.active_playbook || PLAYBOOKS.PROPERTY_SPECIFIC;
+    patch.buyer_context_active = true;
+    patch.active_intent = 'buyer_search';
+    patch.conversational_phase = 'discovery';
+    patch.contextual_subject = 'inventory_search';
+    patch.__buyerDominantInventory = true;
     return patch;
   }
 

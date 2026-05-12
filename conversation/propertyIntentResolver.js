@@ -117,14 +117,14 @@ function resolvePropertyIntent(text, aiState = {}) {
   const t = normalizeText(text);
 
   if (isPropertySpecificConversation(prev) && !extractPropertyCode(text)) {
-    const { shouldSoftExitPropertyToBuyerSearch } = require('./conversationalStateMachine');
-    if (shouldSoftExitPropertyToBuyerSearch(text)) {
+    const ppr = require('./playbookPriorityResolver');
+    if (ppr.shouldSoftExitPropertyMode(text, prev)) {
       return {
-        __softExitPropertyMode: true,
+        __buyerDominantInventory: true,
+        active_playbook: ppr.PLAYBOOKS.BUYER_SEARCH,
+        lead_flow: prev.lead_flow || 'demand',
         property_specific_intent: false,
         direct_property_reference: false,
-        property_code: null,
-        direct_property_code: null,
       };
     }
   }
