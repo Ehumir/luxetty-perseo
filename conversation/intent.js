@@ -175,7 +175,14 @@ function detectIntent(message, prevState = null) {
   }
 
   if (!leadType && implicitDemand) {
-    leadType = 'demand';
+    const blockedBySellerContext =
+      prev.lead_flow === 'offer' ||
+      prev.intent_lock_sale_owner === true ||
+      prev.active_playbook === 'seller_capture' ||
+      prev.seller_context_active === true;
+    if (!blockedBySellerContext) {
+      leadType = 'demand';
+    }
   }
 
   if (!leadType && hasPriceExpressions && (

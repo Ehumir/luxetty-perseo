@@ -22,6 +22,8 @@ const {
 const { appendNameRequestIfNeeded, hasValidHumanName } = require('./namePrompt');
 const contextualMemoryResolver = require('./contextualMemoryResolver');
 const { mergeSignalsWithMulti, extractMultiSignals } = require('./multiSignalExtractor');
+const contextualReferenceResolver = require('./contextualReferenceResolver');
+const conversationalStateMachine = require('./conversationalStateMachine');
 const { OPENAI_MODEL } = require('../config/env');
 
 function isEngineV2Enabled() {
@@ -207,6 +209,31 @@ async function processConversationTurnV2(input = {}, options = {}) {
   incomingSignals = mergeSignalsWithMulti(incomingSignals, extractMultiSignals(text, previousAiState));
   const propertyIntentResolver = require('./propertyIntentResolver');
   Object.assign(incomingSignals, propertyIntentResolver.resolvePropertyIntent(text, previousAiState));
+
+  const ctxResolved = contextualReferenceResolver.resolveContextualPropertyCode({
+    text,
+    aiState: previousAiState,
+    recentMessages: input.recentMessages || [],
+  });
+  if (ctxResolved.propertyCode && !incomingSignals.property_code) {
+    Object.assign(incomingSignals, contextualReferenceResolver.buildPropertySignalsFromResolution(ctxResolved));
+  }
+  Object.assign(
+    incomingSignals,
+    conversationalStateMachine.computeSignalPatch({
+      text,
+      prevAiState: previousAiState,
+      parsedSignals: incomingSignals,
+    })
+  );
+  Object.assign(
+    incomingSignals,
+    conversationalStateMachine.applySellerLocationStickyPatch({
+      text,
+      prevAiState: previousAiState,
+      parsedSignals: incomingSignals,
+    })
+  );
 
   const orchContext = {
     text,

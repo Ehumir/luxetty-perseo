@@ -38,6 +38,18 @@ test('resolvePropertyIntent: salir de modo propiedad', () => {
   assert.equal(patch.property_specific_intent, false);
 });
 
+test('resolvePropertyIntent: soft exit inventario sin código explícito', () => {
+  const prev = {
+    property_code: 'LUX-A0462',
+    property_specific_intent: true,
+    direct_property_reference: true,
+    property_history: [{ code: 'LUX-A0462', at: 't' }],
+  };
+  const patch = pr.resolvePropertyIntent('¿Tienes algo en Cumbres?', prev);
+  assert.equal(patch.__softExitPropertyMode, true);
+  assert.equal(patch.property_specific_intent, false);
+});
+
 test('isPropertySpecificConversation', () => {
   assert.equal(pr.isPropertySpecificConversation({ property_code: 'LUX-A0001', property_specific_intent: true }), true);
   assert.equal(pr.isPropertySpecificConversation({ lead_flow: 'demand' }), false);
