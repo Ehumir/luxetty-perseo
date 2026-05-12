@@ -109,6 +109,11 @@ const {
   isQaLeadBlocked,
   parseQaCommand,
 } = require('./conversation/qaCommands');
+const {
+  evaluateRouteWithOpenAI,
+  shouldSkipOpenAIRouteEvaluator,
+  getAdvisorFailureFallbackReply,
+} = require('./conversation/routeEvaluator');
 const { appendNameRequestIfNeeded, hasValidHumanName } = require('./conversation/namePrompt');
 const {
   hasRealEstateAdvisorTurnContext,
@@ -2372,6 +2377,19 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
+      let routeEvaluatorDecision = null;
+      if (!shouldSkipOpenAIRouteEvaluator({ text, messageType, inboundContext })) {
+        routeEvaluatorDecision = await evaluateRouteWithOpenAI({
+          text,
+          previousAiState,
+          incomingSignals,
+          inboundContext,
+          contact: linkedEntities.existingContact || null,
+          campaignContext: campaignContextForFusion?.campaignContext || null,
+        });
+        incomingSignals.route_evaluator_decision = routeEvaluatorDecision;
+      }
+
     if (signals?.property_code || /LUX|[A-Z]\d{4}/i.test(text || '')) {
       console.log('PROPERTY CODE DEBUG:', {
         raw_text: text,
@@ -2600,6 +2618,10 @@ app.post('/webhook', async (req, res) => {
 
     const changeType = detectStateChange(previousAiState, incomingSignals);
     let nextAiState = buildNextState(previousAiState, incomingSignals, changeType);
+
+    if (incomingSignals.route_evaluator_decision) {
+      nextAiState.route_evaluator_decision = incomingSignals.route_evaluator_decision;
+    }
 
     // Persistir referral en ai_state para detección de pauta en cierre por inactividad.
     // buildNextState puede descartar campos extra en restart_flow, por lo que se aplica aquí.
@@ -3367,6 +3389,8 @@ app.post('/webhook', async (req, res) => {
         conversation_id: conversationId,
         change_type: changeType,
         skip_advisor_for_literal_property_price: skipAdvisorForLiteralPropertyPrice,
+        route_evaluator_decision:
+          incomingSignals.route_evaluator_decision || nextAiState.route_evaluator_decision || null,
       });
 
       if (advisorRoute.use) {
@@ -3420,8 +3444,9 @@ app.post('/webhook', async (req, res) => {
             response_reason: advisorRoute.reason,
           });
           console.error('generateAdvisorReplyForRealEstateTurn_error', advisorErr?.message || advisorErr);
-          reply =
-            'Con gusto reviso ese punto contigo. Para no inventar datos, un asesor de Luxetty puede confirmarte publicación, liga y disponibilidad al momento. ¿Te parece si lo canalizamos? Para registrarte bien, ¿me compartes tu nombre?';
+          reply = getAdvisorFailureFallbackReply(
+            incomingSignals.route_evaluator_decision || nextAiState.route_evaluator_decision
+          );
           replyRouting.response_source = 'advisor_fallback_static';
           replyRouting.response_reason = advisorRoute.reason || 'advisor_error';
         }
@@ -3616,6 +3641,8 @@ app.post('/webhook', async (req, res) => {
           conversation_id: conversationId,
           change_type: changeType,
           skip_advisor_for_literal_property_price: false,
+          route_evaluator_decision:
+            incomingSignals.route_evaluator_decision || nextAiState.route_evaluator_decision || null,
         });
         if (!nextAiState.handoff_sent && offerAdvisorRoute.use) {
           try {
@@ -3666,6 +3693,9 @@ app.post('/webhook', async (req, res) => {
               branch: 'offer',
             });
             console.error('offer_generateAdvisorReply_error', offerAdvisorErr?.message || offerAdvisorErr);
+            reply = getAdvisorFailureFallbackReply(
+              incomingSignals.route_evaluator_decision || nextAiState.route_evaluator_decision
+            );
           }
         }
         reply = prependVisionPrefixIfNeeded(reply, inboundContext?.media, nextAiState);
@@ -3891,6 +3921,8 @@ ${locationCatalog.rawNames.join(', ')}
             conversation_id: conversationId,
             change_type: changeType,
             skip_advisor_for_literal_property_price: false,
+            route_evaluator_decision:
+              incomingSignals.route_evaluator_decision || nextAiState.route_evaluator_decision || null,
           });
           if (dedupeRoute.use) {
             const chatRecentLoop = mapConversationDbRowsToChatMessages(recentMessages);
