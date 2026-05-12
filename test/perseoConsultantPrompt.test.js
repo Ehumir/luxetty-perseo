@@ -6,10 +6,24 @@ const {
   buildPerseoConsultantContext,
 } = require('../conversation/perseoConsultantPrompt');
 
-test('system prompt includes commission policy and closing guidance', () => {
+test('system prompt incluye reglas rectoras consultivas y comerciales oficiales', () => {
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /filtrar, calificar/);
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /comprar, rentar, vender o poner en renta/);
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /Zona/);
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /Precio/);
+  assert.match(
+    PERSEO_CONSULTANT_SYSTEM_PROMPT,
+    /¿La propiedad es tuya o estás apoyando a alguien\?/
+  );
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /\$3,000,000/);
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /\$10,000/);
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /https:\/\/luxetty\.com/);
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /Nunca inventar propiedades/);
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /Podemos agendar una visita rápida \(20 min\)/);
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /Podemos agendar una llamada breve \(20 min\)/);
+  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /Nunca enviar resumen al prospecto/);
   assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /3\.5% y 5%/);
   assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /exclusividad/i);
-  assert.match(PERSEO_CONSULTANT_SYSTEM_PROMPT, /20 minutos/i);
 });
 
 test('lead ofertante con terreno genera guia de oferta consultiva', () => {
