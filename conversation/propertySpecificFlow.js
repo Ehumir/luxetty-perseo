@@ -106,10 +106,7 @@ function isNameComplaint(t) {
     t.includes('no me preguntaste') ||
     t.includes('no me preguntaste por mi nombre') ||
     t.includes('no me preguntaste mi nombre') ||
-    (t.includes('mi nombre') && (t.includes('pregunt') || t.includes('preguntaste'))) ||
-    (t.includes('ya te di') && t.includes('nombre')) ||
-    (t.includes('ya dije') && t.includes('nombre')) ||
-    (t.includes('te dije') && t.includes('nombre'))
+    (t.includes('mi nombre') && (t.includes('pregunt') || t.includes('preguntaste')))
   );
 }
 
@@ -193,9 +190,7 @@ function isLocationIntent(t) {
     t.includes('ubicación') ||
     t.includes('direccion') ||
     t.includes('dirección') ||
-    (t.includes('zona') && !t.includes('precio')) ||
-    ((t.includes('esta en') || t.includes('está en')) &&
-      /\b(esa|esta|aquella|ese|esos|esas)\b/.test(t))
+    (t.includes('zona') && !t.includes('precio'))
   );
 }
 
@@ -280,18 +275,9 @@ function advisorTail(hasName) {
   return '';
 }
 
-function buildNameComplaintReply({ aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null, text = '' } = {}) {
+function buildNameComplaintReply({ aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
   const hasName =
     typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
-  const t = normalizeText(String(text || ''));
-  if (
-    hasName &&
-    (t.includes('ya te di') || t.includes('ya dije') || t.includes('te dije')) &&
-    t.includes('nombre')
-  ) {
-    const fn = firstNameFromFull(aiState.full_name);
-    return fn ? `Sí ${fn}, ya quedó registrado. ¿En qué más te apoyo?` : 'Sí, ya quedó registrado. ¿En qué más te apoyo?';
-  }
   if (hasName) {
     return 'Listo, gracias por compartirlo. ¿En qué más te ayudo con la propiedad?';
   }
@@ -591,7 +577,7 @@ function buildPropertySpecificReply(opts = {}) {
     case 'property_intro':
       return buildPropertyIntroReply(ctx);
     case 'name_complaint':
-      return buildNameComplaintReply({ ...ctx, text });
+      return buildNameComplaintReply(ctx);
     case 'ask_link':
       return buildPropertyLinkReply(ctx);
     case 'ask_details':
@@ -631,5 +617,4 @@ module.exports = {
   markPropertyReplyProgress,
   buildPublicPropertyUrl,
   getDisplayCode,
-  buildNameComplaintReply,
 };

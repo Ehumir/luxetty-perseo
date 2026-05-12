@@ -90,37 +90,6 @@ function mergePropertyIntentFields(prev, signals, changeType) {
     return nullPropertyIntentSnapshot();
   }
 
-  if (signals.__softExitPropertyMode) {
-    const hist = Array.isArray(prev.property_history) ? [...prev.property_history] : [];
-    const byCode =
-      prev.property_context_by_code && typeof prev.property_context_by_code === 'object'
-        ? { ...prev.property_context_by_code }
-        : {};
-    const anchor =
-      cleanSpaces(String(prev.current_property_code || prev.property_code || hist[0]?.code || '')) || null;
-    const anchorEntry = hist.find((e) => cleanSpaces(String(e?.code || '')) === anchor) || hist[0];
-    return {
-      property_code: null,
-      direct_property_code: null,
-      direct_property_reference: false,
-      property_specific_intent: false,
-      interested_property_id: null,
-      property_context: null,
-      property_generic_cta_shown_for_code: null,
-      property_intro_shown_for_code: null,
-      property_last_follow_up_intent: null,
-      property_pending_user_question: null,
-      property_history: hist,
-      property_context_by_code: byCode,
-      current_property_code: anchor,
-      current_interested_property_id:
-        anchorEntry?.interested_property_id != null
-          ? String(anchorEntry.interested_property_id)
-          : prev.current_interested_property_id ?? null,
-      contextual_subject_code: anchor,
-    };
-  }
-
   if (changeType === 'restart_flow') {
     const incoming = cleanSpaces(String(signals.property_code || ''));
     if (!incoming) {
@@ -549,33 +518,8 @@ function buildNextState(prevState, signals, changeType) {
 
   Object.assign(next, mergePropertyIntentFields(prev, signals, changeType));
 
-  mergeConversationalMachineFields(next, signals);
-
   next.last_change_type = changeType;
   return next;
-}
-
-function mergeConversationalMachineFields(next, signals) {
-  if (!signals || typeof signals !== 'object') return;
-  const keys = [
-    'active_playbook',
-    'secondary_playbook',
-    'previous_playbook',
-    'conversational_phase',
-    'active_intent',
-    'secondary_intent',
-    'contextual_subject',
-    'contextual_reference',
-    'contextual_subject_code',
-    'seller_context_active',
-    'buyer_context_active',
-    'mixed_interest',
-  ];
-  for (const k of keys) {
-    if (Object.prototype.hasOwnProperty.call(signals, k) && signals[k] !== undefined) {
-      next[k] = signals[k];
-    }
-  }
 }
 
 module.exports = {

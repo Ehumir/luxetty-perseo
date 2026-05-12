@@ -17,29 +17,11 @@ const propertyIntentResolver = require('../conversation/propertyIntentResolver')
 const { _private: idx } = require('../index');
 
 function advanceWebhookLike(prev, text) {
-  const contextualReferenceResolver = require('../conversation/contextualReferenceResolver');
-  const conversationalStateMachine = require('../conversation/conversationalStateMachine');
   const parsed = mergeSignalsWithMulti(
     parseMessageSignals(text, prev, { media: { type: 'text' } }),
     extractMultiSignals(text, prev)
   );
   Object.assign(parsed, propertyIntentResolver.resolvePropertyIntent(text, prev));
-  const ctxResolved = contextualReferenceResolver.resolveContextualPropertyCode({
-    text,
-    aiState: prev,
-    recentMessages: [],
-  });
-  if (ctxResolved.propertyCode && !parsed.property_code) {
-    Object.assign(parsed, contextualReferenceResolver.buildPropertySignalsFromResolution(ctxResolved));
-  }
-  Object.assign(
-    parsed,
-    conversationalStateMachine.computeSignalPatch({ text, prevAiState: prev, parsedSignals: parsed })
-  );
-  Object.assign(
-    parsed,
-    conversationalStateMachine.applySellerLocationStickyPatch({ text, prevAiState: prev, parsedSignals: parsed })
-  );
   const changeType = detectStateChange(prev, parsed);
   let next = buildNextState(prev, parsed, changeType);
   Object.assign(next, mergeContextualSignals(parsed, prev, next, text));
@@ -106,22 +88,6 @@ test('pipeline: salir de property mode conserva lead_flow demand', () => {
   assert.equal(next.property_specific_intent, false);
   assert.equal(next.property_code, null);
   assert.ok(next.lead_flow === 'demand' || next.lead_flow === null);
-});
-
-test('pipeline: soft exit inventario conserva property_history', () => {
-  const prev = normalizeAiState({
-    ...getDefaultAiState(),
-    property_code: 'LUX-A0462',
-    property_specific_intent: true,
-    direct_property_reference: true,
-    lead_flow: 'demand',
-    property_history: [{ code: 'LUX-A0462', interested_property_id: 'id1', at: 't' }],
-    current_property_code: 'LUX-A0462',
-  });
-  const { next } = advanceWebhookLike(prev, '¿Tienes algo en Cumbres?');
-  assert.equal(next.property_specific_intent, false);
-  assert.equal(next.active_playbook, 'buyer_search');
-  assert.ok(Array.isArray(next.property_history) && next.property_history.length >= 1);
 });
 
 test('buildConsultiveFallbackReply: intro propiedad encontrada', () => {

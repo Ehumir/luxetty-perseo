@@ -116,19 +116,6 @@ function resolvePropertyIntent(text, aiState = {}) {
   const prev = aiState && typeof aiState === 'object' ? aiState : {};
   const t = normalizeText(text);
 
-  if (isPropertySpecificConversation(prev) && !extractPropertyCode(text)) {
-    const { shouldSoftExitPropertyToBuyerSearch } = require('./conversationalStateMachine');
-    if (shouldSoftExitPropertyToBuyerSearch(text)) {
-      return {
-        __softExitPropertyMode: true,
-        property_specific_intent: false,
-        direct_property_reference: false,
-        property_code: null,
-        direct_property_code: null,
-      };
-    }
-  }
-
   if (shouldExitPropertyMode(text, prev)) {
     return {
       __clearPropertyIntent: true,
