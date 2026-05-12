@@ -114,6 +114,7 @@ function shouldExitPropertyMode(text, aiState = {}) {
  */
 function resolvePropertyIntent(text, aiState = {}) {
   const prev = aiState && typeof aiState === 'object' ? aiState : {};
+  const t = normalizeText(text);
 
   if (shouldExitPropertyMode(text, prev)) {
     return {
@@ -124,7 +125,37 @@ function resolvePropertyIntent(text, aiState = {}) {
       property_specific_intent: false,
       interested_property_id: null,
       property_context: null,
+      current_property_code: null,
+      current_interested_property_id: null,
+      property_history: [],
+      property_context_by_code: {},
     };
+  }
+
+  if (isPropertySpecificConversation(prev)) {
+    const hist = Array.isArray(prev.property_history) ? prev.property_history : [];
+    if (hist.length && (/\bla\s+primera\b|\bprimera\s+propiedad\b|\bel\s+primero\b/.test(t) || /\bprimera\b/.test(t))) {
+      const c = cleanSpaces(String(hist[hist.length - 1]?.code || ''));
+      if (c) {
+        return {
+          property_code: c,
+          direct_property_code: c,
+          direct_property_reference: true,
+          property_specific_intent: true,
+        };
+      }
+    }
+    if (hist.length && (/\bla\s+ultima\b|\bla\s+ultima\b|\blo\s+ultimo\b|\bulimo\b/.test(t) || /\bultima\b/.test(t))) {
+      const c = cleanSpaces(String(hist[0]?.code || ''));
+      if (c) {
+        return {
+          property_code: c,
+          direct_property_code: c,
+          direct_property_reference: true,
+          property_specific_intent: true,
+        };
+      }
+    }
   }
 
   const code = extractPropertyCode(text);

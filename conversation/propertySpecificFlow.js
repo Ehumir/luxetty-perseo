@@ -8,24 +8,18 @@ const {
   isPropertySpecificConversation,
   pickNumericPrice,
 } = require('./propertyIntentResolver');
+const propertyInventoryService = require('../services/propertyInventoryService');
 
 const GENERIC_CTA_PHRASE = '¿te gustaría que te comparta detalles, precio, ubicación o agendar una visita?';
 
-function getDisplayCode(property, aiState) {
-  return cleanSpaces(
-    String(property?.listing_id || aiState?.property_code || aiState?.direct_property_code || '')
-  );
+function buildPublicPropertyUrl(property) {
+  return propertyInventoryService.buildPublicPropertyUrl(property);
 }
 
-function buildPublicPropertyUrl(property = {}) {
-  const slug = typeof property.slug === 'string' ? property.slug.trim() : '';
-  if (!slug || /\s/.test(slug)) return null;
-  const cleanSlug = slug
-    .replace(/^https?:\/\/(?:www\.)?luxetty\.com\/propiedad\//i, '')
-    .replace(/^\/?propiedad\//i, '')
-    .replace(/^\/+|\/+$/g, '');
-  if (!cleanSlug || /\s/.test(cleanSlug)) return null;
-  return `https://luxetty.com/propiedad/${cleanSlug}`;
+function getDisplayCode(property, aiState) {
+  return cleanSpaces(
+    String(property?.listing_id || property?.code || aiState?.property_code || aiState?.direct_property_code || '')
+  );
 }
 
 function getZoneLabel(property = {}, aiState = {}) {
@@ -97,12 +91,37 @@ function markPropertyReplyProgress(aiState, meta = {}) {
   if (intentType === 'frustration_recovery') {
     patch.property_pending_user_question = null;
   } else if (
-    ['ask_price', 'ask_availability', 'ask_details', 'ask_location', 'ask_visit', 'ask_photos'].includes(intentType)
+    ['ask_price', 'ask_availability', 'ask_details', 'ask_location', 'ask_visit', 'ask_photos', 'ask_link'].includes(
+      intentType
+    )
   ) {
     patch.property_pending_user_question = String(intentType).replace(/^ask_/, '');
   }
 
   return patch;
+}
+
+function isNameComplaint(t) {
+  return (
+    t.includes('no me preguntaste') ||
+    t.includes('no me preguntaste por mi nombre') ||
+    t.includes('no me preguntaste mi nombre') ||
+    (t.includes('mi nombre') && (t.includes('pregunt') || t.includes('preguntaste')))
+  );
+}
+
+function isLinkIntent(t) {
+  return (
+    t.includes('dame el link') ||
+    t.includes('dame la liga') ||
+    t.includes('pasa el link') ||
+    t.includes('manda el link') ||
+    t.includes('mandame el link') ||
+    t.includes('mándame el link') ||
+    t.includes('el link') ||
+    t.includes('la liga') ||
+    (t.includes('link') && (t.includes('dame') || t.includes('pasa') || t.includes('manda')))
+  );
 }
 
 function isFrustration(t) {
@@ -220,6 +239,8 @@ function classifyPropertyFollowUp(text, aiState = {}, recentMessages = []) {
   const extracted = extractPropertyCode(text);
   const code = cleanSpaces(String(aiState.property_code || aiState.direct_property_code || ''));
 
+  if (isNameComplaint(t)) return { type: 'name_complaint' };
+  if (isLinkIntent(t)) return { type: 'ask_link' };
   if (isFrustration(t)) return { type: 'frustration_recovery' };
   if (isPhotosIntent(t)) return { type: 'ask_photos' };
   if (isVisitIntent(t)) return { type: 'ask_visit' };
@@ -254,30 +275,83 @@ function advisorTail(hasName) {
   return '';
 }
 
-function buildPropertyIntroReply({ property, aiState = {}, contact = null, waProfileName = null }) {
-  const hasName = hasValidHumanName(contact, aiState);
+function buildNameComplaintReply({ aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
+  const hasName =
+    typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
+  if (hasName) {
+    return 'Listo, gracias por compartirlo. ¿En qué más te ayudo con la propiedad?';
+  }
+  return 'Tienes razón, disculpa. Para registrarte bien, ¿me compartes tu nombre?';
+}
+
+function buildPropertyLinkReply({ property, aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
+  const hasName =
+    typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
+  const code = getDisplayCode(property, aiState);
+  const url = property && property.id ? buildPublicPropertyUrl(property) : null;
+  if (url) {
+    return `Claro. Aquí tienes el enlace público de ${code}:
+
+${url}${nameTail(hasName, waProfileName, aiState)}`.trim();
+  }
+  return `No tengo un slug público verificado para armar el link de ${code} en luxetty.com. Un asesor puede enviarte la URL correcta.${nameTail(hasName, waProfileName, aiState)}`;
+}
+
+function buildPropertyIntroReply({
+  property,
+  aiState = {},
+  contact = null,
+  waProfileName = null,
+  hasRegisteredName = null,
+}) {
+  const hasName =
+    typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const code = getDisplayCode(property, aiState);
   const zone = getZoneLabel(property, aiState);
   const zonePhrase = zone ? ` en ${zone}` : '';
   const url = property && property.id ? buildPublicPropertyUrl(property) : null;
+  const opLabel = property && property.id ? propertyInventoryService.propertyOperationLabel(property) : '';
+  const opSentence =
+    opLabel === 'en venta'
+      ? ' Está en venta.'
+      : opLabel === 'en renta'
+        ? ' Está en renta.'
+        : opLabel === 'en venta y en renta'
+          ? ' Está en venta y en renta.'
+          : opLabel && opLabel !== 'operación no confirmada en inventario'
+            ? ` ${opLabel.charAt(0).toUpperCase()}${opLabel.slice(1)}.`
+            : '';
+  const p = property && property.id ? pickNumericPrice(property) : null;
+  const priceSentence =
+    p != null
+      ? ` El precio registrado es ${formatMoney(p, property.currency_code || property.currency || 'MXN')}.`
+      : '';
+  const br = property?.bedrooms != null && Number.isFinite(Number(property.bedrooms));
+  const ba = property?.bathrooms != null && Number.isFinite(Number(property.bathrooms));
+  const micro =
+    br || ba
+      ? ` Cuenta con${br ? ` ${property.bedrooms} recámaras` : ''}${br && ba ? ' y' : ''}${ba ? ` ${property.bathrooms} baños` : ''}.`
+      : '';
 
   if (!property || !property.id) {
     return `No encontré una propiedad activa con el código ${code || 'indicado'}. Si quieres, puedo ayudarte a revisar otras opciones similares.${nameTail(hasName, waProfileName, aiState)}`;
   }
 
   if (url) {
-    return `Claro, con gusto. Ya ubiqué la propiedad ${code}${zonePhrase}. Te comparto la liga para que puedas revisarla con calma:
+    return `Claro, con gusto. Ya ubiqué la propiedad ${code}${zonePhrase}.${opSentence}${priceSentence}${micro}
+
+Te comparto la liga para que puedas verla con calma:
 
 ${url}
 
-También puedo ayudarte a confirmar precio, disponibilidad o una visita.${nameTail(hasName, waProfileName, aiState)}`.trim();
+También puedo ayudarte a confirmar precio, disponibilidad o agendar una visita.${nameTail(hasName, waProfileName, aiState)}`.trim();
   }
 
-  return `Claro, con gusto. Ya ubiqué la propiedad ${code}${zonePhrase}. En este momento no tengo un enlace público verificado para compartirte aquí; un asesor de Luxetty puede enviarte la ficha correcta.${advisorTail(hasName)}${nameTail(hasName, waProfileName, aiState)}`.trim();
+  return `Claro, con gusto. Ya ubiqué la propiedad ${code}${zonePhrase}.${opSentence}${priceSentence}${micro} En este momento no tengo un enlace público verificado para compartirte aquí; un asesor de Luxetty puede enviarte la ficha correcta.${advisorTail(hasName)}${nameTail(hasName, waProfileName, aiState)}`.trim();
 }
 
-function buildPropertyDetailsReply({ property, aiState = {}, contact = null, waProfileName = null }) {
-  const hasName = hasValidHumanName(contact, aiState);
+function buildPropertyDetailsReply({ property, aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
+  const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const snap = aiState.property_context && typeof aiState.property_context === 'object' ? aiState.property_context : {};
   const row = property && property.id ? { ...snap, ...property } : null;
   const code = getDisplayCode(row || property || {}, aiState);
@@ -334,25 +408,34 @@ ${url}`
 Si quieres, puedo pedir que un asesor te confirme precio actualizado y disponibilidad para visita.${nameTail(hasName, waProfileName, aiState)}`.trim();
 }
 
-function buildPropertyPriceReply({ property, aiState = {}, contact = null, waProfileName = null }) {
-  const hasName = hasValidHumanName(contact, aiState);
+function buildPropertyPriceReply({ property, aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
+  const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const code = getDisplayCode(property, aiState);
   const p = property && property.id ? pickNumericPrice(property) : null;
+  const opLabel = property && property.id ? propertyInventoryService.propertyOperationLabel(property) : '';
 
   if (!property || !property.id) {
     return `Sobre ${code || 'esa referencia'}, no tengo una propiedad activa verificada en sistema.${nameTail(hasName, waProfileName, aiState)}`;
   }
 
   if (p != null) {
-    const formatted = formatMoney(p, property.currency_code || 'MXN');
-    return `El precio registrado de ${code} es de ${formatted}. Te recomiendo confirmarlo con un asesor porque puede cambiar según disponibilidad o actualización del inventario.${nameTail(hasName, waProfileName, aiState)}`;
+    const formatted = formatMoney(p, property.currency_code || property.currency || 'MXN');
+    const opPart =
+      opLabel === 'en venta'
+        ? ' y está en venta.'
+        : opLabel === 'en renta'
+          ? ' y está en renta.'
+          : opLabel === 'en venta y en renta'
+            ? ' (venta y renta).'
+            : '';
+    return `El precio registrado de ${code} es de ${formatted}${opPart} Te recomiendo confirmarlo con un asesor porque puede cambiar según actualización del inventario.${nameTail(hasName, waProfileName, aiState)}`;
   }
 
-  return `Sobre ${code}, no tengo un precio numérico verificado en esta conversación. Puedo canalizarte con un asesor para confirmarlo con inventario actualizado.${nameTail(hasName, waProfileName, aiState)}`;
+  return `No tengo precio numérico registrado para ${code} en los datos disponibles. Puedo canalizarte con un asesor para confirmarlo.${nameTail(hasName, waProfileName, aiState)}`;
 }
 
-function buildPropertyAvailabilityReply({ property, aiState = {}, contact = null, waProfileName = null }) {
-  const hasName = hasValidHumanName(contact, aiState);
+function buildPropertyAvailabilityReply({ property, aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
+  const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const code = getDisplayCode(property, aiState);
   if (!property || !property.id) {
     return `Para disponibilidad de ${code || 'esa referencia'}, prefiero validarlo con un asesor para no darte información incorrecta.${nameTail(hasName, waProfileName, aiState)}`;
@@ -365,8 +448,8 @@ function buildPropertyAvailabilityReply({ property, aiState = {}, contact = null
   return `Para disponibilidad al día de hoy de ${code}, prefiero validarlo con un asesor para no darte información incorrecta. Si quieres, te canalizo con alguien para confirmarlo.${nameTail(hasName, waProfileName, aiState)}`;
 }
 
-function buildPropertyLocationReply({ property, aiState = {}, contact = null, waProfileName = null }) {
-  const hasName = hasValidHumanName(contact, aiState);
+function buildPropertyLocationReply({ property, aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
+  const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const code = getDisplayCode(property, aiState);
   const zone = getZoneLabel(property, aiState);
   if (!property || !property.id) {
@@ -378,16 +461,16 @@ function buildPropertyLocationReply({ property, aiState = {}, contact = null, wa
   return `La propiedad ${code} está ubicada en ${zone}, según los datos que veo en sistema.${nameTail(hasName, waProfileName, aiState)}`;
 }
 
-function buildPropertyVisitReply({ property, aiState = {}, contact = null, waProfileName = null }) {
-  const hasName = hasValidHumanName(contact, aiState);
+function buildPropertyVisitReply({ property, aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
+  const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const code = getDisplayCode(property, aiState);
   const base = `Claro. Para coordinar una visita a ${code}, te canalizo con un asesor de Luxetty. ¿Qué día u horario te acomoda mejor?`;
   if (hasName) return base;
   return `${base} Y para registrarte bien, ¿me compartes tu nombre?`;
 }
 
-function buildPropertyPhotosReply({ property, aiState = {}, contact = null, waProfileName = null }) {
-  const hasName = hasValidHumanName(contact, aiState);
+function buildPropertyPhotosReply({ property, aiState = {}, contact = null, waProfileName = null, hasRegisteredName = null }) {
+  const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const code = getDisplayCode(property, aiState);
   const url = property && property.id ? buildPublicPropertyUrl(property) : null;
   if (url) {
@@ -400,35 +483,51 @@ Si necesitas material extra, un asesor puede compartirte lo que haya disponible.
   return `No tengo un enlace de fotos verificado aquí para ${code}. Un asesor puede enviarte la galería o la ficha completa.${nameTail(hasName, waProfileName, aiState)}`;
 }
 
-function buildFrustrationRecoveryReply({ property, aiState = {}, text = '', contact = null, waProfileName = null }) {
-  const hasName = hasValidHumanName(contact, aiState);
+function buildFrustrationRecoveryReply({
+  property,
+  aiState = {},
+  text = '',
+  contact = null,
+  waProfileName = null,
+  hasRegisteredName = null,
+}) {
+  const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const code = getDisplayCode(property, aiState);
   const pending = cleanSpaces(String(aiState.property_pending_user_question || ''));
 
   if (pending === 'price') {
-    return buildPropertyPriceReply({ property, aiState, contact, waProfileName });
+    return buildPropertyPriceReply({ property, aiState, contact, waProfileName, hasRegisteredName });
   }
   if (pending === 'availability') {
-    return buildPropertyAvailabilityReply({ property, aiState, contact, waProfileName });
+    return buildPropertyAvailabilityReply({ property, aiState, contact, waProfileName, hasRegisteredName });
   }
   if (pending === 'details') {
-    return buildPropertyDetailsReply({ property, aiState, contact, waProfileName });
+    return buildPropertyDetailsReply({ property, aiState, contact, waProfileName, hasRegisteredName });
   }
   if (pending === 'visit') {
-    return buildPropertyVisitReply({ property, aiState, contact, waProfileName });
+    return buildPropertyVisitReply({ property, aiState, contact, waProfileName, hasRegisteredName });
   }
   if (pending === 'location') {
-    return buildPropertyLocationReply({ property, aiState, contact, waProfileName });
+    return buildPropertyLocationReply({ property, aiState, contact, waProfileName, hasRegisteredName });
   }
   if (pending === 'photos') {
-    return buildPropertyPhotosReply({ property, aiState, contact, waProfileName });
+    return buildPropertyPhotosReply({ property, aiState, contact, waProfileName, hasRegisteredName });
+  }
+  if (pending === 'link') {
+    return buildPropertyLinkReply({ property, aiState, contact, waProfileName, hasRegisteredName });
   }
 
   return `Tienes razón, me fui por una respuesta muy general. Retomo: estás preguntando por ${code}. Te puedo ayudar con detalles, precio, disponibilidad o visita. ¿Qué quieres confirmar primero?${nameTail(hasName, waProfileName, aiState)}`;
 }
 
-function buildContinuePropertyInterestReply({ property, aiState = {}, contact = null, waProfileName = null }) {
-  const hasName = hasValidHumanName(contact, aiState);
+function buildContinuePropertyInterestReply({
+  property,
+  aiState = {},
+  contact = null,
+  waProfileName = null,
+  hasRegisteredName = null,
+}) {
+  const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const code = getDisplayCode(property, aiState);
   if (!property || !property.id) {
     return `Sigo con tu interés en ${code || 'esa propiedad'}. Cuando quieras, dime si prefieres detalles, precio, ubicación, disponibilidad o visita.${nameTail(hasName, waProfileName, aiState)}`;
@@ -442,8 +541,9 @@ function buildGenericPropertyFollowUpReply({
   contact = null,
   waProfileName = null,
   recentMessages = [],
+  hasRegisteredName = null,
 }) {
-  const hasName = hasValidHumanName(contact, aiState);
+  const hasName = typeof hasRegisteredName === 'boolean' ? hasRegisteredName : hasValidHumanName(contact, aiState);
   const code = getDisplayCode(property, aiState);
   if (!property || !property.id) {
     return `¿En qué más te ayudo con ${code || 'tu consulta'}?${nameTail(hasName, waProfileName, aiState)}`;
@@ -471,11 +571,15 @@ function buildPropertySpecificReply(opts = {}) {
 
   const hasName =
     typeof hasNameArg === 'boolean' ? hasNameArg : hasValidHumanName(contact, aiState);
-  const ctx = { property, aiState, contact, waProfileName };
+  const ctx = { property, aiState, contact, waProfileName, hasRegisteredName: hasName };
 
   switch (intent.type) {
     case 'property_intro':
       return buildPropertyIntroReply(ctx);
+    case 'name_complaint':
+      return buildNameComplaintReply(ctx);
+    case 'ask_link':
+      return buildPropertyLinkReply(ctx);
     case 'ask_details':
       return buildPropertyDetailsReply(ctx);
     case 'ask_price':

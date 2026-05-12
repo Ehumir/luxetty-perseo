@@ -1571,6 +1571,49 @@ async function assignLeadToContactOwner({
   };
 }
 
+function canUpdateLeadPropertyInterestOnly(lead, expected) {
+  if (!lead || !expected?.propertyId) return false;
+  if (!sameNullableValue(lead.contact_id, expected.contactId)) return false;
+  if (!sameNullableValue(lead.lead_type, expected.leadType)) return false;
+  if (!sameNullableValue(lead.interested_in_operation, expected.operation || null)) return false;
+  return String(lead.interested_property_id || '') !== String(expected.propertyId);
+}
+
+async function updateLeadInterestedProperty({
+  supabase,
+  conversationId,
+  lead,
+  propertyId,
+  property,
+  logger,
+}) {
+  const prevPid = lead.interested_property_id || null;
+  const { data, error } = await supabase
+    .from('leads')
+    .update({
+      interested_property_id: propertyId,
+      notes_summary: mergeLeadNotes(
+        lead.notes_summary,
+        `Interés actualizado a propiedad ${property?.listing_id || propertyId} (antes: ${prevPid || 'n/a'}).`
+      ),
+    })
+    .eq('id', lead.id)
+    .select()
+    .single();
+  if (error || !data) {
+    logWarn(logger, 'LEAD_PROPERTY_INTEREST_UPDATE_FAILED', { lead_id: lead.id, error: error?.message });
+    return null;
+  }
+  await saveConversationEvent(supabase, conversationId, 'property_interest_changed', {
+    lead_id: lead.id,
+    previous_interested_property_id: prevPid,
+    next_interested_property_id: propertyId,
+    listing_id: property?.listing_id || null,
+    source: 'ai_agent',
+  });
+  return data;
+}
+
 async function createOrReuseLeadFromConversation({
   supabase,
   conversation,
@@ -1818,6 +1861,41 @@ async function createOrReuseLeadFromConversation({
           reason: 'conversation_lead_id',
           source: 'ai_agent',
         });
+      } else if (canUpdateLeadPropertyInterestOnly(lead, expected)) {
+        const updated = await updateLeadInterestedProperty({
+          supabase,
+          conversationId,
+          lead,
+          propertyId,
+          property,
+          logger,
+        });
+        if (updated) {
+          lead = updated;
+          log(logger, 'LEAD_AUTOMATION_PROPERTY_INTEREST_UPDATED', {
+            conversation_id: conversationId,
+            lead_id: lead.id,
+            interested_property_id: propertyId || null,
+          });
+          await saveConversationEvent(supabase, conversationId, 'lead_reused', {
+            lead_id: lead.id,
+            reason: 'conversation_lead_id_property_updated',
+            source: 'ai_agent',
+          });
+        } else {
+          intentChanged = true;
+          await saveConversationEvent(supabase, conversationId, 'lead_intent_changed', {
+            previous_lead_id: lead.id,
+            previous_lead_type: lead.lead_type || null,
+            previous_interested_in_operation: lead.interested_in_operation || null,
+            previous_interested_property_id: lead.interested_property_id || null,
+            next_lead_type: leadType,
+            next_interested_in_operation: operation,
+            next_interested_property_id: propertyId || null,
+            source: 'ai_agent',
+          });
+          lead = null;
+        }
       } else {
         intentChanged = true;
         await saveConversationEvent(supabase, conversationId, 'lead_intent_changed', {

@@ -37,6 +37,7 @@ const contextualMemoryResolver = require('./conversation/contextualMemoryResolve
 const { mergeSignalsWithMulti, extractMultiSignals } = require('./conversation/multiSignalExtractor');
 const propertyIntentResolver = require('./conversation/propertyIntentResolver');
 const propertySpecificFlow = require('./conversation/propertySpecificFlow');
+const propertyInventoryService = require('./services/propertyInventoryService');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -308,6 +309,10 @@ function hasClearRealEstateIntent(signals = {}, text = '', aiState = {}) {
   );
 }
 
+function hasConversationCapturedFullName(aiState = {}) {
+  return !!cleanSpaces(String(aiState?.full_name || ''));
+}
+
 function buildConsultiveFallbackReply({
   text,
   signals,
@@ -319,6 +324,7 @@ function buildConsultiveFallbackReply({
 }) {
   const t = normalizeText(text);
   const loc = cleanSpaces(signals?.location_text || aiState?.location_text || '');
+  const conversationNameOk = hasConversationCapturedFullName(aiState);
   const hasName = hasValidHumanName(contact, aiState);
 
   if (propertyIntentResolver.isPropertySpecificConversation(aiState)) {
@@ -326,7 +332,7 @@ function buildConsultiveFallbackReply({
       text,
       aiState,
       propertyRow: resolvedPropertyRow === undefined ? null : resolvedPropertyRow,
-      hasValidName: hasName,
+      hasValidName: conversationNameOk,
       recentMessages,
       contact,
       waProfileName,
@@ -421,55 +427,31 @@ function normalizeListingCodeForLookup(raw) {
 }
 
 async function fetchPropertyByListingCode(db, rawCode) {
-  const listingId = normalizeListingCodeForLookup(rawCode);
-  if (!listingId || !db) return { property: null, propertyId: null };
-  const wideSelect =
-    'id, listing_id, operation_type, agent_profile_id, price, sale_price, selling_price, rent_price, rent_amount, status, bedrooms, bathrooms, city, neighborhood, title, slug, property_type, terrain_m2, construction_m2';
-  try {
-    let { data, error } = await db
-      .from('properties')
-      .select(wideSelect)
-      .eq('listing_id', listingId)
-      .limit(1)
-      .maybeSingle();
-    if (error) {
-      const r2 = await db
-        .from('properties')
-        .select('id, listing_id, operation_type, agent_profile_id')
-        .eq('listing_id', listingId)
-        .limit(1)
-        .maybeSingle();
-      data = r2.data;
-      error = r2.error;
-    }
-    if (error || !data?.id) return { property: null, propertyId: null };
-    return { property: data, propertyId: data.id };
-  } catch {
-    return { property: null, propertyId: null };
-  }
+  const inv = await propertyInventoryService.findPropertyByCode(db, rawCode, console);
+  return { property: inv.property, propertyId: inv.propertyId };
 }
 
 function buildPropertyContextSnapshot(row) {
   if (!row || !row.id) return null;
-  const price = propertyIntentResolver.pickNumericPrice(row);
+  const n = propertyInventoryService.normalizeInventoryProperty(row);
+  if (!n) return null;
   return {
-    id: String(row.id),
-    listing_id: row.listing_id || null,
-    operation_type: row.operation_type || null,
-    price: price != null ? price : null,
-    title: row.title || null,
-    neighborhood: row.neighborhood || null,
-    city: row.city || null,
-    slug: row.slug || null,
-    property_type: row.property_type || null,
-    bedrooms: row.bedrooms != null && Number.isFinite(Number(row.bedrooms)) ? Number(row.bedrooms) : null,
-    bathrooms: row.bathrooms != null && Number.isFinite(Number(row.bathrooms)) ? Number(row.bathrooms) : null,
-    terrain_m2: row.terrain_m2 != null && Number.isFinite(Number(row.terrain_m2)) ? Number(row.terrain_m2) : null,
-    construction_m2:
-      row.construction_m2 != null && Number.isFinite(Number(row.construction_m2))
-        ? Number(row.construction_m2)
-        : null,
-    status: row.status || null,
+    id: n.id,
+    listing_id: n.code,
+    operation_type: n.operation_type,
+    price: n.price,
+    title: n.title,
+    neighborhood: n.neighborhood,
+    city: n.city,
+    slug: n.slug,
+    property_type: n.property_type,
+    bedrooms: n.bedrooms,
+    bathrooms: n.bathrooms,
+    terrain_m2: n.terrain_m2,
+    construction_m2: n.construction_m2,
+    status: n.status,
+    public_url: n.public_url,
+    operation_label: n.operation_label,
   };
 }
 
@@ -727,12 +709,39 @@ app.post('/webhook', async (req, res) => {
     if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
       const codeForFetch = cleanSpaces(String(nextAiState.property_code || nextAiState.direct_property_code || ''));
       if (codeForFetch) {
-        const resolved = await fetchPropertyByListingCode(supabase, codeForFetch);
+        const hintZone = cleanSpaces(String(parsedSignals.location_text || nextAiState.location_text || ''));
+        const resolved = await propertyInventoryService.findPropertyByInventoryReference(
+          supabase,
+          {
+            code: codeForFetch,
+            text,
+            hintZone: hintZone || propertyInventoryService.extractZoneFromPropertyPhrase(text),
+          },
+          console
+        );
         property = resolved.property;
         propertyId = resolved.propertyId;
         resolvedPropertyRow = property;
         nextAiState.interested_property_id = propertyId != null ? propertyId : null;
         nextAiState.property_context = property ? buildPropertyContextSnapshot(property) : null;
+        if (property?.id) {
+          const codeKey = propertyInventoryService.normalizeInventoryCode(codeForFetch) || codeForFetch;
+          Object.assign(
+            nextAiState,
+            propertyInventoryService.pushPropertyHistory(nextAiState, {
+              code: codeKey,
+              interested_property_id: propertyId,
+            })
+          );
+          Object.assign(
+            nextAiState,
+            propertyInventoryService.mergePropertyContextCache(
+              nextAiState,
+              codeKey,
+              propertyInventoryService.getPropertyPublicFacts(property)
+            )
+          );
+        }
       }
     }
 
@@ -749,10 +758,13 @@ app.post('/webhook', async (req, res) => {
       logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: false });
     }
 
+    const subHasName = propertyIntentResolver.isPropertySpecificConversation(nextAiState)
+      ? hasConversationCapturedFullName(nextAiState)
+      : hasValidHumanName(contact, nextAiState);
     const subCtx = contextualMemoryResolver.substituteForbiddenGenericDemandReply(reply, {
       text,
       aiState: nextAiState,
-      hasValidName: hasValidHumanName(contact, nextAiState),
+      hasValidName: subHasName,
       matchedProperties: [],
       resolvedPropertyRow,
       recentMessages,

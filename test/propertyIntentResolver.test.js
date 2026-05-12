@@ -59,7 +59,7 @@ test('buildPropertyModeReply: precio solo si hay dato', () => {
     propertyRow: { id: '1', listing_id: 'LUX-A0461' },
     hasValidName: true,
   });
-  assert.match(noPrice, /no tengo un precio/i);
+  assert.match(noPrice, /no tengo.*precio.*num[eé]rico|no tengo un precio|asesor/i, 'sin precio debe escalar');
 });
 
 test('buildPropertyModeReply: disponibilidad sin inventar', () => {

@@ -72,6 +72,10 @@ function nullPropertyIntentSnapshot() {
     property_intro_shown_for_code: null,
     property_last_follow_up_intent: null,
     property_pending_user_question: null,
+    current_property_code: null,
+    current_interested_property_id: null,
+    property_history: [],
+    property_context_by_code: {},
   };
 }
 
@@ -102,6 +106,10 @@ function mergePropertyIntentFields(prev, signals, changeType) {
       property_intro_shown_for_code: null,
       property_last_follow_up_intent: null,
       property_pending_user_question: null,
+      current_property_code: null,
+      current_interested_property_id: null,
+      property_history: [],
+      property_context_by_code: {},
     };
   }
 
@@ -153,6 +161,13 @@ function mergePropertyIntentFields(prev, signals, changeType) {
     property_intro_shown_for_code: codeChanged ? null : prev.property_intro_shown_for_code ?? null,
     property_last_follow_up_intent: codeChanged ? null : prev.property_last_follow_up_intent ?? null,
     property_pending_user_question: codeChanged ? null : prev.property_pending_user_question ?? null,
+    current_property_code: codeChanged ? null : prev.current_property_code ?? null,
+    current_interested_property_id: codeChanged ? null : prev.current_interested_property_id ?? null,
+    property_history: Array.isArray(prev.property_history) ? prev.property_history : [],
+    property_context_by_code:
+      prev.property_context_by_code && typeof prev.property_context_by_code === 'object'
+        ? prev.property_context_by_code
+        : {},
   };
 }
 
