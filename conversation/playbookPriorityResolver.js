@@ -31,7 +31,6 @@ function broadInventoryBuyerIntent(text) {
   if (/\bque\s+(otra|otro)\s+(propiedad|casa|opcion|opción)\b/.test(t)) return true;
   if (t.includes('busco otra zona') || t.includes('otra zona')) return true;
   if (t.includes('algo parecido') || t.includes('algo similar')) return true;
-  if (t.includes('propiedades similares') || t.includes('otra propiedad')) return true;
   if (/\b(maximo|máximo|hasta)\s+[\d.]+\s*(millon|millón|m\b)/.test(t)) return true;
   if (/\b\d\s*(millones|millon|millón)\b/.test(t)) return true;
   if (/\b(recamaras|recámaras|habitaciones)\b/.test(t) && (t.includes('busco') || t.includes('quiero') || t.includes('con'))) return true;
@@ -80,7 +79,7 @@ function shouldContinuePropertyTopic(aiState = {}) {
   return false;
 }
 
-function shouldUsePropertySpecificFlow(aiState = {}, currentIntent = null) {
+function shouldUsePropertySpecificFlow(aiState = {}) {
   if (shouldContinuePropertyTopic(aiState)) return true;
   const dom = resolveDominantPlaybook(aiState);
   if (dom === PLAYBOOKS.BUYER_SEARCH) return false;
@@ -91,11 +90,11 @@ function shouldUsePropertySpecificFlow(aiState = {}, currentIntent = null) {
   return pr.isPropertySpecificConversation(aiState);
 }
 
-function shouldUseBuyerSearchFlow(aiState = {}, currentIntent = null) {
+function shouldUseBuyerSearchFlow(aiState = {}) {
   return resolveDominantPlaybook(aiState) === PLAYBOOKS.BUYER_SEARCH;
 }
 
-function shouldUseSellerFlow(aiState = {}, currentIntent = null) {
+function shouldUseSellerFlow(aiState = {}) {
   return resolveDominantPlaybook(aiState) === PLAYBOOKS.SELLER_CAPTURE;
 }
 
