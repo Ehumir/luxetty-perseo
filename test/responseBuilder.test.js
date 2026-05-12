@@ -8,89 +8,84 @@ const {
   buildOfferReply,
 } = require('../conversation/responseBuilder');
 
-test('buildPropertyInterestReply returns sequenced commercial messages for A0453', () => {
+test('buildPropertyInterestReply: un solo mensaje natural con código, zona y liga', () => {
   const reply = buildPropertyInterestReply(
     {
-      listing_id: 'A0453',
+      id: 'p1',
+      listing_id: 'LUX-A0453',
       neighborhood: 'Montemorelos',
       slug: 'casa-en-montemorelos-a0453',
     },
-    {}
+    { property_code: 'LUX-A0453', direct_property_reference: true, property_specific_intent: true }
   );
 
-  assert.ok(Array.isArray(reply));
-  assert.equal(reply.length, 3);
-  assert.match(reply[0], /(Claro|Perfecto|Listo).+liga de la propiedad A0453 en Montemorelos\./);
-  assert.equal(reply[1], 'https://luxetty.com/propiedad/casa-en-montemorelos-a0453');
-  assert.match(reply[2], /me compartes tu nombre/i);
+  assert.equal(typeof reply, 'string');
+  assert.match(reply, /Ya ubiqué la propiedad LUX-A0453/i);
+  assert.match(reply, /Montemorelos/i);
+  assert.match(reply, /https:\/\/luxetty\.com\/propiedad\/casa-en-montemorelos-a0453/);
+  assert.match(reply, /precio, disponibilidad o una visita/i);
+  assert.match(reply, /nombre/i);
 });
 
-test('buildPropertyInterestReply supports LUX-A0453 code and keeps link separated', () => {
+test('buildPropertyInterestReply soporta listing_id LUX-A0453 y mantiene URL en el mismo texto', () => {
   const reply = buildPropertyInterestReply(
     {
+      id: 'p1',
       listing_id: 'LUX-A0453',
       city: 'Montemorelos',
       slug: 'casa-en-montemorelos-lux-a0453',
     },
-    {}
+    { property_code: 'LUX-A0453', direct_property_reference: true, property_specific_intent: true }
   );
 
-  assert.ok(Array.isArray(reply));
-  assert.equal(reply[1], 'https://luxetty.com/propiedad/casa-en-montemorelos-lux-a0453');
-  assert.match(reply[0], /LUX-A0453/);
+  assert.equal(typeof reply, 'string');
+  assert.match(reply, /LUX-A0453/);
+  assert.match(reply, /https:\/\/luxetty\.com\/propiedad\/casa-en-montemorelos-lux-a0453/);
 });
 
-test('buildPropertyInterestReply varía apertura para pauta en respuestas sucesivas', () => {
-  const originalRandom = Math.random;
-  try {
-    Math.random = () => 0.01;
-    const first = buildPropertyInterestReply(
-      { listing_id: 'LUX-A0470', neighborhood: 'Mitras Poniente', slug: 'casa-en-mitras-poniente-en-venta' },
-      {}
-    );
-    Math.random = () => 0.95;
-    const second = buildPropertyInterestReply(
-      { listing_id: 'LUX-A0470', neighborhood: 'Mitras Poniente', slug: 'casa-en-mitras-poniente-en-venta' },
-      {}
-    );
-    assert.notEqual(first[0], second[0]);
-  } finally {
-    Math.random = originalRandom;
-  }
-});
-
-test('buildPropertyInterestReply with known name does not ask name again and asks contact authorization', () => {
+test('buildPropertyInterestReply con nombre conocido no vuelve a pedir nombre', () => {
   const reply = buildPropertyInterestReply(
     {
+      id: 'p1',
       listing_id: 'LUX-A0462',
       municipality: 'Monterrey',
       slug: 'casa-en-monterrey-a0462',
     },
-    { full_name: 'Mariana Ruiz' }
+    {
+      property_code: 'LUX-A0462',
+      direct_property_reference: true,
+      property_specific_intent: true,
+      full_name: 'Mariana Ruiz',
+    }
   );
 
-  assert.ok(Array.isArray(reply));
-  assert.doesNotMatch(reply[2], /me compartes tu nombre/i);
-  assert.match(reply[2], /Si me autorizas/i);
-  assert.match(reply[2], /te contacte/i);
+  assert.equal(typeof reply, 'string');
+  assert.doesNotMatch(reply, /me compartes tu nombre/i);
 });
 
-test('buildPropertyInterestReply evita repetir pregunta de nombre si ya se pidió', () => {
+test('buildPropertyInterestReply con awaiting_field full_name evita repetir la misma pregunta de nombre', () => {
   const reply = buildPropertyInterestReply(
     {
+      id: 'p1',
       listing_id: 'LUX-A0462',
       municipality: 'Monterrey',
       slug: 'casa-en-monterrey-a0462',
     },
-    { full_name: null, awaiting_field: 'full_name' }
+    {
+      property_code: 'LUX-A0462',
+      direct_property_reference: true,
+      property_specific_intent: true,
+      full_name: null,
+      awaiting_field: 'full_name',
+    }
   );
 
-  assert.ok(Array.isArray(reply));
-  assert.doesNotMatch(reply[2], /¿me compartes tu nombre\?/i);
-  assert.match(reply[2], /compárteme solo tu nombre/i);
+  assert.equal(typeof reply, 'string');
+  assert.doesNotMatch(reply, /¿me compartes tu nombre\?/i);
+  assert.match(reply, /compárteme solo tu nombre/i);
 });
 
-test('buildDemandReply with context of direct property keeps commercial sequence and asks name when unknown', () => {
+test('buildDemandReply con propiedad directa devuelve un string coherente y enlace', () => {
   const state = {
     lead_flow: 'demand',
     direct_property_reference: true,
@@ -101,6 +96,7 @@ test('buildDemandReply with context of direct property keeps commercial sequence
 
   const properties = [
     {
+      id: 'p1',
       listing_id: 'LUX-A0453',
       neighborhood: 'Montemorelos',
       slug: 'casa-en-montemorelos-lux-a0453',
@@ -108,9 +104,9 @@ test('buildDemandReply with context of direct property keeps commercial sequence
   ];
 
   const reply = buildDemandReply(state, 'minor_update', properties, 'direct_property_code');
-  assert.ok(Array.isArray(reply));
-  assert.equal(reply[1], 'https://luxetty.com/propiedad/casa-en-montemorelos-lux-a0453');
-  assert.match(reply[2], /me compartes tu nombre/i);
+  assert.equal(typeof reply, 'string');
+  assert.match(reply, /https:\/\/luxetty\.com\/propiedad\/casa-en-montemorelos-lux-a0453/);
+  assert.match(reply, /nombre/i);
 });
 
 test('buildDemandReply for missing property does not invent details and offers search or advisor escalation', () => {
@@ -127,21 +123,18 @@ test('buildDemandReply for missing property does not invent details and offers s
   assert.match(reply, /asesor de Luxetty/i);
 });
 
-test('buildPropertyPriceReply answers price directly after initial interest', () => {
+test('buildPropertyPriceReply: precio real con disclaimer de asesor', () => {
   const replyNamed = buildPropertyPriceReply(
-    { listing_id: 'LUX-A0470', price: 2500000 },
-    { full_name: 'Jorge Pérez' }
+    { id: 'p1', listing_id: 'LUX-A0470', price: 2500000 },
+    { property_code: 'LUX-A0470', full_name: 'Jorge Pérez' }
   );
 
-  assert.equal(
-    replyNamed,
-    `La propiedad LUX-A0470 está en $2,500,000 MXN.
+  assert.match(replyNamed, /El precio registrado de LUX-A0470/i);
+  assert.match(replyNamed, /2[., ]?500[., ]?000|2,500,000/i);
+  assert.match(replyNamed, /asesor/i);
 
-¿Quieres verla esta semana?`
-  );
-
-  const replyNoName = buildPropertyPriceReply({ listing_id: 'LUX-A0470', price: 2500000 }, {});
-  assert.match(replyNoName, /2,500,000/);
+  const replyNoName = buildPropertyPriceReply({ id: 'p1', listing_id: 'LUX-A0470', price: 2500000 }, { property_code: 'LUX-A0470' });
+  assert.match(replyNoName, /2,500,000|2\.500\.000/i);
   assert.match(replyNoName, /nombre/i);
 });
 

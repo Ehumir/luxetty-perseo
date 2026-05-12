@@ -255,6 +255,9 @@ async function processConversationTurnV2(input = {}, options = {}) {
       aiState: nextAiState0,
       hasValidName: hasValidHumanName(input.contact, nextAiState0),
       matchedProperties: [],
+      recentMessages: input.recentMessages || [],
+      contact: input.contact || null,
+      waProfileName: input.waProfileDisplayName || null,
     });
     Object.assign(nextAiState0, sub0.statePatch);
     reply0 = sub0.messages;
@@ -441,6 +444,9 @@ async function processConversationTurnV2(input = {}, options = {}) {
     aiState: nextAiState,
     hasValidName: hasValidHumanName(input.contact, nextAiState),
     matchedProperties,
+    recentMessages: input.recentMessages || [],
+    contact: input.contact || null,
+    waProfileName: input.waProfileDisplayName || null,
   });
   Object.assign(nextAiState, subReply.statePatch);
   outboundMessages = subReply.messages;
@@ -494,6 +500,9 @@ async function processConversationTurnV2(input = {}, options = {}) {
     aiState: out.nextAiState,
     hasValidName: hasValidHumanName(input.contact, out.nextAiState),
     matchedProperties,
+    recentMessages: input.recentMessages || [],
+    contact: input.contact || null,
+    waProfileName: input.waProfileDisplayName || null,
   });
   Object.assign(out.nextAiState, subValidate.statePatch);
   out.outboundMessages = subValidate.messages;

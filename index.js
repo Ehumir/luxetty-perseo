@@ -36,6 +36,7 @@ const {
 const contextualMemoryResolver = require('./conversation/contextualMemoryResolver');
 const { mergeSignalsWithMulti, extractMultiSignals } = require('./conversation/multiSignalExtractor');
 const propertyIntentResolver = require('./conversation/propertyIntentResolver');
+const propertySpecificFlow = require('./conversation/propertySpecificFlow');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -314,6 +315,7 @@ function buildConsultiveFallbackReply({
   contact = null,
   waProfileName = null,
   resolvedPropertyRow = undefined,
+  recentMessages = [],
 }) {
   const t = normalizeText(text);
   const loc = cleanSpaces(signals?.location_text || aiState?.location_text || '');
@@ -325,6 +327,9 @@ function buildConsultiveFallbackReply({
       aiState,
       propertyRow: resolvedPropertyRow === undefined ? null : resolvedPropertyRow,
       hasValidName: hasName,
+      recentMessages,
+      contact,
+      waProfileName,
     });
   }
 
@@ -419,7 +424,7 @@ async function fetchPropertyByListingCode(db, rawCode) {
   const listingId = normalizeListingCodeForLookup(rawCode);
   if (!listingId || !db) return { property: null, propertyId: null };
   const wideSelect =
-    'id, listing_id, operation_type, agent_profile_id, price, sale_price, selling_price, rent_price, rent_amount, status, bedrooms, city, neighborhood, title';
+    'id, listing_id, operation_type, agent_profile_id, price, sale_price, selling_price, rent_price, rent_amount, status, bedrooms, bathrooms, city, neighborhood, title, slug, property_type, terrain_m2, construction_m2';
   try {
     let { data, error } = await db
       .from('properties')
@@ -452,6 +457,19 @@ function buildPropertyContextSnapshot(row) {
     listing_id: row.listing_id || null,
     operation_type: row.operation_type || null,
     price: price != null ? price : null,
+    title: row.title || null,
+    neighborhood: row.neighborhood || null,
+    city: row.city || null,
+    slug: row.slug || null,
+    property_type: row.property_type || null,
+    bedrooms: row.bedrooms != null && Number.isFinite(Number(row.bedrooms)) ? Number(row.bedrooms) : null,
+    bathrooms: row.bathrooms != null && Number.isFinite(Number(row.bathrooms)) ? Number(row.bathrooms) : null,
+    terrain_m2: row.terrain_m2 != null && Number.isFinite(Number(row.terrain_m2)) ? Number(row.terrain_m2) : null,
+    construction_m2:
+      row.construction_m2 != null && Number.isFinite(Number(row.construction_m2))
+        ? Number(row.construction_m2)
+        : null,
+    status: row.status || null,
   };
 }
 
@@ -726,6 +744,7 @@ app.post('/webhook', async (req, res) => {
         contact,
         waProfileName,
         resolvedPropertyRow,
+        recentMessages,
       });
       logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: false });
     }
@@ -736,6 +755,9 @@ app.post('/webhook', async (req, res) => {
       hasValidName: hasValidHumanName(contact, nextAiState),
       matchedProperties: [],
       resolvedPropertyRow,
+      recentMessages,
+      contact,
+      waProfileName,
     });
     Object.assign(nextAiState, subCtx.statePatch);
     reply = subCtx.messages;
@@ -766,6 +788,18 @@ app.post('/webhook', async (req, res) => {
     }
 
     reply = enforced.reply;
+
+    if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
+      const mergedReplyText = Array.isArray(reply) ? reply.join('\n\n') : String(reply || '');
+      const intent = propertySpecificFlow.classifyPropertyFollowUp(text, nextAiState, recentMessages);
+      Object.assign(
+        nextAiState,
+        propertySpecificFlow.markPropertyReplyProgress(nextAiState, {
+          intentType: intent.type,
+          replyText: mergedReplyText,
+        })
+      );
+    }
 
     if (cleanSpaces(String(nextAiState.full_name || '')) && nextAiState.awaiting_field === 'full_name') {
       nextAiState.awaiting_field = null;

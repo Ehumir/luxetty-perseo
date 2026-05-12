@@ -68,6 +68,10 @@ function nullPropertyIntentSnapshot() {
     property_specific_intent: false,
     interested_property_id: null,
     property_context: null,
+    property_generic_cta_shown_for_code: null,
+    property_intro_shown_for_code: null,
+    property_last_follow_up_intent: null,
+    property_pending_user_question: null,
   };
 }
 
@@ -94,6 +98,10 @@ function mergePropertyIntentFields(prev, signals, changeType) {
       property_specific_intent: !!(signals.property_specific_intent || signals.direct_property_reference),
       interested_property_id: null,
       property_context: null,
+      property_generic_cta_shown_for_code: null,
+      property_intro_shown_for_code: null,
+      property_last_follow_up_intent: null,
+      property_pending_user_question: null,
     };
   }
 
@@ -141,6 +149,10 @@ function mergePropertyIntentFields(prev, signals, changeType) {
     property_specific_intent: specific && !!mergedCode,
     interested_property_id,
     property_context,
+    property_generic_cta_shown_for_code: codeChanged ? null : prev.property_generic_cta_shown_for_code ?? null,
+    property_intro_shown_for_code: codeChanged ? null : prev.property_intro_shown_for_code ?? null,
+    property_last_follow_up_intent: codeChanged ? null : prev.property_last_follow_up_intent ?? null,
+    property_pending_user_question: codeChanged ? null : prev.property_pending_user_question ?? null,
   };
 }
 

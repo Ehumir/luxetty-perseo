@@ -395,7 +395,15 @@ function buildContextualDemandReply(context = {}) {
  * Si el mensaje de salida es plantilla genérica y el contexto lo prohíbe, sustituye por respuesta contextual.
  */
 function substituteForbiddenGenericDemandReply(messages, context = {}) {
-  const { aiState = {}, text = '', hasValidName = false, matchedProperties = [] } = context;
+  const {
+    aiState = {},
+    text = '',
+    hasValidName = false,
+    matchedProperties = [],
+    recentMessages = [],
+    contact = null,
+    waProfileName = null,
+  } = context;
   const merged = Array.isArray(messages) ? messages.map((s) => String(s || '').trim()).filter(Boolean).join('\n\n') : String(messages || '');
   const forbiddenCtx = isGenericFallbackForbidden(aiState, text);
   const bad = isGenericConsultiveReply(merged);
@@ -410,6 +418,9 @@ function substituteForbiddenGenericDemandReply(messages, context = {}) {
       aiState,
       propertyRow: row,
       hasValidName,
+      recentMessages,
+      contact,
+      waProfileName,
     });
     return { messages: reply, statePatch: {} };
   }

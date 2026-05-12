@@ -136,7 +136,7 @@ test('R05 · pregunta por precio: respuesta usa precio real, no inventa', () => 
   const replyNoPriceProp = { ...PROPERTY_LUX_A0453, price: null };
   const replyNoPrice = buildPropertyPriceReply(replyNoPriceProp, { property_code: 'LUX-A0453' });
   const textNoPrice = replyText(replyNoPrice);
-  assert.match(textNoPrice, /no tengo un precio p[uú]blico confirmado|asesor/i, 'sin precio debe escalar');
+  assert.match(textNoPrice, /no tengo un precio numérico verificado|no tengo un precio p[uú]blico confirmado|asesor/i, 'sin precio debe escalar');
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

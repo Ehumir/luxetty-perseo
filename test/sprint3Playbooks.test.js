@@ -164,6 +164,7 @@ test('10) quiero verla con propiedad identificada avanza sin reiniciar filtros',
     'append_info',
     [
       {
+        id: 'p1',
         listing_id: 'LUX-A0453',
         neighborhood: 'Monterrey',
         slug: 'casa-en-monterrey-a0453',
@@ -172,9 +173,9 @@ test('10) quiero verla con propiedad identificada avanza sin reiniciar filtros',
     'direct_property_code'
   );
 
-  assert.ok(Array.isArray(reply));
-  assert.match(reply[2], /me compartes tu nombre/i);
-  assert.doesNotMatch(reply[2], /presupuesto|zona/i);
+  assert.equal(typeof reply, 'string');
+  assert.match(reply, /me compartes tu nombre/i);
+  assert.doesNotMatch(reply, /presupuesto|zona/i);
 });
 
 test('11) credito vigente responde con cautela y pide contexto minimo', () => {
