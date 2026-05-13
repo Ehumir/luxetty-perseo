@@ -6,21 +6,22 @@ require('dotenv').config();
  * PERSEO — Clean Orchestrator (P0)
  *
  * Reemplazo TOTAL de index.js: sin cascadas legacy de playbooks/templates como respuesta final.
- * Orquesta: inbound → dedupe → persist → contexto mínimo → engineV2/fallback consultivo
- * → guardrail obligatorio de nombre → contacto provisional → lead (solo si aplica) → outbound → WhatsApp.
+ * Orquesta: inbound → dedupe → persist → gatekeeper (Sprint 2) → contexto mínimo → engineV2/fallback consultivo
+ * → guardrail obligatorio de nombre → contacto provisional → lead (solo si aplica) → outbound vía sendPerseoAutomatedWhatsApp → WhatsApp.
  */
 
 const express = require('express');
 
 const { PORT, VERIFY_TOKEN } = require('./config/env');
 const { supabase } = require('./services/supabaseService');
-const { axios, WHATSAPP_TOKEN, PHONE_NUMBER_ID } = require('./services/whatsappService');
+const { sendPerseoAutomatedWhatsApp } = require('./services/perseoAutomatedWhatsApp');
 const { saveConversationMessage, inboundMessageAlreadyProcessed } = require('./services/saveConversationMessage');
 const { ensureContactForConversationCore } = require('./services/contactProvisioning');
 const { createOrReuseLeadFromConversation } = require('./services/leadAutomation');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
 const { processSprint1QaInbound, parseSprint1StrictCommand, isSprint1QaTesterPhone } = require('./conversation/qaSprint1Commands');
+const { resolveAutomatedReplyPolicy } = require('./conversation/perseoGatekeeper');
 const { parseMessageSignals } = require('./conversation/parsers');
 const { detectStateChange, buildNextState } = require('./conversation/stateUpdater');
 const {
@@ -399,25 +400,6 @@ async function saveConversationState(conversationId, nextState) {
   }
 }
 
-async function sendWhatsAppText(to, body) {
-  return axios.post(
-    `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
-    { messaging_product: 'whatsapp', to, type: 'text', text: { body } },
-    {
-      headers: {
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-}
-
-async function sendWhatsAppMessages(to, messages) {
-  const outbound = normalizeOutboundMessages(messages);
-  for (const body of outbound) await sendWhatsAppText(to, body);
-  return outbound;
-}
-
 /** Normaliza códigos tipo A0470 / LUX-A0470 para lookup en public.properties.listing_id */
 function normalizeListingCodeForLookup(raw) {
   if (raw == null) return null;
@@ -615,6 +597,17 @@ app.post('/webhook', async (req, res) => {
       inbound_message_id: inboundRow?.id || null,
     });
 
+    const policy = await resolveAutomatedReplyPolicy({ supabase, conversationRow, from });
+    if (policy.policyResolution === 'error') {
+      logEvent('perseo_policy_fail_closed', {
+        conversation_id: conversationId,
+        reason_code: policy.reason_code,
+      });
+      await saveConversationEvent(conversationId, 'perseo_policy_resolution_failed', {
+        reason_code: policy.reason_code,
+      });
+    }
+
     const sprintQa = await processSprint1QaInbound({
       text,
       from,
@@ -641,14 +634,17 @@ app.post('/webhook', async (req, res) => {
     if (sprintQa?.handled) {
       const cmd = parseSprint1StrictCommand(text);
       const reply = sprintQa.messages;
-      await saveOutboundMessages({
-        conversationId,
+      await sendPerseoAutomatedWhatsApp({
+        channel: 'qa',
+        to: from,
         messages: reply,
+        conversationId,
         rawPayload: { perseo_metadata: { response_source: 'qa_sprint1', qa_command: cmd } },
+        policy,
+        saveOutboundMessages,
+        saveConversationEvent,
+        logEvent,
       });
-      logEvent('outbound_persisted', { conversation_id: conversationId });
-      await sendWhatsAppMessages(from, reply);
-      logEvent('whatsapp_sent', { conversation_id: conversationId });
       res.sendStatus(200);
       return;
     }
@@ -723,128 +719,146 @@ app.post('/webhook', async (req, res) => {
     let responseSource = 'fallback_consultive';
     let nameFirstHandled = false;
 
-    const guard = nameFirstGuardrail.evaluateInboundTurn({
-      text,
-      previousAiState,
-      nextAiState,
-      contact,
-      waProfileName,
-      recentMessages,
-      propertyRow: property,
-      entryMeta: parsedSignals.__entry_point_meta,
-    });
-    if (guard.handled) {
-      reply = guard.reply;
-      Object.assign(nextAiState, guard.statePatch);
-      nameFirstHandled = true;
-      responseSource = 'name_first_guardrail';
-      logEvent('name_first_guardrail', { conversation_id: conversationId });
-    }
-
-    if (!nameFirstHandled && engineV2) {
-      const v2 = await processConversationTurnV2({
+    if (policy.allowAutomatedReply) {
+      const guard = nameFirstGuardrail.evaluateInboundTurn({
         text,
-        conversationId,
-        phone: from,
         previousAiState,
-        conversationRow,
-        contact,
-        lead: null,
-        recentMessages,
-        inboundContext,
-        unifiedContext: null,
-        referralContext: null,
-        campaignContext: null,
-        media: inboundContext.media,
-        propertiesContext: { matchedProperties: [] },
-        parsedSignals,
-        routeEvaluatorDecision: null,
-        waProfileDisplayName: waProfileName,
-        changeType,
-        logger: console,
-      });
-
-      reply = v2.outboundMessages;
-      nextAiState = v2.nextAiState || nextAiState;
-      Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
-      responseSource = v2.responseSource || 'engine_v2';
-      logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
-    }
-
-    if (!nameFirstHandled && !engineV2) {
-      reply = buildConsultiveFallbackReply({
-        text,
-        signals: parsedSignals,
-        aiState: nextAiState,
+        nextAiState,
         contact,
         waProfileName,
-        resolvedPropertyRow,
         recentMessages,
+        propertyRow: property,
+        entryMeta: parsedSignals.__entry_point_meta,
       });
-      logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: false });
-    }
+      if (guard.handled) {
+        reply = guard.reply;
+        Object.assign(nextAiState, guard.statePatch);
+        nameFirstHandled = true;
+        responseSource = 'name_first_guardrail';
+        logEvent('name_first_guardrail', { conversation_id: conversationId });
+      }
 
-    const subHasName = propertyIntentResolver.isPropertySpecificConversation(nextAiState)
-      ? hasConversationCapturedFullName(nextAiState)
-      : hasValidHumanName(contact, nextAiState);
-    const subCtx = contextualMemoryResolver.substituteForbiddenGenericDemandReply(reply, {
-      text,
-      aiState: nextAiState,
-      hasValidName: subHasName,
-      matchedProperties: [],
-      resolvedPropertyRow,
-      recentMessages,
-      contact,
-      waProfileName,
-    });
-    Object.assign(nextAiState, subCtx.statePatch);
-    reply = subCtx.messages;
-
-    const recentOutboundTexts = Array.isArray(recentMessages)
-      ? recentMessages
-          .filter((r) => r?.direction === 'outbound')
-          .map((r) => String(r?.message_text || ''))
-          .filter(Boolean)
-      : [];
-
-    const enforced = nameFirstHandled
-      ? { reply, applied: false }
-      : enforceNameCapture(reply, {
+      if (!nameFirstHandled && engineV2) {
+        const v2 = await processConversationTurnV2({
+          text,
+          conversationId,
+          phone: from,
+          previousAiState,
+          conversationRow,
           contact,
-          aiState: nextAiState,
-          waProfileName,
-          recentOutboundTexts,
-          userInboundText: text,
-          leadFlow: nextAiState.lead_flow || parsedSignals.lead_flow || null,
+          lead: null,
+          recentMessages,
+          inboundContext,
+          unifiedContext: null,
+          referralContext: null,
+          campaignContext: null,
+          media: inboundContext.media,
+          propertiesContext: { matchedProperties: [] },
+          parsedSignals,
+          routeEvaluatorDecision: null,
+          waProfileDisplayName: waProfileName,
+          changeType,
+          logger: console,
         });
 
-    if (enforced.applied) {
-      logEvent('name_required_guardrail_applied', { conversation_id: conversationId, reason: enforced.reason || null });
-      await saveConversationEvent(conversationId, 'name_required_guardrail_applied', {
-        reason: enforced.reason || null,
-        response_source: responseSource,
+        reply = v2.outboundMessages;
+        nextAiState = v2.nextAiState || nextAiState;
+        Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
+        responseSource = v2.responseSource || 'engine_v2';
+        logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
+      }
+
+      if (!nameFirstHandled && !engineV2) {
+        reply = buildConsultiveFallbackReply({
+          text,
+          signals: parsedSignals,
+          aiState: nextAiState,
+          contact,
+          waProfileName,
+          resolvedPropertyRow,
+          recentMessages,
+        });
+        logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: false });
+      }
+
+      const subHasName = propertyIntentResolver.isPropertySpecificConversation(nextAiState)
+        ? hasConversationCapturedFullName(nextAiState)
+        : hasValidHumanName(contact, nextAiState);
+      const subCtx = contextualMemoryResolver.substituteForbiddenGenericDemandReply(reply, {
+        text,
+        aiState: nextAiState,
+        hasValidName: subHasName,
+        matchedProperties: [],
+        resolvedPropertyRow,
+        recentMessages,
+        contact,
+        waProfileName,
       });
-      if (!nextAiState.full_name) nextAiState.awaiting_field = 'full_name';
-    }
+      Object.assign(nextAiState, subCtx.statePatch);
+      reply = subCtx.messages;
 
-    reply = enforced.reply;
+      const recentOutboundTexts = Array.isArray(recentMessages)
+        ? recentMessages
+            .filter((r) => r?.direction === 'outbound')
+            .map((r) => String(r?.message_text || ''))
+            .filter(Boolean)
+        : [];
 
-    if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
-      const mergedReplyText = Array.isArray(reply) ? reply.join('\n\n') : String(reply || '');
-      const intent = nameFirstHandled
-        ? { type: 'property_intro' }
-        : propertySpecificFlow.classifyPropertyFollowUp(text, nextAiState, recentMessages);
-      Object.assign(
-        nextAiState,
-        propertySpecificFlow.markPropertyReplyProgress(nextAiState, {
-          intentType: intent.type,
-          replyText: mergedReplyText,
-        })
-      );
-    }
+      const enforced = nameFirstHandled
+        ? { reply, applied: false }
+        : enforceNameCapture(reply, {
+            contact,
+            aiState: nextAiState,
+            waProfileName,
+            recentOutboundTexts,
+            userInboundText: text,
+            leadFlow: nextAiState.lead_flow || parsedSignals.lead_flow || null,
+          });
 
-    if (cleanSpaces(String(nextAiState.full_name || '')) && nextAiState.awaiting_field === 'full_name') {
-      nextAiState.awaiting_field = null;
+      if (enforced.applied) {
+        logEvent('name_required_guardrail_applied', { conversation_id: conversationId, reason: enforced.reason || null });
+        await saveConversationEvent(conversationId, 'name_required_guardrail_applied', {
+          reason: enforced.reason || null,
+          response_source: responseSource,
+        });
+        if (!nextAiState.full_name) nextAiState.awaiting_field = 'full_name';
+      }
+
+      reply = enforced.reply;
+
+      if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
+        const mergedReplyText = Array.isArray(reply) ? reply.join('\n\n') : String(reply || '');
+        const intent = nameFirstHandled
+          ? { type: 'property_intro' }
+          : propertySpecificFlow.classifyPropertyFollowUp(text, nextAiState, recentMessages);
+        Object.assign(
+          nextAiState,
+          propertySpecificFlow.markPropertyReplyProgress(nextAiState, {
+            intentType: intent.type,
+            replyText: mergedReplyText,
+          })
+        );
+      }
+
+      if (cleanSpaces(String(nextAiState.full_name || '')) && nextAiState.awaiting_field === 'full_name') {
+        nextAiState.awaiting_field = null;
+      }
+    } else {
+      reply = [];
+      responseSource = 'automation_gated_skip';
+      nameFirstHandled = false;
+      logEvent('perseo_automation_orchestration_skipped', {
+        conversation_id: conversationId,
+        reason_code: policy.reason_code,
+        policy_resolution: policy.policyResolution,
+      });
+      if (policy.policyResolution === 'ok') {
+        await saveConversationEvent(conversationId, 'ai_auto_response_skipped_human_attention', {
+          reason_code: policy.reason_code,
+          policy_resolution: policy.policyResolution,
+          gate: 'pre_orchestration',
+        });
+      }
     }
 
     await saveConversationState(conversationId, nextAiState);
@@ -864,15 +878,17 @@ app.post('/webhook', async (req, res) => {
       propertyId,
     });
 
-    await saveOutboundMessages({
-      conversationId,
+    await sendPerseoAutomatedWhatsApp({
+      channel: 'ia',
+      to: from,
       messages: reply,
+      conversationId,
       rawPayload: { perseo_metadata: { response_source: responseSource } },
+      policy,
+      saveOutboundMessages,
+      saveConversationEvent,
+      logEvent,
     });
-    logEvent('outbound_persisted', { conversation_id: conversationId });
-
-    await sendWhatsAppMessages(from, reply);
-    logEvent('whatsapp_sent', { conversation_id: conversationId });
 
     res.sendStatus(200);
   } catch (err) {
@@ -882,7 +898,13 @@ app.post('/webhook', async (req, res) => {
 });
 
 if (require.main === module) {
-  app.listen(PORT, () => logEvent('server_started', { port: PORT }));
+  app.listen(PORT, () =>
+    logEvent('server_started', {
+      port: PORT,
+      perseo_policy_v2_reads_global_settings: process.env.PERSEO_POLICY_V2_ENABLED === 'true',
+      perseo_policy_debug_log: process.env.PERSEO_POLICY_DEBUG_LOG === 'true',
+    })
+  );
 }
 
 module.exports = {

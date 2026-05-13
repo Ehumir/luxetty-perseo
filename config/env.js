@@ -22,6 +22,9 @@ const IMAGE_VISION_MAX_BYTES = Number(process.env.IMAGE_VISION_MAX_BYTES || MEDI
 // Ejemplo: QA_ALLOWED_WHATSAPP_NUMBERS=5218111111111,5218119999999
 const QA_ALLOWED_WHATSAPP_NUMBERS = process.env.QA_ALLOWED_WHATSAPP_NUMBERS || '';
 
+/** Sprint 2 — gatekeeper + fail-closed lectura `ai_conversation_channel_settings`. Default false = comportamiento previo (solo control por conversación). */
+const PERSEO_POLICY_V2_ENABLED = process.env.PERSEO_POLICY_V2_ENABLED === 'true';
+
 module.exports = {
   PORT,
   VERIFY_TOKEN,
@@ -40,4 +43,5 @@ module.exports = {
   IMAGE_VISION_TIMEOUT_MS,
   IMAGE_VISION_MAX_BYTES,
   QA_ALLOWED_WHATSAPP_NUMBERS,
+  PERSEO_POLICY_V2_ENABLED,
 };
