@@ -5,8 +5,6 @@
  * Sin OpenAI, sin CRM, sin búsqueda de propiedades en estos turnos.
  */
 
-const { normalizePhoneNumber } = require('../utils/helpers');
-
 function normalizeQaInput(text) {
   return String(text || '')
     .normalize('NFKC')
@@ -28,15 +26,15 @@ function maskPhoneForLog(phone) {
 const REPLY_RESET = 'Listo, reiniciamos la conversación. ¿Qué necesitas revisar ahora?';
 const REPLY_CLOSE = 'Listo, cerré esta conversación de prueba.';
 
-const DEFAULT_QA_LOCAL_10 = new Set(['8181877351', '8119086196']);
-
+/**
+ * Allowlist QA Sprint 1 — misma regla que comandos QA legacy (`qaCommands.isQaCommandAllowed`):
+ * números internos MX + `QA_ALLOWED_WHATSAPP_NUMBERS`. Carga perezosa para evitar dependencia circular.
+ * @param {string} from
+ * @returns {boolean}
+ */
 function isSprint1QaTesterPhone(from) {
-  const digits = normalizePhoneForAllowlist(from);
-  if (!digits) return false;
-  if (DEFAULT_QA_LOCAL_10.has(digits.slice(-10))) return true;
-  const n = normalizePhoneNumber(from);
-  if (n && DEFAULT_QA_LOCAL_10.has(String(n).slice(-10))) return true;
-  return false;
+  const { isQaCommandAllowed } = require('./qaCommands');
+  return isQaCommandAllowed(from);
 }
 
 /**
