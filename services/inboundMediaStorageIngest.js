@@ -148,20 +148,21 @@ async function shouldSkipIngestAlreadyStored(supabase, messageId) {
 async function runInboundMediaIngest({ supabase, logEvent, conversationId, inboundMessageId, message }) {
   const log = typeof logEvent === 'function' ? logEvent : () => {};
 
-  if (String(process.env.PERSEO_INBOUND_MEDIA_STORAGE_ENABLED || '').toLowerCase() !== 'true') {
-    log('perseo_inbound_media_ingest_skipped', {
-      reason: 'flag_disabled',
-      message_id: inboundMessageId,
-    });
-    return;
-  }
-
   if (!supabase || !conversationId || !inboundMessageId || !message) {
     return;
   }
 
   const waType = message.type || null;
   if (!SCHEDULED_MEDIA_TYPES.has(waType)) {
+    return;
+  }
+
+  if (String(process.env.PERSEO_INBOUND_MEDIA_STORAGE_ENABLED || '').toLowerCase() !== 'true') {
+    log('perseo_inbound_media_ingest_skipped', {
+      reason: 'flag_disabled',
+      message_id: inboundMessageId,
+      wa_message_type: waType,
+    });
     return;
   }
 
@@ -268,7 +269,7 @@ async function runInboundMediaIngest({ supabase, logEvent, conversationId, inbou
     storagePath: null,
     downloadStatus: 'pending',
     ingestedAt: null,
-    error_code: null,
+    errorCode: null,
     filename,
     captionPresent,
   });

@@ -3,6 +3,8 @@
 **Repo:** `luxetty-perseo`  
 **Dependencia:** PR1 bucket `whatsapp-inbound-media` (Supabase) ya aplicado.
 
+**Post-merge:** rama **`hotfix/sprint-5a-ingest-flag-off-silent`** (`8440b9e`) — con flag `false`, mensajes **texto** no generan log `perseo_inbound_media_*`; solo tipos media registran `ingest_skipped` (`flag_disabled`). Corrige `pendingRecord` (`errorCode`) para cuando el flag sea `true`.
+
 ## Resumen técnico
 
 - Variable **`PERSEO_INBOUND_MEDIA_STORAGE_ENABLED`**: solo con valor exacto **`true`** activa el pipeline (lectura en **runtime** vía `process.env` en cada ingest).
