@@ -22,12 +22,15 @@ try {
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const v2Raw = process.env.PERSEO_POLICY_V2_ENABLED;
 const debugRaw = process.env.PERSEO_POLICY_DEBUG_LOG;
+const mediaRaw = process.env.PERSEO_INBOUND_MEDIA_STORAGE_ENABLED;
 
 const out = {
   PERSEO_POLICY_V2_ENABLED_raw: v2Raw === undefined || v2Raw === '' ? '(unset)' : v2Raw,
   perseo_policy_v2_reads_global_settings: v2Raw === 'true',
   PERSEO_POLICY_DEBUG_LOG_raw: debugRaw === undefined || debugRaw === '' ? '(unset)' : debugRaw,
   perseo_policy_debug_log_active: debugRaw === 'true',
+  PERSEO_INBOUND_MEDIA_STORAGE_ENABLED_raw: mediaRaw === undefined || mediaRaw === '' ? '(unset)' : mediaRaw,
+  perseo_inbound_media_storage_active: mediaRaw === 'true',
   SUPABASE_URL_set: Boolean(url),
   supabase_project_ref_from_url: projectRef || '(no se pudo derivar; revisa formato https://<ref>.supabase.co)',
   SUPABASE_SERVICE_ROLE_KEY_set: Boolean(key && String(key).length > 20),

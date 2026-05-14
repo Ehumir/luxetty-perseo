@@ -25,6 +25,9 @@ const QA_ALLOWED_WHATSAPP_NUMBERS = process.env.QA_ALLOWED_WHATSAPP_NUMBERS || '
 /** Sprint 2 — gatekeeper + fail-closed lectura `ai_conversation_channel_settings`. Default false = comportamiento previo (solo control por conversación). */
 const PERSEO_POLICY_V2_ENABLED = process.env.PERSEO_POLICY_V2_ENABLED === 'true';
 
+/** Sprint 5A — ingest inbound a Storage + metadata. Default false hasta QA; no side effects cuando es false. */
+const PERSEO_INBOUND_MEDIA_STORAGE_ENABLED = process.env.PERSEO_INBOUND_MEDIA_STORAGE_ENABLED === 'true';
+
 module.exports = {
   PORT,
   VERIFY_TOKEN,
@@ -44,4 +47,5 @@ module.exports = {
   IMAGE_VISION_MAX_BYTES,
   QA_ALLOWED_WHATSAPP_NUMBERS,
   PERSEO_POLICY_V2_ENABLED,
+  PERSEO_INBOUND_MEDIA_STORAGE_ENABLED,
 };

@@ -15,6 +15,7 @@ const express = require('express');
 const { PORT, VERIFY_TOKEN } = require('./config/env');
 const { supabase } = require('./services/supabaseService');
 const { sendPerseoAutomatedWhatsApp } = require('./services/perseoAutomatedWhatsApp');
+const { scheduleInboundMediaIngest } = require('./services/inboundMediaStorageIngest');
 const { saveConversationMessage, inboundMessageAlreadyProcessed } = require('./services/saveConversationMessage');
 const { ensureContactForConversationCore } = require('./services/contactProvisioning');
 const { createOrReuseLeadFromConversation } = require('./services/leadAutomation');
@@ -213,6 +214,13 @@ function extractTextFromInbound(message) {
     const list = i?.list_reply?.title || i?.list_reply?.id || '';
     return cleanSpaces(btn || list || '');
   }
+  if (type === 'image') return cleanSpaces(message?.image?.caption || '');
+  if (type === 'document') {
+    return cleanSpaces(message?.document?.caption || message?.document?.filename || '');
+  }
+  if (type === 'audio') return cleanSpaces(message?.audio?.caption || '');
+  if (type === 'video') return cleanSpaces(message?.video?.caption || '');
+  if (type === 'voice') return cleanSpaces(message?.voice?.caption || '');
   return cleanSpaces(message?.text?.body || message?.caption || '');
 }
 
@@ -605,6 +613,16 @@ app.post('/webhook', async (req, res) => {
       });
       await saveConversationEvent(conversationId, 'perseo_policy_resolution_failed', {
         reason_code: policy.reason_code,
+      });
+    }
+
+    if (inboundRow?.id) {
+      scheduleInboundMediaIngest({
+        supabase,
+        logEvent,
+        conversationId,
+        inboundMessageId: inboundRow.id,
+        message,
       });
     }
 
