@@ -10,6 +10,7 @@ const { WHATSAPP_TOKEN } = require('./whatsappService');
 const {
   resolveInboundMedia,
   getInboundMediaDescriptor,
+  normalizeMimeTypeForPolicy,
 } = require('./whatsappMediaService');
 const { nowIso } = require('../utils/helpers');
 
@@ -29,7 +30,7 @@ function hasGraphMediaToken() {
 }
 
 function mimeToFileExtension(mime) {
-  const m = String(mime || '').toLowerCase();
+  const m = normalizeMimeTypeForPolicy(mime) || '';
   if (m === 'image/jpeg') return 'jpg';
   if (m === 'image/png') return 'png';
   if (m === 'image/webp') return 'webp';
@@ -318,7 +319,7 @@ async function runInboundMediaIngest({ supabase, logEvent, conversationId, inbou
   const storagePath = `${conversationId}/${inboundMessageId}.${ext}`;
 
   const { error: upErr } = await supabase.storage.from(BUCKET_ID).upload(storagePath, resolved.buffer, {
-    contentType: finalMime || 'application/octet-stream',
+    contentType: normalizeMimeTypeForPolicy(finalMime) || 'application/octet-stream',
     upsert: true,
   });
 
