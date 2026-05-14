@@ -30,6 +30,71 @@ function sanitizeFilename(name = '') {
   return text.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128);
 }
 
+/**
+ * Graph/WABA sometimes returns MIME with parameters (e.g. audio/ogg; codecs=opus).
+ * Allowlist checks use only the type/subtype (RFC 2045 media type without parameters).
+ * @param {string|null|undefined} mime
+ * @returns {string|null}
+ */
+function normalizeMimeTypeForPolicy(mime) {
+  if (mime == null) return null;
+  const s = String(mime).trim().toLowerCase();
+  if (!s) return null;
+  const base = s.split(';')[0].trim();
+  return base || null;
+}
+
+function uniqueNormalizedMimeHints(metadata = {}, descriptor = {}) {
+  const raw = [metadata?.mime_type, metadata?.mimeType, descriptor?.mimeType];
+  const seen = new Set();
+  const out = [];
+  for (const r of raw) {
+    const n = normalizeMimeTypeForPolicy(r);
+    if (n && !seen.has(n)) {
+      seen.add(n);
+      out.push(n);
+    }
+  }
+  return out;
+}
+
+/**
+ * Graph / CDN often returns application/octet-stream while the webhook payload carries the real audio/* hint.
+ * Allow download when: no hints, only generic binary, or any hint matches the Sprint 5A allowlist.
+ */
+function graphMimePolicyAllowsInboundDownload(normalizedHints) {
+  if (!normalizedHints.length) return true;
+  const onlyOctet =
+    normalizedHints.length === 1 &&
+    (normalizedHints[0] === 'application/octet-stream' ||
+      normalizedHints[0] === 'binary/octet-stream');
+  if (onlyOctet) return true;
+  return normalizedHints.some((m) => ALLOWED_MIME_TYPES.has(m));
+}
+
+function evaluateGraphAndDescriptorMimePolicy(metadata = {}, descriptor = {}) {
+  const hints = uniqueNormalizedMimeHints(metadata, descriptor);
+  return { allowed: graphMimePolicyAllowsInboundDownload(hints), hints };
+}
+
+function pickStoredMimeType(descriptor, metadata, download) {
+  const hints = uniqueNormalizedMimeHints(metadata, descriptor);
+  const allowedFromHints = hints.find((m) => ALLOWED_MIME_TYPES.has(m));
+  if (allowedFromHints) return allowedFromHints;
+  const down = normalizeMimeTypeForPolicy(download?.mimeType);
+  if (down && ALLOWED_MIME_TYPES.has(down)) return down;
+  const desc = normalizeMimeTypeForPolicy(descriptor?.mimeType);
+  if (desc && ALLOWED_MIME_TYPES.has(desc)) return desc;
+  if (
+    hints.length === 1 &&
+    hints[0] === 'application/octet-stream' &&
+    (descriptor.mediaType === 'audio' || descriptor.mediaType === 'voice')
+  ) {
+    return 'audio/ogg';
+  }
+  return desc || hints[0] || down || null;
+}
+
 function getAuthHeaders() {
   const token = WHATSAPP_TOKEN || META_ACCESS_TOKEN || null;
 
@@ -172,7 +237,7 @@ function getInboundMediaDescriptor(message = {}) {
 function isAllowedDownload(descriptor = {}, options = {}) {
   const allowedMimeTypes = options.allowedMimeTypes || ALLOWED_MIME_TYPES;
   const mediaType = descriptor?.mediaType || null;
-  const mimeType = (descriptor?.mimeType || '').toLowerCase();
+  const mimeType = normalizeMimeTypeForPolicy(descriptor?.mimeType);
 
   if (!DOWNLOADABLE_TYPES.has(mediaType)) {
     return { allowed: false, reason: 'skipped_unsupported' };
@@ -237,7 +302,7 @@ async function downloadWhatsAppMedia(mediaUrl, options = {}) {
     return {
       buffer,
       byteLength: buffer.byteLength,
-      mimeType: response.headers?.['content-type'] || null,
+      mimeType: normalizeMimeTypeForPolicy(response.headers?.['content-type']),
       contentLength: Number(response.headers?.['content-length'] || 0) || buffer.byteLength,
     };
   } catch (err) {
@@ -304,20 +369,21 @@ async function resolveInboundMedia(message = {}, options = {}) {
   try {
     const metadata = await getWhatsAppMediaMetadata(descriptor.mediaId, options);
     const mediaUrl = metadata?.url || null;
-    const metadataMimeType = metadata?.mime_type || descriptor.mimeType || null;
+    const metadataMimeRaw = metadata?.mime_type || metadata?.mimeType || null;
+    const mimeEval = evaluateGraphAndDescriptorMimePolicy(metadata, descriptor);
 
-    if (metadataMimeType && !ALLOWED_MIME_TYPES.has(String(metadataMimeType).toLowerCase())) {
+    if (!mimeEval.allowed) {
       return {
         success: false,
         status: 'skipped_unsupported_mime',
         media_id: descriptor.mediaId,
-        mime_type: metadataMimeType,
+        mime_type: metadataMimeRaw || descriptor.mimeType || null,
         buffer: null,
         size_bytes: null,
         error_code: 'skipped_unsupported_mime',
         error_message: 'Media mime type from metadata is not allowed',
         downloaded_at: null,
-        download_status: 'skipped_unsupported',
+        download_status: 'skipped_unsupported_mime',
         ...descriptor,
         metadata,
       };
@@ -328,7 +394,7 @@ async function resolveInboundMedia(message = {}, options = {}) {
         success: false,
         status: 'failed',
         media_id: descriptor.mediaId,
-        mime_type: metadataMimeType,
+        mime_type: metadataMimeRaw || descriptor.mimeType || null,
         buffer: null,
         size_bytes: null,
         error_code: 'metadata_missing_media_url',
@@ -341,12 +407,13 @@ async function resolveInboundMedia(message = {}, options = {}) {
     }
 
     const download = await downloadWhatsAppMedia(mediaUrl, options);
+    const storedMime = pickStoredMimeType(descriptor, metadata, download);
 
     return {
       success: true,
       status: 'downloaded',
       media_id: descriptor.mediaId,
-      mime_type: download.mimeType || metadataMimeType,
+      mime_type: storedMime,
       buffer: download.buffer,
       size_bytes: Number(download.byteLength || 0) || null,
       error_code: null,
@@ -383,6 +450,9 @@ async function resolveInboundMedia(message = {}, options = {}) {
 
 module.exports = {
   ALLOWED_MIME_TYPES,
+  normalizeMimeTypeForPolicy,
+  uniqueNormalizedMimeHints,
+  evaluateGraphAndDescriptorMimePolicy,
   getWhatsAppMediaMetadata,
   downloadWhatsAppMedia,
   resolveInboundMedia,

@@ -16,6 +16,7 @@ test('mimeToFileExtension maps MVP mimes', () => {
   assert.equal(mimeToFileExtension('image/jpeg'), 'jpg');
   assert.equal(mimeToFileExtension('application/pdf'), 'pdf');
   assert.equal(mimeToFileExtension('audio/ogg'), 'ogg');
+  assert.equal(mimeToFileExtension('audio/ogg; codecs=opus'), 'ogg');
 });
 
 test('buildWhatsappMediaRecord uses snake_case metadata fields', () => {

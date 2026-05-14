@@ -1,7 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { getInboundMediaDescriptor } = require('../services/whatsappMediaService');
+const {
+  getInboundMediaDescriptor,
+  isAllowedDownload,
+  normalizeMimeTypeForPolicy,
+  evaluateGraphAndDescriptorMimePolicy,
+  uniqueNormalizedMimeHints,
+} = require('../services/whatsappMediaService');
 
 test('descriptor detects downloadable image payload', () => {
   const descriptor = getInboundMediaDescriptor({
@@ -48,6 +54,81 @@ test('descriptor handles document metadata', () => {
   assert.equal(descriptor.fileName, 'escritura.pdf');
   assert.equal(descriptor.mimeType, 'application/pdf');
   assert.equal(descriptor.sha256, 'sha-doc-1');
+});
+
+test('normalizeMimeTypeForPolicy strips parameters (audio/ogg; codecs=opus)', () => {
+  assert.equal(normalizeMimeTypeForPolicy('audio/ogg; codecs=opus'), 'audio/ogg');
+  assert.equal(normalizeMimeTypeForPolicy('  IMAGE/JPEG ; charset=binary '), 'image/jpeg');
+  assert.equal(normalizeMimeTypeForPolicy(null), null);
+  assert.equal(normalizeMimeTypeForPolicy(''), null);
+});
+
+test('isAllowedDownload accepts audio/ogg with codecs parameter against allowlist', () => {
+  const descriptor = getInboundMediaDescriptor({
+    type: 'audio',
+    audio: {
+      id: 'aud-1',
+      mime_type: 'audio/ogg; codecs=opus',
+    },
+  });
+  const policy = isAllowedDownload(descriptor);
+  assert.equal(policy.allowed, true);
+  assert.equal(policy.reason, null);
+});
+
+test('isAllowedDownload rejects mime not in allowlist after normalization', () => {
+  const descriptor = getInboundMediaDescriptor({
+    type: 'audio',
+    audio: {
+      id: 'aud-2',
+      mime_type: 'audio/wav; codecs=whatever',
+    },
+  });
+  const policy = isAllowedDownload(descriptor);
+  assert.equal(policy.allowed, false);
+  assert.equal(policy.reason, 'skipped_unsupported_mime');
+});
+
+test('evaluateGraphAndDescriptorMimePolicy allows application/octet-stream when webhook has allowed audio', () => {
+  const descriptor = getInboundMediaDescriptor({
+    type: 'audio',
+    audio: { id: 'a1', mime_type: 'audio/ogg; codecs=opus' },
+  });
+  const ev = evaluateGraphAndDescriptorMimePolicy(
+    { mime_type: 'application/octet-stream', url: 'https://example.com/x' },
+    descriptor
+  );
+  assert.equal(ev.allowed, true);
+  assert.deepEqual(ev.hints, ['application/octet-stream', 'audio/ogg']);
+});
+
+test('evaluateGraphAndDescriptorMimePolicy reads metadata.mimeType camelCase', () => {
+  const descriptor = getInboundMediaDescriptor({
+    type: 'audio',
+    audio: { id: 'a1', mime_type: 'audio/ogg; codecs=opus' },
+  });
+  const ev = evaluateGraphAndDescriptorMimePolicy(
+    { mimeType: 'application/octet-stream' },
+    descriptor
+  );
+  assert.equal(ev.allowed, true);
+});
+
+test('evaluateGraphAndDescriptorMimePolicy rejects when hints are only disallowed concrete types', () => {
+  const descriptor = getInboundMediaDescriptor({
+    type: 'audio',
+    audio: { id: 'a1', mime_type: 'audio/webm' },
+  });
+  const ev = evaluateGraphAndDescriptorMimePolicy({ mime_type: 'audio/webm' }, descriptor);
+  assert.equal(ev.allowed, false);
+});
+
+test('uniqueNormalizedMimeHints dedupes and preserves order', () => {
+  const hints = uniqueNormalizedMimeHints(
+    { mime_type: 'audio/ogg; codecs=opus' },
+    { mimeType: 'audio/ogg; codecs=opus' }
+  );
+  assert.deepEqual(hints, ['audio/ogg']);
 });
 
 test('descriptor marks video as received but not downloadable in 4A', () => {
