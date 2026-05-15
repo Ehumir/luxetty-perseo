@@ -54,12 +54,18 @@ function parseSprint1StrictCommand(text) {
 
 function formatStateSummary(conversationRow, aiState) {
   const safe = (v) => (v == null || v === '' ? '(vacío)' : String(v));
+  const boolSafe = (v) => (v === true ? 'true' : v === false ? 'false' : safe(v));
   const lines = [
     `lead_flow: ${safe(aiState?.lead_flow)}`,
     `operation_type: ${safe(aiState?.operation_type)}`,
     `full_name: ${safe(aiState?.full_name)}`,
     `awaiting_field: ${safe(aiState?.awaiting_field)}`,
     `location_text: ${safe(aiState?.location_text)}`,
+    `conversation_stage: ${safe(aiState?.conversation_stage)}`,
+    `identity_state: ${safe(aiState?.identity_state)}`,
+    `conversation_goal: ${safe(aiState?.conversation_goal)}`,
+    `goal_locked: ${boolSafe(aiState?.conversation_goal_locked)}`,
+    `last_question: ${safe(aiState?.last_question)}`,
     `budget_max: ${safe(aiState?.budget_max)}`,
     `bedrooms: ${safe(aiState?.bedrooms)}`,
     `must_have_features: ${safe(Array.isArray(aiState?.must_have_features) ? aiState.must_have_features.join(',') : aiState?.must_have_features)}`,
@@ -121,6 +127,7 @@ async function processSprint1QaInbound(deps) {
     updateConversationFn,
     conversations,
     isQaExecutionAllowed,
+    getV3Session,
   } = deps;
 
   const cmd = parseSprint1StrictCommand(text);
@@ -168,7 +175,18 @@ async function processSprint1QaInbound(deps) {
   }
 
   if (cmd === 'state') {
-    const aiState = normalizeAiState(conversationRow?.ai_state);
+    let aiState = normalizeAiState(conversationRow?.ai_state);
+    if (typeof getV3Session === 'function') {
+      try {
+        const { mergeLegacyAiStateWithV3 } = require('./v3/state/v3ToLegacyAiState');
+        const v3Session = getV3Session(conversationId);
+        if (v3Session) {
+          aiState = normalizeAiState(mergeLegacyAiStateWithV3(aiState, v3Session));
+        }
+      } catch {
+        // QA state sigue con legacy si el bridge V3 no está disponible
+      }
+    }
     const msg = formatStateSummary(conversationRow, aiState);
     await saveEventFn(conversationId, 'qa_state_viewed', { ...baseAudit });
     return { handled: true, messages: [msg] };
@@ -202,6 +220,7 @@ module.exports = {
   parseSprint1StrictCommand,
   isSprint1QaTesterPhone,
   processSprint1QaInbound,
+  formatStateSummary,
   REPLY_RESET,
   REPLY_CLOSE,
 };

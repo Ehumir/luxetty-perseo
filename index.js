@@ -49,6 +49,8 @@ const antiLoopGuardrails = require('./conversation/antiLoopGuardrails');
 const r0ContextContinuity = require('./conversation/r0ContextContinuity');
 const { extractPossibleName } = require('./conversation/parsers');
 const v3InboundBridge = require('./conversation/v3/core/v3InboundBridge');
+const { getSession: getV3Session } = require('./conversation/v3/core/sessionStore');
+const { mapV3StateToLegacyAiState } = require('./conversation/v3/state/v3ToLegacyAiState');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -742,6 +744,7 @@ app.post('/webhook', async (req, res) => {
       updateConversationFn: updateConversationMetaWithClient,
       conversations: null,
       isQaExecutionAllowed: isSprint1QaTesterPhone,
+      getV3Session,
     });
 
     if (sprintQa?.unauthorized) {
@@ -860,6 +863,9 @@ app.post('/webhook', async (req, res) => {
         skipLegacyCrm = !!v3Try.skipLegacyCrm;
         reply = v3Try.reply;
         responseSource = v3Try.responseSource || 'v3_core_f2';
+        if (v3Try.v3State) {
+          Object.assign(nextAiState, mapV3StateToLegacyAiState(v3Try.v3State));
+        }
         logEvent('v3_primary_reply', {
           conversation_id: conversationId,
           route: v3Try.route,

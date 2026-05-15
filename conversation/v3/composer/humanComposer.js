@@ -1,6 +1,6 @@
 'use strict';
 
-const { cleanSpaces } = require('../../../utils/text');
+const { cleanSpaces, normalizeText } = require('../../../utils/text');
 const {
   CONVERSATION_GOALS,
   V3_INTENT,
@@ -222,10 +222,24 @@ function composeHumanResponse(input) {
   };
 }
 
+function normalizeQuestionForDedupe(text) {
+  return normalizeText(String(text || ''))
+    .replace(/[¿?]/g, '')
+    .trim();
+}
+
 function composeHumanReplyText(input) {
   const out = composeHumanResponse(input);
-  const parts = [out.responseText, out.followUpQuestion].filter(Boolean);
-  const merged = parts.join(' ').replace(/\s+/g, ' ').trim();
+  let merged = cleanSpaces(out.responseText || '');
+  const followUp = cleanSpaces(out.followUpQuestion || '');
+  if (followUp) {
+    const bodyNorm = normalizeQuestionForDedupe(merged);
+    const fuNorm = normalizeQuestionForDedupe(followUp);
+    if (!fuNorm || !bodyNorm.includes(fuNorm)) {
+      merged = cleanSpaces(`${merged} ${followUp}`);
+    }
+  }
+  merged = merged.replace(/\s+/g, ' ').trim();
   if (!assertComposerQuality(merged)) {
     return 'Con gusto te ayudo. Cuéntame si buscas vender, comprar o rentar una propiedad.';
   }
