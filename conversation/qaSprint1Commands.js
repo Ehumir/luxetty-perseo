@@ -62,6 +62,7 @@ function formatStateSummary(conversationRow, aiState) {
     `awaiting_field: ${safe(aiState?.awaiting_field)}`,
     `location_text: ${safe(aiState?.location_text)}`,
     `property_type: ${safe(aiState?.property_type)}`,
+    `occupancy_status: ${safe(aiState?.occupancy_status)}`,
     `expected_price: ${safe(aiState?.expected_price)}`,
     `conversation_stage: ${safe(aiState?.conversation_stage)}`,
     `identity_state: ${safe(aiState?.identity_state)}`,

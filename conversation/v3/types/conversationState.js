@@ -24,6 +24,7 @@ function createInitialConversationState(seed = {}) {
     activeProperty: null,
     locationText: null,
     propertyType: null,
+    occupancyStatus: null,
     expectedPrice: null,
     budget: null,
     bedrooms: null,

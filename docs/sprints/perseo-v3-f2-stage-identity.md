@@ -68,6 +68,15 @@ Vale como 8 millones
 - Allowlist mal configurada podría exponer V3 a número incorrecto
 - Fallback a legacy si V3 falla o rule guard bloquea
 
+## F2.3 — Occupancy capture anti-loop (cierre F2)
+
+- Campo `occupancyStatus` / `occupancy_status` (`libre`, `habitada`, `rentada`, `ocupada`).
+- Tras capturar ocupación: stage `READY_FOR_CRM` (sin CRM ni asesor).
+- No repite *"¿Está habitada, rentada o libre?"* si ya hay respuesta.
+- `!state` muestra `occupancy_status` y `awaiting_field` cuando aplica.
+
+**F2 cerrado** como milestone arquitectónico. Objetivo comercial (contacto asesor) → **F3**.
+
 ## F2.2 — Robustez nombre + tipo inmueble
 
 - **Nombre:** solo se captura en `IDENTITY_PENDING` / tras preguntar nombre; `Nada`, `ya te dije`, etc. no pisan `Jorge`.
