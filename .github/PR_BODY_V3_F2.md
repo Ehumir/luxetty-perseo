@@ -33,10 +33,11 @@ Primer sprint donde **V3 conversa** de forma controlada (solo allowlist QA), con
 
 | Variable | Default | Uso |
 |----------|---------|-----|
-| `PERSEO_V3_ENABLED` | `false` | Maestro |
-| `PERSEO_V3_QA_ALLOWLIST` | vacío | Teléfonos QA (solo dígitos, separados por coma) |
-| `PERSEO_V3_SHADOW_MODE` | `false` | V3 en sombra cuando legacy responde |
-| `PERSEO_V3_LOG` | `false` | Logs JSON `[V3]` |
+| `PERSEO_ENGINE` | `legacy` | **No** activa V3 primary; solo log startup |
+| `PERSEO_V3_ENABLED` | `false` | Maestro allowlist primary |
+| `PERSEO_V3_QA_ALLOWLIST` | vacío | QA: `521`+10 dígitos o equivalente MX (coma entre números) |
+| `PERSEO_V3_SHADOW_MODE` | `false` | Shadow solo **fuera** de allowlist; en QA primary usar `false` |
+| `PERSEO_V3_LOG` | `false` | Logs JSON `[V3]` + evento `v3_primary_gate` |
 
 ## Pruebas
 
@@ -45,11 +46,14 @@ Primer sprint donde **V3 conversa** de forma controlada (solo allowlist QA), con
 
 ## Pruebas QA WhatsApp (Railway)
 
-1. Deploy rama con flags QA (no producción abierta).
-2. `PERSEO_V3_ENABLED=true`
-3. `PERSEO_V3_QA_ALLOWLIST=<tu número>`
-4. `!reset` y guion venta arriba.
-5. Verificar número no allowlist sigue con legacy.
+1. Deploy rama con F2 + hotfix gate.
+2. `PERSEO_ENGINE=legacy` (ok)
+3. `PERSEO_V3_ENABLED=true`
+4. `PERSEO_V3_QA_ALLOWLIST=5218119086196` (13 dígitos; ver `inbound_normalized` en log)
+5. `PERSEO_V3_SHADOW_MODE=false` en QA primary
+6. `!reset` y guion venta arriba → `response_source: v3_core_f2`, evento `v3_primary_reply`
+7. Log `v3_primary_gate`: `allowlist_match=true`, `v3_primary_allowed=true`
+8. Número no allowlist → legacy; shadow solo si `PERSEO_V3_SHADOW_MODE=true`
 
 ## Riesgos
 

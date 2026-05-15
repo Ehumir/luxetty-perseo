@@ -26,12 +26,23 @@ PERSEO_V3_LOG=false
 
 ### QA WhatsApp real (ventana controlada)
 
+**`PERSEO_ENGINE` no activa V3 primary.** Solo observabilidad en `server_started` (`perseo_engine_requested` / `effective: legacy`).  
+Primary en allowlist: `PERSEO_V3_ENABLED=true` + número en `PERSEO_V3_QA_ALLOWLIST`.
+
 ```env
+PERSEO_ENGINE=legacy
 PERSEO_V3_ENABLED=true
-PERSEO_V3_SHADOW_MODE=true
-PERSEO_V3_QA_ALLOWLIST=521XXXXXXXXXX
+PERSEO_V3_SHADOW_MODE=false
+PERSEO_V3_QA_ALLOWLIST=5218119086196
 PERSEO_V3_LOG=true
 ```
+
+Formato allowlist: preferir **13 dígitos MX WhatsApp** `521` + 10 dígitos (`5218119086196` para `+52 81 1908 6196`).  
+También acepta `8119086196`, `528119086196` o `+52 81 1908 6196` (una entrada; no separar por espacios en la variable).
+
+Con allowlist, **no** hace falta `PERSEO_V3_SHADOW_MODE=true` (evita doble procesamiento). Shadow solo para números **fuera** de allowlist.
+
+Logs de gate (buscar en Railway): `v3_primary_gate`, campos `allowlist_match`, `v3_primary_allowed`, `v3_primary_block_reason`, `inbound_raw`, `inbound_normalized`.
 
 Reiniciar proceso PERSEO tras cambiar env.
 

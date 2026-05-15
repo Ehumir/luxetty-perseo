@@ -1,20 +1,132 @@
 'use strict';
 
-/**
- * Feature flags oficiales V3.
- */
+const { normalizePhoneNumber } = require('../utils/helpers');
 
+/**
+ * Solo coma o punto y coma — NO partir por espacios (permite "+52 81 1908 6196" en una entrada).
+ */
 function splitAllowlist(raw) {
   const s = String(raw || '').trim();
   if (!s) return [];
   return s
-    .split(/[,;\s]+/)
+    .split(/[,;]+/)
     .map((x) => x.trim())
     .filter(Boolean);
 }
 
-function normalizePhoneForAllowlist(phone) {
+function digitsOnly(phone) {
   return String(phone || '').replace(/\D/g, '').replace(/^0+/, '');
+}
+
+/**
+ * Misma normalización que el webhook (`index.js` → `from`).
+ */
+function normalizeInboundPhoneForV3(phone) {
+  return normalizePhoneNumber(phone) || digitsOnly(phone) || null;
+}
+
+function normalizeAllowlistEntry(entry) {
+  return normalizePhoneNumber(entry) || digitsOnly(entry) || null;
+}
+
+function phonesEquivalent(inboundNorm, entryNorm) {
+  if (!inboundNorm || !entryNorm) return false;
+  if (inboundNorm === entryNorm) return true;
+  if (inboundNorm.endsWith(entryNorm) || entryNorm.endsWith(inboundNorm)) return true;
+
+  const in10 =
+    inboundNorm.length === 13 && inboundNorm.startsWith('521') ? inboundNorm.slice(3) : null;
+  const en10 =
+    entryNorm.length === 13 && entryNorm.startsWith('521') ? entryNorm.slice(3) : null;
+  if (in10 && entryNorm === in10) return true;
+  if (en10 && inboundNorm === en10) return true;
+  if (in10 && en10 && in10 === en10) return true;
+
+  return false;
+}
+
+/**
+ * Diagnóstico explícito del gate V3 primary (F2 hotfix).
+ * @param {{ phone: string, rawPhone?: string|null }} input
+ */
+function evaluateV3PrimaryGate(input) {
+  const rawPhone = input?.rawPhone != null ? String(input.rawPhone) : String(input?.phone || '');
+  const phoneArg = String(input?.phone || '');
+  const cfg = getPerseoV3Config();
+  const engineRequested = String(process.env.PERSEO_ENGINE || 'legacy').trim().toLowerCase() || 'legacy';
+
+  const normalizedInbound = normalizeInboundPhoneForV3(phoneArg);
+  const normalizedRaw = normalizeInboundPhoneForV3(rawPhone);
+
+  const base = {
+    v3_enabled: cfg.enabled,
+    v3_shadow_mode: cfg.shadowMode,
+    v3_engine_requested: engineRequested,
+    v3_requires_perseo_engine_v3: false,
+    inbound_raw: rawPhone || null,
+    inbound_normalized: normalizedInbound,
+    inbound_normalized_from_raw: normalizedRaw,
+    allowlist_entries_raw: cfg.qaAllowlist,
+    allowlist_entries_normalized: cfg.qaAllowlist.map((e) => normalizeAllowlistEntry(e)),
+  };
+
+  if (!cfg.enabled) {
+    return {
+      ...base,
+      allowlist_match: false,
+      v3_primary_allowed: false,
+      v3_primary_block_reason: 'v3_disabled',
+      route: 'legacy_primary',
+    };
+  }
+
+  if (!cfg.qaAllowlist.length) {
+    return {
+      ...base,
+      allowlist_match: false,
+      v3_primary_allowed: false,
+      v3_primary_block_reason: 'allowlist_empty',
+      route: 'legacy_primary',
+    };
+  }
+
+  if (!normalizedInbound) {
+    return {
+      ...base,
+      allowlist_match: false,
+      v3_primary_allowed: false,
+      v3_primary_block_reason: 'inbound_phone_unnormalizable',
+      route: 'legacy_primary',
+    };
+  }
+
+  let matchedEntry = null;
+  for (const entry of cfg.qaAllowlist) {
+    const entryNorm = normalizeAllowlistEntry(entry);
+    if (phonesEquivalent(normalizedInbound, entryNorm)) {
+      matchedEntry = entry;
+      break;
+    }
+  }
+
+  if (!matchedEntry) {
+    return {
+      ...base,
+      allowlist_match: false,
+      v3_primary_allowed: false,
+      v3_primary_block_reason: 'allowlist_no_match',
+      route: 'legacy_primary',
+    };
+  }
+
+  return {
+    ...base,
+    allowlist_match: true,
+    allowlist_matched_entry: matchedEntry,
+    v3_primary_allowed: true,
+    v3_primary_block_reason: null,
+    route: 'v3_primary',
+  };
 }
 
 /**
@@ -35,27 +147,24 @@ function getPerseoV3Config() {
 }
 
 function isPhoneOnV3Allowlist(phone) {
-  const cfg = getPerseoV3Config();
-  if (!cfg.enabled || !cfg.qaAllowlist.length) return false;
-  const digits = normalizePhoneForAllowlist(phone);
-  if (!digits) return false;
-  return cfg.qaAllowlist.some((entry) => {
-    const e = normalizePhoneForAllowlist(entry);
-    if (!e) return false;
-    return digits === e || digits.endsWith(e) || e.endsWith(digits);
-  });
+  return evaluateV3PrimaryGate({ phone }).allowlist_match;
 }
 
-/**
- * F2: enrutamiento real solo allowlist + enabled. Resto legacy.
- */
 function shouldRouteInboundToV3Core(phone) {
-  return isPhoneOnV3Allowlist(phone);
+  return evaluateV3PrimaryGate({ phone }).v3_primary_allowed;
+}
+
+function resolveInboundRoutingMode(phone) {
+  return evaluateV3PrimaryGate({ phone }).route;
 }
 
 module.exports = {
   getPerseoV3Config,
   isPhoneOnV3Allowlist,
   shouldRouteInboundToV3Core,
-  normalizePhoneForAllowlist,
+  evaluateV3PrimaryGate,
+  resolveInboundRoutingMode,
+  normalizeInboundPhoneForV3,
+  normalizeAllowlistEntry,
+  splitAllowlist,
 };

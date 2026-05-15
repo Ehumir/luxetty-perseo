@@ -664,6 +664,7 @@ app.post('/webhook', async (req, res) => {
     logEvent('inbound_received', {
       meta_message_id: metaMessageId || null,
       from,
+      from_raw: rawFrom || null,
       message_type: message?.type || null,
       engine_v2_enabled: isEngineV2Enabled(),
     });
@@ -850,7 +851,9 @@ app.post('/webhook', async (req, res) => {
       const v3Try = v3InboundBridge.tryV3PrimaryReply({
         conversationId,
         phone: from,
+        rawPhone: rawFrom,
         text,
+        logEvent,
       });
       if (v3Try.handled) {
         v3PrimaryHandled = true;
@@ -860,11 +863,13 @@ app.post('/webhook', async (req, res) => {
         logEvent('v3_primary_reply', {
           conversation_id: conversationId,
           route: v3Try.route,
+          allowlist_match: v3Try.gate?.allowlist_match,
         });
       } else if (v3Try.fallback) {
         logEvent('v3_primary_fallback_legacy', {
           conversation_id: conversationId,
           reason: v3Try.reason || null,
+          block_reason: v3Try.blockReason || v3Try.gate?.v3_primary_block_reason || null,
         });
       }
 
@@ -1032,8 +1037,10 @@ app.post('/webhook', async (req, res) => {
         v3InboundBridge.maybeRunV3Shadow({
           conversationId,
           phone: from,
+          rawPhone: rawFrom,
           text,
           legacyReply: reply,
+          logEvent,
         });
       } catch (v3ShadowErr) {
         console.error('v3_shadow_fatal', v3ShadowErr);
