@@ -1,13 +1,9 @@
 'use strict';
 
-const { CONVERSATION_STAGES, ALL_STAGES, IDENTITY_STATES } = require('../types/constants');
+const { CONVERSATION_STAGES, ALL_STAGES, IDENTITY_STATES, CONVERSATION_GOALS } = require('../types/constants');
 
 /**
- * Transiciones deterministas mínimas (F1). Sin OpenAI.
- * @param {string} currentStage
- * @param {import('../types/conversationDecision').ConversationDecision} decision
- * @param {import('../types/conversationState').ConversationState} state
- * @returns {string}
+ * F2 — transiciones hasta PROPERTY_CONTEXT (sin saltar a CRM).
  */
 function resolveNextStage(currentStage, decision, state) {
   const cur = ALL_STAGES.has(currentStage) ? currentStage : CONVERSATION_STAGES.NEW;
@@ -19,34 +15,46 @@ function resolveNextStage(currentStage, decision, state) {
   }
 
   if (cur === CONVERSATION_STAGES.UNDERSTANDING) {
-    if (state.leadFlow === 'offer' || state.leadFlow === 'demand') {
-      if (decision.shouldAskName || state.identityState === IDENTITY_STATES.UNKNOWN) return CONVERSATION_STAGES.IDENTITY_PENDING;
+    if (state.conversationGoal || state.leadFlow) {
+      if (
+        !state.collectedFields?.fullName &&
+        (decision.shouldAskName || state.identityState === IDENTITY_STATES.UNKNOWN)
+      ) {
+        return CONVERSATION_STAGES.IDENTITY_PENDING;
+      }
       return CONVERSATION_STAGES.QUALIFYING;
     }
     return CONVERSATION_STAGES.UNDERSTANDING;
   }
 
   if (cur === CONVERSATION_STAGES.IDENTITY_PENDING) {
-    if (state.collectedFields && state.collectedFields.fullName) return CONVERSATION_STAGES.QUALIFYING;
+    if (state.collectedFields?.fullName) return CONVERSATION_STAGES.QUALIFYING;
     return CONVERSATION_STAGES.IDENTITY_PENDING;
   }
 
   if (cur === CONVERSATION_STAGES.QUALIFYING) {
-    if (state.locationText && state.expectedPrice != null && Number.isFinite(state.expectedPrice)) {
-      return CONVERSATION_STAGES.READY_FOR_CRM;
-    }
-    if (state.activeProperty && (state.activeProperty.listingCode || state.activeProperty.id)) {
+    const sell = state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY;
+    const buy = state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY;
+    if (sell && state.locationText && state.expectedPrice != null) {
       return CONVERSATION_STAGES.PROPERTY_CONTEXT;
+    }
+    if (buy && state.locationText && state.budget != null && state.bedrooms != null) {
+      return CONVERSATION_STAGES.PROPERTY_CONTEXT;
+    }
+    if (buy && state.locationText && state.budget != null) {
+      return CONVERSATION_STAGES.QUALIFYING;
     }
     return CONVERSATION_STAGES.QUALIFYING;
   }
 
   if (cur === CONVERSATION_STAGES.PROPERTY_CONTEXT) {
-    return CONVERSATION_STAGES.QUALIFYING;
+    return CONVERSATION_STAGES.PROPERTY_CONTEXT;
   }
 
   if (decision.nextSuggestedStage && ALL_STAGES.has(decision.nextSuggestedStage)) {
-    return decision.nextSuggestedStage;
+    const ns = decision.nextSuggestedStage;
+    if (ns === CONVERSATION_STAGES.READY_FOR_CRM) return CONVERSATION_STAGES.PROPERTY_CONTEXT;
+    return ns;
   }
 
   return cur;

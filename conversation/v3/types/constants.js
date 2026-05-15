@@ -33,12 +33,48 @@ const FRUSTRATION_STATES = Object.freeze({
   ELEVATED: 'elevated',
 });
 
+/** @enum {string} */
+const V3_INTENT = Object.freeze({
+  GREETING: 'GREETING',
+  SELL_PROPERTY: 'SELL_PROPERTY',
+  BUY_PROPERTY: 'BUY_PROPERTY',
+  RENT_PROPERTY: 'RENT_PROPERTY',
+  IDENTITY_CAPTURE: 'IDENTITY_CAPTURE',
+  LOCATION_CAPTURE: 'LOCATION_CAPTURE',
+  SELLER_PRICE: 'SELLER_PRICE',
+  BUYER_BUDGET: 'BUYER_BUDGET',
+  BEDROOMS_CAPTURE: 'BEDROOMS_CAPTURE',
+  FRUSTRATION: 'FRUSTRATION',
+  UNKNOWN: 'UNKNOWN',
+});
+
+/** @enum {string} */
+const CONVERSATION_GOALS = Object.freeze({
+  SELL_PROPERTY: 'SELL_PROPERTY',
+  BUY_PROPERTY: 'BUY_PROPERTY',
+  RENT_PROPERTY: 'RENT_PROPERTY',
+});
+
 const ALL_STAGES = new Set(Object.values(CONVERSATION_STAGES));
+
+const FORBIDDEN_COMPOSER_PATTERNS = [
+  /\btu house\b/i,
+  /\bhouse\b/i,
+  /dime en una frase/i,
+  /en una linea/i,
+  /en una línea/i,
+  /que necesitas revisar/i,
+  /listo,\s*retomo/i,
+  /listo retomo/i,
+];
 
 module.exports = {
   CONVERSATION_STAGES,
   IDENTITY_STATES,
   CONVERSATION_MODE,
   FRUSTRATION_STATES,
+  V3_INTENT,
+  CONVERSATION_GOALS,
   ALL_STAGES,
+  FORBIDDEN_COMPOSER_PATTERNS,
 };

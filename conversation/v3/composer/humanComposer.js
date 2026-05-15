@@ -1,0 +1,239 @@
+'use strict';
+
+const { cleanSpaces } = require('../../../utils/text');
+const {
+  CONVERSATION_GOALS,
+  V3_INTENT,
+  CONVERSATION_STAGES,
+  IDENTITY_STATES,
+  FORBIDDEN_COMPOSER_PATTERNS,
+} = require('../types/constants');
+
+function formatMoneyMx(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return '';
+  try {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: 'MXN',
+      maximumFractionDigits: 0,
+    }).format(n);
+  } catch {
+    return `$${Math.round(n).toLocaleString('es-MX')}`;
+  }
+}
+
+function assertComposerQuality(text) {
+  const s = String(text || '');
+  for (const p of FORBIDDEN_COMPOSER_PATTERNS) {
+    if (p.test(s)) return false;
+  }
+  return s.length > 0;
+}
+
+function firstName(state) {
+  const full = cleanSpaces(String(state.collectedFields?.fullName || ''));
+  if (!full) return null;
+  return full.split(/\s+/)[0];
+}
+
+/**
+ * @param {{ state: object, decision: object, context?: object }} input
+ */
+function composeHumanResponse(input) {
+  const state = input.state || {};
+  const decision = input.decision || {};
+  const intent = decision.detectedIntent;
+
+  if (intent === V3_INTENT.FRUSTRATION) {
+    return {
+      responseText:
+        'Tienes razón, déjame hacerlo más claro. Cuéntame en pocas palabras qué quieres lograr y seguimos paso a paso.',
+      followUpQuestion: null,
+      toneFlags: { empathetic: true, mexicanSpanish: true },
+    };
+  }
+
+  if (intent === V3_INTENT.GREETING) {
+    return {
+      responseText: 'Hola, con gusto te ayudo. ¿Buscas vender, comprar o rentar una propiedad?',
+      followUpQuestion: null,
+      toneFlags: { consultive: true },
+    };
+  }
+
+  const nm = firstName(state);
+  const sell = state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
+  const buy = state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY || state.leadFlow === 'demand';
+
+  if (intent === V3_INTENT.SELL_PROPERTY) {
+    if (!nm) {
+      return {
+        responseText: 'Claro, te apoyo con la venta de tu casa. Para orientarte mejor, ¿cómo te llamas?',
+        followUpQuestion: '¿Cómo te llamas?',
+        toneFlags: { consultive: true },
+      };
+    }
+    return {
+      responseText: `Perfecto, ${nm}. Te apoyo con la venta. ¿En qué zona está la propiedad?`,
+      followUpQuestion: '¿En qué zona está la propiedad?',
+      toneFlags: { consultive: true },
+    };
+  }
+
+  if (intent === V3_INTENT.IDENTITY_CAPTURE && nm) {
+    if (sell) {
+      if (state.locationText) {
+        return {
+          responseText: `Claro, ${nm}. Tomé la zona (${state.locationText}). ¿Tienes un precio esperado de venta?`,
+          followUpQuestion: '¿Tienes un precio esperado de venta?',
+          toneFlags: { consultive: true },
+        };
+      }
+      return {
+        responseText: `Perfecto, ${nm}. Te apoyo con la venta. ¿La propiedad está en Cumbres Monterrey o García?`,
+        followUpQuestion: '¿La propiedad está en Cumbres Monterrey o García?',
+        toneFlags: { consultive: true },
+      };
+    }
+    if (buy) {
+      return {
+        responseText: `Gracias, ${nm}. Sigo con tu búsqueda. ¿Qué presupuesto aproximado manejas?`,
+        followUpQuestion: '¿Qué presupuesto aproximado manejas?',
+        toneFlags: { consultive: true },
+      };
+    }
+  }
+
+  if (intent === V3_INTENT.LOCATION_CAPTURE && sell) {
+    const zone = state.locationText || 'esa zona';
+    if (nm) {
+      if (state.expectedPrice != null) {
+        return {
+          responseText: `Listo, ${nm}. Con la venta en ${zone} y alrededor de ${formatMoneyMx(state.expectedPrice)}, ¿la propiedad está habitada, rentada o libre?`,
+          followUpQuestion: '¿Está habitada, rentada o libre?',
+          toneFlags: { consultive: true },
+        };
+      }
+      return {
+        responseText: `Perfecto, ${nm}. Tomé la zona (${zone}). ¿Tienes un precio esperado de venta?`,
+        followUpQuestion: '¿Tienes un precio esperado de venta?',
+        toneFlags: { consultive: true },
+      };
+    }
+    return {
+      responseText: `Tomé la zona (${zone}). ¿Cómo te llamas para seguir con la venta?`,
+      followUpQuestion: '¿Cómo te llamas?',
+      toneFlags: { consultive: true },
+    };
+  }
+
+  if (intent === V3_INTENT.SELLER_PRICE && sell) {
+    const pres = formatMoneyMx(state.expectedPrice);
+    const zone = state.locationText ? ` en ${state.locationText}` : '';
+    if (nm) {
+      return {
+        responseText: `Entendido, ${nm}. Con un precio esperado de ${pres}${zone}, ¿es casa, departamento o terreno?`,
+        followUpQuestion: '¿Qué tipo de inmueble es?',
+        toneFlags: { consultive: true },
+      };
+    }
+    return {
+      responseText: `Tomé el precio esperado (${pres}). ¿Cómo te llamas para seguir con la venta?`,
+      followUpQuestion: '¿Cómo te llamas?',
+      toneFlags: { consultive: true },
+    };
+  }
+
+  if (intent === V3_INTENT.BUY_PROPERTY || (buy && intent === V3_INTENT.LOCATION_CAPTURE)) {
+    const zone = state.locationText || 'esa zona';
+    if (!nm) {
+      return {
+        responseText: `Te ayudo a buscar en ${zone}. ¿Cómo te llamas?`,
+        followUpQuestion: '¿Cómo te llamas?',
+        toneFlags: { consultive: true },
+      };
+    }
+    if (state.budget == null) {
+      return {
+        responseText: `Perfecto, ${nm}. Busco opciones en ${zone}. ¿Qué presupuesto aproximado manejas?`,
+        followUpQuestion: '¿Qué presupuesto aproximado manejas?',
+        toneFlags: { consultive: true },
+      };
+    }
+    if (state.bedrooms == null) {
+      return {
+        responseText: `Con ${formatMoneyMx(state.budget)} en ${zone}, ¿cuántas recámaras necesitas?`,
+        followUpQuestion: '¿Cuántas recámaras necesitas?',
+        toneFlags: { consultive: true },
+      };
+    }
+    return {
+      responseText: `Gracias, ${nm}. Con ${state.bedrooms} recámaras y ${formatMoneyMx(state.budget)} en ${zone}, ¿prefieres que un asesor valide inventario contigo?`,
+      followUpQuestion: '¿Validamos inventario con un asesor?',
+      toneFlags: { consultive: true },
+    };
+  }
+
+  if (intent === V3_INTENT.BUYER_BUDGET && buy) {
+    const zone = state.locationText || 'esa zona';
+    if (nm) {
+      return {
+        responseText: `Gracias, ${nm}. Con ${formatMoneyMx(state.budget)} en ${zone}, ¿cuántas recámaras buscas?`,
+        followUpQuestion: '¿Cuántas recámaras buscas?',
+        toneFlags: { consultive: true },
+      };
+    }
+    return {
+      responseText: `Tomé tu presupuesto en ${zone}. ¿Cómo te llamas?`,
+      followUpQuestion: '¿Cómo te llamas?',
+      toneFlags: { consultive: true },
+    };
+  }
+
+  if (intent === V3_INTENT.BEDROOMS_CAPTURE && buy && nm) {
+    return {
+      responseText: `Perfecto, ${nm}. Con ${state.bedrooms} recámaras en ${state.locationText || 'esa zona'}, ¿quieres que un asesor te confirme opciones reales?`,
+      followUpQuestion: '¿Te conecto con un asesor?',
+      toneFlags: { consultive: true },
+    };
+  }
+
+  if (sell && state.conversationStage === CONVERSATION_STAGES.QUALIFYING && nm && state.locationText && state.expectedPrice) {
+    return {
+      responseText: `Sigo contigo, ${nm}. Con la venta en ${state.locationText}, ¿el inmueble está habitado o libre?`,
+      followUpQuestion: '¿Está habitado o libre?',
+      toneFlags: { consultive: true },
+    };
+  }
+
+  if (sell && nm) {
+    return {
+      responseText: `Claro, ${nm}. Te apoyo con la venta. ¿Qué dato quieres afinar: zona, precio o tipo de inmueble?`,
+      followUpQuestion: null,
+      toneFlags: { consultive: true },
+    };
+  }
+
+  return {
+    responseText: 'Te escucho. ¿Me cuentas si buscas vender, comprar o rentar?',
+    followUpQuestion: null,
+    toneFlags: { consultive: true },
+  };
+}
+
+function composeHumanReplyText(input) {
+  const out = composeHumanResponse(input);
+  const parts = [out.responseText, out.followUpQuestion].filter(Boolean);
+  const merged = parts.join(' ').replace(/\s+/g, ' ').trim();
+  if (!assertComposerQuality(merged)) {
+    return 'Con gusto te ayudo. Cuéntame si buscas vender, comprar o rentar una propiedad.';
+  }
+  return merged;
+}
+
+module.exports = {
+  composeHumanResponse,
+  composeHumanReplyText,
+  assertComposerQuality,
+};

@@ -3,11 +3,15 @@
 const { getPerseoV3Config } = require('../../../config/perseoV3Flags');
 
 const EVENTS = Object.freeze({
-  STATE_TRANSITION: 'state_transition',
-  DECISION: 'decision',
+  STATE_TRANSITION: 'stage_transition',
+  DECISION: 'interpreter_decision',
   RULE_BLOCK: 'rule_block',
   STAGE_CHANGE: 'stage_change',
   IDENTITY_CHANGE: 'identity_change',
+  GOAL_LOCKED: 'goal_locked',
+  FRUSTRATION: 'frustration_detected',
+  COMPOSER: 'composer_output',
+  SHADOW_DIFF: 'shadow_diff',
 });
 
 /**
