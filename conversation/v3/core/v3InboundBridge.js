@@ -1,44 +1,48 @@
 'use strict';
 
-const { getPerseoV3Config } = require('../../../config/perseoV3Flags');
+const {
+  getPerseoV3Config,
+  evaluateV3PrimaryGate,
+  resolveInboundRoutingMode,
+} = require('../../../config/perseoV3Flags');
 const { processV3Turn } = require('./v3Runtime');
 const { runV3ShadowPass } = require('./shadowRuntime');
 const { clearSession } = require('./sessionStore');
 const { parseSprint1StrictCommand } = require('../../qaSprint1Commands');
+const { v3Log } = require('./v3Logger');
 
-function normalizePhoneForAllowlist(phone) {
-  return String(phone || '').replace(/\D/g, '').replace(/^0+/, '');
-}
-
-function isPhoneOnV3Allowlist(phone) {
-  const cfg = getPerseoV3Config();
-  if (!cfg.enabled || !cfg.qaAllowlist.length) return false;
-  const digits = normalizePhoneForAllowlist(phone);
-  if (!digits) return false;
-  return cfg.qaAllowlist.some((entry) => {
-    const e = normalizePhoneForAllowlist(entry);
-    if (!e) return false;
-    return digits === e || digits.endsWith(e) || e.endsWith(digits);
+/**
+ * @param {{ conversationId: string, phone: string, rawPhone?: string, text: string, logEvent?: Function }} input
+ */
+function tryV3PrimaryReply(input) {
+  const gate = evaluateV3PrimaryGate({
+    phone: input.phone,
+    rawPhone: input.rawPhone,
   });
-}
 
-/**
- * @returns {'v3_primary'|'legacy_primary'|'disabled'}
- */
-function resolveInboundRoutingMode(phone) {
-  const cfg = getPerseoV3Config();
-  if (!cfg.enabled) return 'legacy_primary';
-  if (isPhoneOnV3Allowlist(phone)) return 'v3_primary';
-  return 'legacy_primary';
-}
+  v3Log('v3_primary_gate', {
+    conversation_id: input.conversationId,
+    allowlist_match: gate.allowlist_match,
+    v3_primary_allowed: gate.v3_primary_allowed,
+    v3_primary_block_reason: gate.v3_primary_block_reason,
+    inbound_normalized: gate.inbound_normalized,
+    allowlist_matched_entry: gate.allowlist_matched_entry || null,
+  });
 
-/**
- * @param {{ conversationId: string, phone: string, text: string }} input
- */
-async function tryV3PrimaryReply(input) {
-  const route = resolveInboundRoutingMode(input.phone);
-  if (route !== 'v3_primary') {
-    return { handled: false, route };
+  if (typeof input.logEvent === 'function') {
+    input.logEvent('v3_primary_gate', {
+      conversation_id: input.conversationId,
+      ...gate,
+    });
+  }
+
+  if (!gate.v3_primary_allowed || gate.route !== 'v3_primary') {
+    return {
+      handled: false,
+      route: gate.route,
+      gate,
+      blockReason: gate.v3_primary_block_reason,
+    };
   }
 
   const cmd = parseSprint1StrictCommand(input.text);
@@ -54,35 +58,75 @@ async function tryV3PrimaryReply(input) {
       reset: cmd === 'reset',
     });
     if (!result.ok && result.fallbackToLegacy) {
-      return { handled: false, route, fallback: true, reason: 'rule_blocked' };
+      return {
+        handled: false,
+        route: 'v3_primary',
+        gate,
+        fallback: true,
+        reason: 'rule_blocked',
+        blockReason: 'v3_turn_rule_blocked',
+      };
     }
     if (!result.ok || !result.reply) {
-      return { handled: false, route, fallback: true, reason: 'empty_reply' };
+      return {
+        handled: false,
+        route: 'v3_primary',
+        gate,
+        fallback: true,
+        reason: 'empty_reply',
+        blockReason: 'v3_turn_empty_reply',
+      };
     }
     return {
       handled: true,
-      route,
+      route: 'v3_primary',
+      gate,
       reply: result.reply,
-      responseSource: result.responseSource,
+      responseSource: result.responseSource || 'v3_core_f2',
       v3State: result.state,
       skipLegacyCrm: true,
     };
   } catch (err) {
     console.error('v3_primary_fatal', err);
-    return { handled: false, route, fallback: true, reason: 'exception' };
+    return {
+      handled: false,
+      route: 'v3_primary',
+      gate,
+      fallback: true,
+      reason: 'exception',
+      blockReason: 'v3_turn_exception',
+    };
   }
 }
 
-function maybeRunV3Shadow({ conversationId, phone, text, legacyReply }) {
+function maybeRunV3Shadow({ conversationId, phone, rawPhone, text, legacyReply, logEvent }) {
   const cfg = getPerseoV3Config();
   if (!cfg.shadowMode) return null;
-  if (resolveInboundRoutingMode(phone) === 'v3_primary') return null;
+
+  const gate = evaluateV3PrimaryGate({ phone, rawPhone });
+  if (gate.v3_primary_allowed) {
+    v3Log('v3_shadow_skipped_primary_allowlist', {
+      conversation_id: conversationId,
+      inbound_normalized: gate.inbound_normalized,
+    });
+    return null;
+  }
+
+  if (typeof logEvent === 'function') {
+    logEvent('v3_shadow_run', {
+      conversation_id: conversationId,
+      allowlist_match: gate.allowlist_match,
+      block_reason: gate.v3_primary_block_reason,
+    });
+  }
+
   return runV3ShadowPass({ conversationId, phone, text, legacyReply });
 }
 
 module.exports = {
   resolveInboundRoutingMode,
-  isPhoneOnV3Allowlist,
+  isPhoneOnV3Allowlist: (phone) => evaluateV3PrimaryGate({ phone }).allowlist_match,
+  evaluateV3PrimaryGate,
   tryV3PrimaryReply,
   maybeRunV3Shadow,
   clearSession,
