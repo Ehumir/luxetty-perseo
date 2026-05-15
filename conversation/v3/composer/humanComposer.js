@@ -132,6 +132,7 @@ function composeHumanResponse(input) {
     return {
       responseText: `Perfecto, ${nm}. Te apoyo con la venta. ¿En qué zona está la propiedad?`,
       followUpQuestion: '¿En qué zona está la propiedad?',
+      awaitingField: 'location_text',
       toneFlags: { consultive: true },
     };
   }
@@ -146,8 +147,9 @@ function composeHumanResponse(input) {
         };
       }
       return {
-        responseText: `Perfecto, ${nm}. Te apoyo con la venta. ¿La propiedad está en Cumbres Monterrey o García?`,
-        followUpQuestion: '¿La propiedad está en Cumbres Monterrey o García?',
+        responseText: `Perfecto, ${nm}. Te apoyo con la venta. ¿En qué zona está la propiedad?`,
+        followUpQuestion: '¿En qué zona está la propiedad?',
+        awaitingField: 'location_text',
         toneFlags: { consultive: true },
       };
     }
@@ -171,7 +173,8 @@ function composeHumanResponse(input) {
       }
       return {
         responseText: `Perfecto, ${nm}. Tomé la zona (${zone}). ¿Tienes un precio esperado de venta?`,
-        followUpQuestion: '¿Tienes un precio esperado de venta?',
+        followUpQuestion: null,
+        awaitingField: 'expected_price',
         toneFlags: { consultive: true },
       };
     }
@@ -286,6 +289,7 @@ function composeHumanResponse(input) {
       return {
         responseText: `Perfecto, ${nm}. Te apoyo con la venta. ¿En qué zona está la propiedad?`,
         followUpQuestion: null,
+        awaitingField: 'location_text',
         toneFlags: { consultive: true },
       };
     }

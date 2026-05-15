@@ -8,6 +8,7 @@ const { normalizeLocationFromUserText } = require('./locationNormalizer');
 const { shouldAcceptAsIdentityName } = require('./nameHeuristics');
 const { parsePropertyType } = require('./propertyTypeParser');
 const { parseOccupancyStatus } = require('./occupancyParser');
+const { tryParseSellLocation } = require('./sellLocationCapture');
 
 function parseMoneyAmount(text) {
   const t = normalizeText(text);
@@ -84,6 +85,19 @@ function interpretUserMessage(state, text) {
   /** @type {Partial<import('../types/conversationState').ConversationState>} */
   const patch = { lastUserText: raw };
 
+  const sellCtx =
+    state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
+  const sellLocation = tryParseSellLocation(state, raw);
+  if (sellLocation) {
+    decision.detectedIntent = V3_INTENT.LOCATION_CAPTURE;
+    decision.confidence = 0.9;
+    patch.locationText = sellLocation;
+    patch.awaitingField = null;
+    decision.extractedEntities.locationText = sellLocation;
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
   const fr = detectFrustration(text);
   if (fr.isFrustrated) {
     const sellCtxFr =
@@ -99,8 +113,6 @@ function interpretUserMessage(state, text) {
     return { patch, decision };
   }
 
-  const sellCtx =
-    state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
   const occupancyParsed = parseOccupancyStatus(text);
   if (occupancyParsed && sellCtx) {
     decision.detectedIntent = V3_INTENT.OCCUPANCY_CAPTURE;
@@ -215,15 +227,6 @@ function interpretUserMessage(state, text) {
     decision.detectedIntent = V3_INTENT.BEDROOMS_CAPTURE;
     decision.confidence = 0.85;
     patch.bedrooms = br;
-    decision.explicitFlowSwitch = false;
-    return { patch, decision };
-  }
-
-  if (t.includes('cumbres') || t.includes('zona') || t.includes('colonia') || t.includes('municipio') || t.includes('esta en ') || t.includes('está en ')) {
-    decision.detectedIntent = V3_INTENT.LOCATION_CAPTURE;
-    decision.confidence = 0.85;
-    patch.locationText = normalizeLocationFromUserText(raw);
-    decision.extractedEntities.locationText = patch.locationText;
     decision.explicitFlowSwitch = false;
     return { patch, decision };
   }

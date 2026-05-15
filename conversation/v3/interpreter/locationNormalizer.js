@@ -17,6 +17,11 @@ function normalizeLocationFromUserText(raw) {
   const lower = normalizeText(t);
   if (lower.includes('cumbres')) return 'Cumbres';
 
+  const queEn = t.match(/\bque\s+en\s+(.+)$/i);
+  if (queEn && queEn[1]) {
+    t = cleanSpaces(queEn[1]);
+  }
+
   const prefixPatterns = [
     /^(?:no,?\s*)?(?:esta|está|ubicada|ubicado|queda|se encuentra|localizada|localizado)\s+en\s+(.+)$/i,
     /^(?:en|la zona es|zona|colonia|municipio)\s+(.+)$/i,
