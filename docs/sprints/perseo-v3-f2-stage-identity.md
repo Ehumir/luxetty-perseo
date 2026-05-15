@@ -68,6 +68,14 @@ Vale como 8 millones
 - Allowlist mal configurada podría exponer V3 a número incorrecto
 - Fallback a legacy si V3 falla o rule guard bloquea
 
+## F2.2 — Robustez nombre + tipo inmueble
+
+- **Nombre:** solo se captura en `IDENTITY_PENDING` / tras preguntar nombre; `Nada`, `ya te dije`, etc. no pisan `Jorge`.
+- **Tipo:** `Quiero vender mi casa` → `property_type: house`; `Ya te dije que es casa` confirma sin loop.
+- **Composer:** sin fallback “¿qué dato quieres afinar?” cuando ya hay zona + precio + tipo; avanza a ocupación.
+- **Frustración:** con contexto completo responde resumen + pregunta de ocupación, no repite precio.
+- **`!state`:** incluye `property_type` y `expected_price`.
+
 ## F2.1 — State + Composer (hotfix)
 
 - **Bridge V3 → `ai_state`:** cada turno V3 primary persiste `lead_flow`, `full_name`, `location_text`, stage, goal, identity en Supabase.

@@ -5,6 +5,8 @@ const { createEmptyDecision } = require('../types/conversationDecision');
 const { CONVERSATION_STAGES, V3_INTENT, CONVERSATION_GOALS } = require('../types/constants');
 const { detectFrustration } = require('./frustrationDetector');
 const { normalizeLocationFromUserText } = require('./locationNormalizer');
+const { shouldAcceptAsIdentityName } = require('./nameHeuristics');
+const { parsePropertyType } = require('./propertyTypeParser');
 
 function parseMoneyAmount(text) {
   const t = normalizeText(text);
@@ -44,7 +46,23 @@ function isExplicitFlowSwitchToSell(text) {
 
 function isShortAck(text) {
   const t = normalizeText(text);
-  return t === 'si' || t === 'sí' || t === 'ok' || t === 'vale' || t === 'claro';
+  return (
+    t === 'si' ||
+    t === 'sí' ||
+    t === 'ok' ||
+    t === 'vale' ||
+    t === 'claro' ||
+    t === 'nada' ||
+    t === 'no' ||
+    t === 'ya' ||
+    t === 'bueno'
+  );
+}
+
+function applyPropertyTypePatch(patch, type) {
+  if (!type) return;
+  patch.propertyType = type;
+  patch.collectedFields = { ...(patch.collectedFields || {}), propertyType: type };
 }
 
 /**
@@ -60,6 +78,12 @@ function interpretUserMessage(state, text) {
 
   const fr = detectFrustration(text);
   if (fr.isFrustrated) {
+    const sellCtxFr =
+      state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
+    const propOnFrustration = parsePropertyType(text);
+    if (sellCtxFr && propOnFrustration) {
+      applyPropertyTypePatch(patch, propOnFrustration);
+    }
     decision.detectedIntent = V3_INTENT.FRUSTRATION;
     decision.confidence = 0.9;
     decision.shouldEscalateHuman = false;
@@ -115,6 +139,7 @@ function interpretUserMessage(state, text) {
     patch.conversationGoal = CONVERSATION_GOALS.SELL_PROPERTY;
     patch.leadFlow = 'offer';
     patch.operationType = 'sale';
+    applyPropertyTypePatch(patch, parsePropertyType(text) || 'house');
     decision.shouldAskName = !state.collectedFields?.fullName;
     decision.nextSuggestedStage = state.collectedFields?.fullName
       ? CONVERSATION_STAGES.QUALIFYING
@@ -137,27 +162,28 @@ function interpretUserMessage(state, text) {
     return { patch, decision };
   }
 
+  const sellCtxEarly =
+    state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
+  const propTypeEarly = parsePropertyType(text);
+  if (propTypeEarly && sellCtxEarly) {
+    decision.detectedIntent = V3_INTENT.PROPERTY_TYPE_CAPTURE;
+    decision.confidence = 0.9;
+    applyPropertyTypePatch(patch, propTypeEarly);
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
   const nameMatch = raw.match(/^(?:soy|me llamo|mi nombre es)\s+(.+)/i);
-  const looksLikeName =
-    state.conversationGoalLocked &&
-    !/\d/.test(raw) &&
-    raw.trim().split(/\s+/).filter(Boolean).length <= 3 &&
-    raw.trim().length >= 2 &&
-    raw.trim().length <= 48 &&
-    !t.includes('cumbres') &&
-    !t.includes('millon') &&
-    !t.includes('millón') &&
-    !t.includes('mdp') &&
-    !t.includes('vender') &&
-    !t.includes('busco') &&
-    !t.includes('casa');
-  if (nameMatch || looksLikeName) {
-    const nm = cleanSpaces(nameMatch ? nameMatch[1] : raw);
+  const explicitName = !!nameMatch;
+  if (
+    shouldAcceptAsIdentityName(state, explicitName ? nameMatch[1] : raw, { explicitNameMatch: explicitName })
+  ) {
+    const nm = cleanSpaces(explicitName ? nameMatch[1] : raw);
     if (nm) {
       decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
       decision.confidence = 0.92;
       decision.extractedEntities.fullName = nm;
-      patch.collectedFields = { fullName: nm };
+      patch.collectedFields = { ...(patch.collectedFields || {}), fullName: nm };
       decision.shouldAskName = false;
       decision.explicitFlowSwitch = false;
       return { patch, decision };
