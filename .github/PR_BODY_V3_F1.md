@@ -4,6 +4,8 @@
 
 Implementar **PERSEO Conversational Core V3** como módulos **reales y testeables** bajo `conversation/v3/`, con contratos (`ConversationState`, `ConversationDecision`), rule guard, stage engine, identidad, intérprete **mock**, composer **stub**, logger y shadow harness — **sin** cablear el webhook, **sin** OpenAI real, **sin** CRM, **sin** cambiar respuestas legacy.
 
+**Base:** `main` con **V3-F0** ya mergeado (#51). Rama rebaseada sobre `origin/main` (sin conflictos pendientes).
+
 ## Alcance
 
 - Árbol `conversation/v3/{types,state,rules,stages,identity,interpreter,composer,crm,core,contracts,qa}` + `index.js` barrel.
@@ -18,7 +20,8 @@ Implementar **PERSEO Conversational Core V3** como módulos **reales y testeable
 
 ## Pruebas
 
-- `npm test` — 499 passed (incl. V3).
+- `npm test` — 502 passed (incl. V3 + tests F0).
+- `node scripts/lint.js` — LINT_OK.
 
 ## Riesgos
 
