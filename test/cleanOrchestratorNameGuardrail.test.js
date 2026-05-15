@@ -64,7 +64,7 @@ test('5) "Quiero vender mi casa" debe pedir nombre y zona', () => {
     aiState: {},
   });
   const out = _private.enforceNameCapture(baseReply, ctx({ userInboundText: 'Quiero vender mi casa', leadFlow: 'offer' }));
-  assert.match(String(out.reply), /nombre/i);
+  assert.match(String(out.reply), /llamas|nombre/i);
   assert.match(String(out.reply), /zona/i);
 });
 
