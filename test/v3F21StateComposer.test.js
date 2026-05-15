@@ -16,13 +16,13 @@ const { formatStateSummary } = require('../conversation/qaSprint1Commands');
 
 function runSellScript(conversationId) {
   clearV3Session(conversationId);
-  const turns = [
-    'Hola',
-    'Quiero vender mi casa',
-    'Jorge',
-    'Está en San Pedro',
-    '8 millones',
-  ];
+    const turns = [
+      'Hola',
+      'Quiero vender mi casa',
+      'Jorge',
+      'No, está en San Pedro',
+      '8 millones',
+    ];
   let last;
   for (const text of turns) {
     last = processV3Turn({ conversationId, phone: '5218119086196', text });
@@ -36,6 +36,10 @@ describe('V3-F2.1 location normalization', () => {
     assert.equal(normalizeLocationFromUserText('Está en San Pedro'), 'San Pedro');
     assert.equal(normalizeLocationFromUserText('esta en san pedro'), 'san pedro');
   });
+
+  it('No, está en San Pedro → San Pedro', () => {
+    assert.equal(normalizeLocationFromUserText('No, está en San Pedro'), 'San Pedro');
+  });
 });
 
 describe('V3-F2.1 composer dedupe', () => {
@@ -46,6 +50,22 @@ describe('V3-F2.1 composer dedupe', () => {
     });
     const count = (reply.match(/cómo te llamas/gi) || []).length;
     assert.equal(count, 1, reply);
+  });
+
+  it('no duplica tipo de inmueble tras precio (SELLER_PRICE)', () => {
+    const reply = composeHumanReplyText({
+      state: {
+        conversationGoal: CONVERSATION_GOALS.SELL_PROPERTY,
+        leadFlow: 'offer',
+        locationText: 'San Pedro',
+        expectedPrice: 8_000_000,
+        collectedFields: { fullName: 'Jorge' },
+      },
+      decision: { detectedIntent: 'SELLER_PRICE' },
+    });
+    const typeQ = (reply.match(/tipo de inmueble|casa, departamento o terreno/gi) || []).length;
+    assert.equal(typeQ, 1, reply);
+    assert.equal((reply.match(/¿/g) || []).length, 1, reply);
   });
 
   it('no duplica pregunta de precio esperado', () => {

@@ -232,7 +232,8 @@ function composeHumanReplyText(input) {
   const out = composeHumanResponse(input);
   let merged = cleanSpaces(out.responseText || '');
   const followUp = cleanSpaces(out.followUpQuestion || '');
-  if (followUp) {
+  const bodyHasQuestion = /¿/.test(merged);
+  if (followUp && !bodyHasQuestion) {
     const bodyNorm = normalizeQuestionForDedupe(merged);
     const fuNorm = normalizeQuestionForDedupe(followUp);
     if (!fuNorm || !bodyNorm.includes(fuNorm)) {
