@@ -43,6 +43,7 @@ const propertyInventoryService = require('./services/propertyInventoryService');
 const leadEntryPointRouter = require('./conversation/leadEntryPointRouter');
 const nameFirstGuardrail = require('./conversation/nameFirstGuardrail');
 const antiLoopGuardrails = require('./conversation/antiLoopGuardrails');
+const r0ContextContinuity = require('./conversation/r0ContextContinuity');
 const { extractPossibleName } = require('./conversation/parsers');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
@@ -396,6 +397,7 @@ function buildConsultiveFallbackReply({
   if (
     contextualMemoryResolver.isOptionsRequestText(text) &&
     aiState?.lead_flow === 'demand' &&
+    !r0ContextContinuity.isR0StickySaleCaptureThread(aiState) &&
     contextualMemoryResolver.hasOperationalContext(aiState)
   ) {
     const demandReply = contextualMemoryResolver.buildContextualDemandReply({
@@ -408,6 +410,18 @@ function buildConsultiveFallbackReply({
       demandReply ||
       'Claro, te ayudo. Dime un poco más de lo que buscas y te oriento.'
     );
+  }
+
+  if (
+    r0ContextContinuity.isR0StickySaleCaptureThread(aiState) &&
+    !r0ContextContinuity.explicitDemandSearchIntent(text)
+  ) {
+    return r0ContextContinuity.buildSaleCaptiveContinuityReply({
+      text,
+      aiState,
+      loc,
+      hasValidHumanName: hasName,
+    });
   }
 
   if (signals?.lead_flow === 'offer' || t.includes('vender') || t.includes('venta') || t.includes('valu')) {
@@ -459,7 +473,12 @@ function consultiveFallbackAwaitingFieldPatch(reply, { signals, aiState, text })
   const flow = signals?.lead_flow || aiState?.lead_flow;
   const loc = cleanSpaces(String(signals?.location_text || aiState?.location_text || ''));
   const t = normalizeText(String(text || ''));
-  const offerish = flow === 'offer' || t.includes('vender') || t.includes('venta') || t.includes('valu');
+  const offerish =
+    flow === 'offer' ||
+    r0ContextContinuity.isR0StickySaleCaptureThread(aiState) ||
+    t.includes('vender') ||
+    t.includes('venta') ||
+    t.includes('valu');
   if (!offerish || loc) return {};
   if (/colonia|municipio|zona.*propiedad|en qué zona|en que zona/i.test(m)) {
     return { awaiting_field: 'location_text' };
@@ -747,7 +766,7 @@ app.post('/webhook', async (req, res) => {
     });
 
     const inboundContext = { media: { type: message?.type || 'text' } };
-    const parsedSignals = mergeSignalsWithMulti(
+    let parsedSignals = mergeSignalsWithMulti(
       parseMessageSignals(text, previousAiState, inboundContext),
       extractMultiSignals(text, previousAiState)
     );
@@ -755,6 +774,8 @@ app.post('/webhook', async (req, res) => {
     leadEntryPointRouter.applyEntryClassificationToSignals(parsedSignals, text, previousAiState);
     const earlyExtractedName = extractPossibleName(text, previousAiState, parsedSignals.owner_relation);
     if (earlyExtractedName) parsedSignals.full_name = earlyExtractedName;
+
+    parsedSignals = r0ContextContinuity.applyR0StickySignalsGuard(previousAiState, parsedSignals, text);
 
     const changeType = detectStateChange(previousAiState, parsedSignals);
     let nextAiState = buildNextState(previousAiState, parsedSignals, changeType);
