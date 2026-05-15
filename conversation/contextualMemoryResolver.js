@@ -222,14 +222,16 @@ function mergeContextualSignals(parsedSignals = {}, previousAiState = {}, nextAi
   const demandish =
     prevSnap.lead_flow === 'demand' || built.lead_flow === 'demand' || sig.lead_flow === 'demand';
   const hasLoc = !!cleanSpaces(String(prevSnap.location_text || built.location_text || sig.location_text || ''));
+  const offerCapture =
+    prevSnap.lead_flow === 'offer' || built.lead_flow === 'offer' || sig.lead_flow === 'offer';
 
   let budget =
     sig.budget_max != null && Number.isFinite(Number(sig.budget_max)) ? Number(sig.budget_max) : null;
-  if (!propertyMode && budget == null && demandish && hasLoc) {
+  if (!propertyMode && budget == null && demandish && hasLoc && !offerCapture) {
     budget = extractMaxPrice(raw);
     if (budget == null) budget = parseMdpBudget(raw);
   }
-  if (budget != null && Number.isFinite(budget)) {
+  if (budget != null && Number.isFinite(budget) && !offerCapture) {
     patch.budget_max = budget;
     patch.budget_currency = sig.budget_currency || built.budget_currency || prevSnap.budget_currency || 'MXN';
     patch.lead_flow = built.lead_flow || prevSnap.lead_flow || sig.lead_flow || 'demand';
@@ -256,7 +258,7 @@ function mergeContextualSignals(parsedSignals = {}, previousAiState = {}, nextAi
     patch.lead_flow = built.lead_flow || prevSnap.lead_flow || 'demand';
   }
 
-  if (usesSavedBudgetPhrase(raw) && prevSnap.budget_max != null && Number.isFinite(Number(prevSnap.budget_max))) {
+  if (usesSavedBudgetPhrase(raw) && prevSnap.budget_max != null && Number.isFinite(Number(prevSnap.budget_max)) && !offerCapture) {
     patch.budget_max = Number(prevSnap.budget_max);
     patch.budget_currency = prevSnap.budget_currency || built.budget_currency || 'MXN';
   }
@@ -304,6 +306,52 @@ function propertyLines(matched = [], max = 3) {
 }
 
 /**
+ * P0.1.1 — Captación/venta: no usar plantillas de demanda/búsqueda.
+ * Si lead_flow es explícitamente `demand`, seguimos permitiendo demanda aunque operation_type venga sucio.
+ */
+function isOfferOrSellerSaleContext(aiState = {}) {
+  const st = aiState && typeof aiState === 'object' ? aiState : {};
+  if (st.lead_flow === 'offer') return true;
+  if (st.lead_flow === 'demand') return false;
+  return st.operation_type === 'sale';
+}
+
+/**
+ * Sustitución contextual para oferta/venta (sin lenguaje de comprador ni “búsqueda”).
+ */
+function buildContextualOfferCaptureReply(context = {}) {
+  const {
+    aiState = {},
+    text = '',
+    hasValidName = false,
+    propertyTypeLabel = 'casa',
+  } = context;
+  const st = aiState && typeof aiState === 'object' ? aiState : {};
+  const loc = cleanSpaces(String(st.location_text || ''));
+  const t = normalizeText(String(text || ''));
+  const typeLabel = propertyTypeLabel && propertyTypeLabel !== 'null' ? propertyTypeLabel : 'propiedad';
+  const wantsOptions = isOptionsRequestText(text);
+  const priceOrValueMention = t.includes('precio') || t.includes('cuesta') || t.includes('valu');
+
+  if (wantsOptions && loc) {
+    return `En captación/venta no manejo un listado de opciones para comprar como en una búsqueda de comprador. Sí puedo ayudarte a ordenar tu ${typeLabel} en ${loc} y canalizar a un asesor para estrategia y valuación sin prometer inventario. ¿Prefieres partir de motivación de venta o de datos del inmueble?`;
+  }
+
+  if (!loc) {
+    const tail = hasValidName ? '' : ' Antes de avanzar, ¿cómo te llamas?';
+    return `Para orientarte con la venta de tu ${typeLabel}, dime en qué colonia o municipio está.${tail}`.trim();
+  }
+
+  if (priceOrValueMention) {
+    const tail = hasValidName ? '' : ' Antes de seguir, ¿cómo te llamas?';
+    return `Con la venta en ${loc}, puedo orientarte sobre rango esperado o valuación a alto nivel sin inventar datos de mercado aquí.${tail}`.trim();
+  }
+
+  const tail = hasValidName ? '' : ' Antes de seguir, ¿cómo te llamas?';
+  return `Sigo con la venta de tu ${typeLabel} en ${loc}. Si quieres, dime tipo de inmueble y en qué etapa va (habitada, rentada o libre).${tail}`.trim();
+}
+
+/**
  * Respuesta mínima alineada a demanda con contexto; nunca inventa inventario.
  */
 function buildContextualDemandReply(context = {}) {
@@ -316,6 +364,7 @@ function buildContextualDemandReply(context = {}) {
   } = context;
 
   const st = aiState && typeof aiState === 'object' ? aiState : {};
+  if (isOfferOrSellerSaleContext(st)) return null;
   const loc = cleanSpaces(String(st.location_text || ''));
   const budget = st.budget_max != null && Number.isFinite(Number(st.budget_max)) ? Number(st.budget_max) : null;
   const bLabel = budget != null ? formatMoneyMx(budget) : null;
@@ -432,13 +481,24 @@ function substituteForbiddenGenericDemandReply(messages, context = {}) {
   const ptype = cleanSpaces(String(aiState.property_type || ''));
   const propertyTypeLabel = ptype && ptype !== 'null' ? ptype : 'casa';
 
-  const reply = buildContextualDemandReply({
-    aiState,
-    text,
-    hasValidName,
-    matchedProperties,
-    propertyTypeLabel,
-  });
+  const reply = isOfferOrSellerSaleContext(aiState)
+    ? buildContextualOfferCaptureReply({
+        aiState,
+        text,
+        hasValidName,
+        propertyTypeLabel,
+      })
+    : buildContextualDemandReply({
+        aiState,
+        text,
+        hasValidName,
+        matchedProperties,
+        propertyTypeLabel,
+      });
+
+  if (!cleanSpaces(String(reply || ''))) {
+    return { messages, statePatch: {} };
+  }
 
   const statePatch = {};
   const shown = (Array.isArray(matchedProperties) ? matchedProperties : []).slice(0, 3);
@@ -457,6 +517,8 @@ module.exports = {
   hasOperationalContext,
   isGenericFallbackForbidden,
   isGenericConsultiveReply,
+  isOfferOrSellerSaleContext,
+  buildContextualOfferCaptureReply,
   buildContextualDemandReply,
   mergeContextualSignals,
   substituteForbiddenGenericDemandReply,

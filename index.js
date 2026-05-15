@@ -398,12 +398,16 @@ function buildConsultiveFallbackReply({
     aiState?.lead_flow === 'demand' &&
     contextualMemoryResolver.hasOperationalContext(aiState)
   ) {
-    return contextualMemoryResolver.buildContextualDemandReply({
+    const demandReply = contextualMemoryResolver.buildContextualDemandReply({
       aiState,
       text,
       hasValidName: hasName,
       matchedProperties: [],
     });
+    return (
+      demandReply ||
+      'Claro, te ayudo. Dime un poco más de lo que buscas y te oriento.'
+    );
   }
 
   if (signals?.lead_flow === 'offer' || t.includes('vender') || t.includes('venta') || t.includes('valu')) {
@@ -430,11 +434,37 @@ function buildConsultiveFallbackReply({
     return 'Claro, te apoyo con la disponibilidad. Para confirmarlo correctamente, te hago una pregunta rápida.';
   }
 
-  if (!t || t === 'hola' || t === 'info' || t === 'informacion' || t === 'información' || t === 'me interesa') {
+  if (!t || t === 'hola') {
     return 'Hola, claro. Te puedo ayudar. Dime en una frase qué necesitas y lo revisamos.';
+  }
+  if (t === 'info' || t === 'informacion' || t === 'información') {
+    return 'Te puedo orientar con compra o renta, venta de tu propiedad, avalúo o seguimiento de un anuncio. ¿Cuál es tu caso en una sola frase?';
+  }
+  if (t === 'me interesa') {
+    return 'Perfecto. Cuéntame en una frase qué te interesa (comprar, rentar, vender o ver una propiedad) y lo vemos.';
   }
 
   return 'Claro, te ayudo. Dime un poco más de lo que buscas y te oriento.';
+}
+
+/**
+ * P0.1.1 — Si el fallback consultivo ya pidió zona de captación, reflejar awaiting_field.
+ */
+function consultiveFallbackAwaitingFieldPatch(reply, { signals, aiState, text }) {
+  const merged = Array.isArray(reply)
+    ? reply.map((s) => String(s || '').trim()).filter(Boolean).join('\n\n')
+    : String(reply || '');
+  const m = cleanSpaces(merged);
+  if (!m) return {};
+  const flow = signals?.lead_flow || aiState?.lead_flow;
+  const loc = cleanSpaces(String(signals?.location_text || aiState?.location_text || ''));
+  const t = normalizeText(String(text || ''));
+  const offerish = flow === 'offer' || t.includes('vender') || t.includes('venta') || t.includes('valu');
+  if (!offerish || loc) return {};
+  if (/colonia|municipio|zona.*propiedad|en qué zona|en que zona/i.test(m)) {
+    return { awaiting_field: 'location_text' };
+  }
+  return {};
 }
 
 async function saveConversationState(conversationId, nextState) {
@@ -849,6 +879,14 @@ app.post('/webhook', async (req, res) => {
         });
         reply = fbLoop.reply;
         Object.assign(nextAiState, fbLoop.patch);
+        Object.assign(
+          nextAiState,
+          consultiveFallbackAwaitingFieldPatch(reply, {
+            signals: parsedSignals,
+            aiState: nextAiState,
+            text,
+          })
+        );
         logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: false });
       }
 

@@ -11,6 +11,7 @@ const {
   mergeContextualSignals,
   substituteForbiddenGenericDemandReply,
   isGenericConsultiveReply,
+  buildContextualOfferCaptureReply,
 } = require('../conversation/contextualMemoryResolver');
 
 test('hasOperationalContext detecta lead_flow, zona, presupuesto y recámaras', () => {
@@ -23,9 +24,15 @@ test('hasOperationalContext detecta lead_flow, zona, presupuesto y recámaras', 
 });
 
 test('mergeContextualSignals: 8 millones con demanda y zona previa → budget_max', () => {
-  const prev = { lead_flow: 'demand', location_text: 'Cumbres', operation_type: 'sale' };
+  const prev = { lead_flow: 'demand', location_text: 'Cumbres', operation_type: null };
   const patch = mergeContextualSignals({}, prev, { ...prev }, '8 millones');
   assert.equal(patch.budget_max, 8_000_000);
+});
+
+test('mergeContextualSignals: offer + zona + “8 millones” no asigna budget_max de comprador', () => {
+  const prev = { lead_flow: 'offer', operation_type: 'sale', location_text: 'Cumbres' };
+  const patch = mergeContextualSignals({}, prev, { ...prev }, '8 millones');
+  assert.ok(!Object.prototype.hasOwnProperty.call(patch, 'budget_max'));
 });
 
 test('mergeContextualSignals: 5 mdp', () => {
@@ -61,7 +68,7 @@ test('isGenericFallbackForbidden bloquea plantilla cuando hay contexto', () => {
 });
 
 test('substituteForbiddenGenericDemandReply reemplaza frase prohibida', () => {
-  const st = { lead_flow: 'demand', location_text: 'Cumbres', budget_max: 8_000_000, operation_type: 'sale' };
+  const st = { lead_flow: 'demand', location_text: 'Cumbres', budget_max: 8_000_000, operation_type: null };
   const bad = 'Claro, te ayudo. Dime un poco más de lo que buscas y te oriento.';
   const sub = substituteForbiddenGenericDemandReply(bad, {
     text: 'sigue',
@@ -72,6 +79,42 @@ test('substituteForbiddenGenericDemandReply reemplaza frase prohibida', () => {
   assert.ok(!isGenericConsultiveReply(Array.isArray(sub.messages) ? sub.messages.join(' ') : sub.messages));
   assert.match(String(sub.messages), /Cumbres/);
   assert.match(String(sub.messages), /8/);
+});
+
+test('buildContextualDemandReply retorna null en contexto oferta/venta', () => {
+  assert.equal(
+    buildContextualDemandReply({
+      aiState: { lead_flow: 'offer', operation_type: 'sale', location_text: 'Cumbres' },
+      text: 'ok',
+      hasValidName: true,
+      matchedProperties: [],
+    }),
+    null
+  );
+});
+
+test('substitute con lead_flow offer no usa lenguaje de búsqueda/demanda', () => {
+  const st = { lead_flow: 'offer', operation_type: 'sale', location_text: 'Cumbres', budget_max: null };
+  const bad = 'Claro, te ayudo. Dime un poco más de lo que buscas y te oriento.';
+  const sub = substituteForbiddenGenericDemandReply(bad, {
+    text: 'sigue',
+    aiState: st,
+    hasValidName: true,
+    matchedProperties: [],
+  });
+  const out = String(sub.messages);
+  assert.doesNotMatch(out, /búsqueda|busqueda|opciones reales alineadas/i);
+  assert.match(out, /venta|captación/i);
+});
+
+test('buildContextualOfferCaptureReply evita presupuesto de comprador', () => {
+  const out = buildContextualOfferCaptureReply({
+    aiState: { lead_flow: 'offer', operation_type: 'sale', location_text: 'Cumbres' },
+    text: 'ok',
+    hasValidName: true,
+    propertyTypeLabel: 'casa',
+  });
+  assert.doesNotMatch(out, /presupuesto.*compr|busqueda|búsqueda/i);
 });
 
 test('buildContextualDemandReply con propiedades mockeadas lista máximo 3 códigos', () => {

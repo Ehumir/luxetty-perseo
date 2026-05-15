@@ -174,6 +174,8 @@ function getDefaultAiState() {
     /** P0.1 — Rachas consecutivas del mismo bucket de fallback consultivo. */
     anti_loop_fallback_streak: 0,
     anti_loop_last_fallback_bucket: null,
+    /** P0.1.1 — Último inbound corto (hola vs info, etc.) para streak de fallback sin falsos positivos. */
+    anti_loop_last_inbound_short_intent: null,
   };
 }
 
@@ -222,6 +224,8 @@ function normalizeAiState(rawState) {
         : 0,
     anti_loop_last_fallback_bucket:
       rawState.anti_loop_last_fallback_bucket != null ? String(rawState.anti_loop_last_fallback_bucket) : null,
+    anti_loop_last_inbound_short_intent:
+      rawState.anti_loop_last_inbound_short_intent != null ? String(rawState.anti_loop_last_inbound_short_intent) : null,
   };
 
   if (!normalized.intent_type && normalized.playbook_type) {

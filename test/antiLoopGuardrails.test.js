@@ -34,11 +34,12 @@ describe('antiLoopGuardrails (P0.1)', () => {
     assert.equal(patch.full_name, 'Jorge');
   });
 
-  it('applyFallbackStreakRecovery escala al segundo bucket igual', () => {
+  it('applyFallbackStreakRecovery no escala con hola → info (bucket genérico compartido)', () => {
     const next = {
       ...getDefaultAiState(),
       anti_loop_last_fallback_bucket: 'generic_help',
       anti_loop_fallback_streak: 1,
+      anti_loop_last_inbound_short_intent: 'greeting_hola',
     };
     const r1 = antiLoop.applyFallbackStreakRecovery('Hola, claro. Te puedo ayudar. Dime en una frase qué necesitas y lo revisamos.', {
       nextAiState: next,
@@ -46,7 +47,24 @@ describe('antiLoopGuardrails (P0.1)', () => {
       contact: null,
       waProfileName: null,
     });
-    assert.match(String(r1.reply), /Perdona|repetido|Sigo contigo/i);
+    assert.doesNotMatch(String(r1.reply), /Perdona si se sintió repetido/i);
+    assert.equal(r1.patch.anti_loop_fallback_streak, 1);
+  });
+
+  it('applyFallbackStreakRecovery sí escala si el usuario repite el mismo saludo y el bucket sigue igual', () => {
+    const next = {
+      ...getDefaultAiState(),
+      anti_loop_last_fallback_bucket: 'generic_help',
+      anti_loop_fallback_streak: 1,
+      anti_loop_last_inbound_short_intent: 'greeting_hola',
+    };
+    const r1 = antiLoop.applyFallbackStreakRecovery('Hola, claro. Te puedo ayudar. Dime en una frase qué necesitas y lo revisamos.', {
+      nextAiState: next,
+      text: 'hola',
+      contact: null,
+      waProfileName: null,
+    });
+    assert.match(String(r1.reply), /Perdona|repetido|Entiendo|Sigo contigo/i);
     assert.equal(r1.patch.anti_loop_fallback_streak, 0);
   });
 

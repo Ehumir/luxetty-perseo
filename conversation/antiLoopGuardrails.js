@@ -32,6 +32,28 @@ function detectConversationalFrustration(text = '') {
   return { frustrated: markers.length > 0, markers };
 }
 
+/**
+ * Clasificación liviana del inbound para anti-loop de fallback: evita contar “Hola” y “info”
+ * como la misma “repetición” cuando el bucket saliente es idéntico (p. ej. generic_help).
+ * @returns {string}
+ */
+function classifyInboundShortIntent(text = '') {
+  const raw = cleanSpaces(String(text || ''));
+  if (!raw) return 'empty';
+  if (detectConversationalFrustration(raw).frustrated) return 'frustration_marker';
+  const t = normalizeText(raw);
+  if (t === 'hola' || t === 'buenas' || t === 'hey' || t === 'hi') return 'greeting_hola';
+  if (t === 'info' || t === 'informacion' || t === 'información') return 'opening_info';
+  if (t === 'me interesa' || t === 'me interesa.') return 'opening_me_interesa';
+  if (t === 'ok' || t === 'vale' || t === 'si' || t === 'sí' || t === 'gracias') return 'ack_short';
+  if (t.includes('precio') || t.includes('cuesta') || t.includes('cuanto') || t.includes('cuánto')) return 'topic_price';
+  if (t.includes('disponibilidad') || t.includes('disponible')) return 'topic_disponibilidad';
+  if (t.includes('vender') || t.includes('venta') || t.includes('valu')) return 'intent_sale';
+  if (t.includes('busco') || t.includes('comprar') || t.includes('rentar') || t.includes('renta')) return 'intent_search';
+  if (raw.length <= 2) return 'ultra_short';
+  return 'other';
+}
+
 function normalizeOutboundSignature(text = '') {
   const t = normalizeText(String(text || ''));
   return t.replace(/\s+/g, ' ').trim().slice(0, 420);
@@ -239,17 +261,28 @@ function applyFallbackStreakRecovery(reply, ctx = {}) {
   const bucket = classifyFallbackBucket(merged);
   const prevBucket = nextAiState.anti_loop_last_fallback_bucket || null;
   let streak = Number(nextAiState.anti_loop_fallback_streak || 0) || 0;
+  const inboundKind = classifyInboundShortIntent(text);
+  const prevInbound = nextAiState.anti_loop_last_inbound_short_intent || null;
 
   if (bucket === 'empty' || bucket === 'other') {
-    return { reply, patch: {} };
+    return { reply, patch: { anti_loop_last_inbound_short_intent: inboundKind } };
   }
 
-  if (prevBucket === bucket) streak += 1;
-  else streak = 1;
+  if (prevBucket === bucket) {
+    const inboundChangedMeaningfully =
+      prevInbound != null &&
+      inboundKind !== prevInbound &&
+      inboundKind !== 'empty' &&
+      inboundKind !== 'ultra_short' &&
+      inboundKind !== 'ack_short';
+    if (inboundChangedMeaningfully) streak = 1;
+    else streak += 1;
+  } else streak = 1;
 
   const patch = {
     anti_loop_last_fallback_bucket: bucket,
     anti_loop_fallback_streak: streak,
+    anti_loop_last_inbound_short_intent: inboundKind,
   };
 
   if (streak < 2) {
@@ -278,7 +311,7 @@ function applyFallbackStreakRecovery(reply, ctx = {}) {
 
   return {
     reply: skipAsesorOffer ? body : `${body}${tail}`,
-    patch: { ...patch, anti_loop_fallback_streak: 0 },
+    patch: { ...patch, anti_loop_fallback_streak: 0, anti_loop_last_inbound_short_intent: inboundKind },
   };
 }
 
@@ -374,6 +407,7 @@ function recordTurnAntiLoopMeta(nextAiState, reply, responseSource = '') {
 
 module.exports = {
   detectConversationalFrustration,
+  classifyInboundShortIntent,
   normalizeOutboundSignature,
   classifyOutboundQuestionKind,
   classifyFallbackBucket,

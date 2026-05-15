@@ -121,9 +121,9 @@ const TEMPLATES = {
     'Con gusto te apoyo con eso. Para ubicarte en el sistema, ¿me regalas tu nombre?',
   ],
   sale: [
-    'Para registrar bien tu solicitud, ¿me compartes tu nombre y en qué zona está la propiedad?',
-    'Sí, te puedo orientar. Para dejarlo bien registrado, ¿cómo te llamas y en qué zona está?',
-    'Perfecto. Para documentar el caso, ¿me compartes tu nombre y la zona aproximada?',
+    'Antes de avanzar, ¿cómo te llamas?',
+    'Para registrarlo prolijamente, ¿cómo te llamo?',
+    'Si te parece, para seguir: ¿cómo te llamas?',
   ],
   visit: [
     'Con gusto revisamos la visita. Para dejarte registrado correctamente, ¿me compartes tu nombre?',
