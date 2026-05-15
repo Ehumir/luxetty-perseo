@@ -8,6 +8,31 @@ const { parseOccupancyStatus } = require('../conversation/v3/interpreter/occupan
 const { mapV3StateToLegacyAiState } = require('../conversation/v3/state/v3ToLegacyAiState');
 const { formatStateSummary } = require('../conversation/qaSprint1Commands');
 
+describe('V3-F2.3 location variants (regresión)', () => {
+  it('No en San Pedro / en San Pedro / ya te dije que en San Pedro', () => {
+    const cid = 'f23-loc-variants';
+    clearV3Session(cid);
+    processV3Turn({ conversationId: cid, phone: '521', text: 'Quiero vender mi casa' });
+    processV3Turn({ conversationId: cid, phone: '521', text: 'Jorge' });
+
+    let r1 = processV3Turn({ conversationId: cid, phone: '521', text: 'No, en San Pedro' });
+    assert.equal(r1.state.locationText, 'San Pedro', r1.reply);
+
+    clearV3Session('f23-loc-2');
+    processV3Turn({ conversationId: 'f23-loc-2', phone: '521', text: 'Quiero vender mi casa' });
+    processV3Turn({ conversationId: 'f23-loc-2', phone: '521', text: 'Jorge' });
+    let r2 = processV3Turn({ conversationId: 'f23-loc-2', phone: '521', text: 'en San Pedro' });
+    assert.equal(r2.state.locationText, 'San Pedro');
+
+    clearV3Session('f23-loc-3');
+    processV3Turn({ conversationId: 'f23-loc-3', phone: '521', text: 'Quiero vender mi casa' });
+    processV3Turn({ conversationId: 'f23-loc-3', phone: '521', text: 'Jorge' });
+    let r3 = processV3Turn({ conversationId: 'f23-loc-3', phone: '521', text: 'Ya te dije que en San Pedro' });
+    assert.equal(r3.state.locationText, 'San Pedro');
+    assert.doesNotMatch(String(r3.reply), /cuéntame en pocas palabras/i);
+  });
+});
+
 describe('V3-F2.3 occupancy parser', () => {
   it('detecta libre, habitada, rentada, ocupada', () => {
     assert.equal(parseOccupancyStatus('Libre'), 'libre');
