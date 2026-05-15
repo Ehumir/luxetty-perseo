@@ -14,6 +14,7 @@ function mapV3StateToLegacyAiState(v3State) {
     full_name: v3State.collectedFields?.fullName ?? null,
     awaiting_field: v3State.awaitingField ?? null,
     location_text: v3State.locationText ?? null,
+    property_type: v3State.propertyType ?? v3State.collectedFields?.propertyType ?? null,
     expected_price: v3State.expectedPrice ?? null,
     budget_max: v3State.budget ?? null,
     bedrooms: v3State.bedrooms ?? null,

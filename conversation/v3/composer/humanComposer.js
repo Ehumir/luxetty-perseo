@@ -37,6 +37,32 @@ function firstName(state) {
   return full.split(/\s+/)[0];
 }
 
+function getPropertyType(state) {
+  return state.propertyType || state.collectedFields?.propertyType || null;
+}
+
+function sellContextReady(state) {
+  const nm = firstName(state);
+  return !!(
+    nm &&
+    state.locationText &&
+    state.expectedPrice != null &&
+    getPropertyType(state)
+  );
+}
+
+function composeSellOccupancyQuestion(state) {
+  const nm = firstName(state);
+  const zone = state.locationText || 'esa zona';
+  const pres = formatMoneyMx(state.expectedPrice);
+  const tipo = getPropertyType(state) === 'house' ? 'casa' : 'inmueble';
+  return {
+    responseText: `Perfecto, ${nm}. Tengo tu ${tipo} en ${zone} con precio esperado de ${pres}. ¿Está habitada, rentada o libre?`,
+    followUpQuestion: null,
+    toneFlags: { consultive: true },
+  };
+}
+
 /**
  * @param {{ state: object, decision: object, context?: object }} input
  */
@@ -44,8 +70,14 @@ function composeHumanResponse(input) {
   const state = input.state || {};
   const decision = input.decision || {};
   const intent = decision.detectedIntent;
+  const nm = firstName(state);
+  const sell = state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
+  const buy = state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY || state.leadFlow === 'demand';
 
   if (intent === V3_INTENT.FRUSTRATION) {
+    if (sell && sellContextReady(state)) {
+      return composeSellOccupancyQuestion(state);
+    }
     return {
       responseText:
         'Tienes razón, déjame hacerlo más claro. Cuéntame en pocas palabras qué quieres lograr y seguimos paso a paso.',
@@ -61,10 +93,6 @@ function composeHumanResponse(input) {
       toneFlags: { consultive: true },
     };
   }
-
-  const nm = firstName(state);
-  const sell = state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
-  const buy = state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY || state.leadFlow === 'demand';
 
   if (intent === V3_INTENT.SELL_PROPERTY) {
     if (!nm) {
@@ -128,13 +156,27 @@ function composeHumanResponse(input) {
     };
   }
 
+  if (intent === V3_INTENT.PROPERTY_TYPE_CAPTURE && sell && nm) {
+    if (state.locationText && state.expectedPrice != null) {
+      return composeSellOccupancyQuestion(state);
+    }
+    return {
+      responseText: `Perfecto, ${nm}. Tomé que es casa. ¿En qué zona está la propiedad?`,
+      followUpQuestion: null,
+      toneFlags: { consultive: true },
+    };
+  }
+
   if (intent === V3_INTENT.SELLER_PRICE && sell) {
     const pres = formatMoneyMx(state.expectedPrice);
     const zone = state.locationText ? ` en ${state.locationText}` : '';
+    if (nm && getPropertyType(state)) {
+      return composeSellOccupancyQuestion(state);
+    }
     if (nm) {
       return {
         responseText: `Entendido, ${nm}. Con un precio esperado de ${pres}${zone}, ¿es casa, departamento o terreno?`,
-        followUpQuestion: '¿Qué tipo de inmueble es?',
+        followUpQuestion: null,
         toneFlags: { consultive: true },
       };
     }
@@ -199,20 +241,33 @@ function composeHumanResponse(input) {
     };
   }
 
-  if (sell && state.conversationStage === CONVERSATION_STAGES.QUALIFYING && nm && state.locationText && state.expectedPrice) {
-    return {
-      responseText: `Sigo contigo, ${nm}. Con la venta en ${state.locationText}, ¿el inmueble está habitado o libre?`,
-      followUpQuestion: '¿Está habitado o libre?',
-      toneFlags: { consultive: true },
-    };
+  if (sell && nm && sellContextReady(state)) {
+    return composeSellOccupancyQuestion(state);
   }
 
   if (sell && nm) {
-    return {
-      responseText: `Claro, ${nm}. Te apoyo con la venta. ¿Qué dato quieres afinar: zona, precio o tipo de inmueble?`,
-      followUpQuestion: null,
-      toneFlags: { consultive: true },
-    };
+    if (!state.locationText) {
+      return {
+        responseText: `Perfecto, ${nm}. Te apoyo con la venta. ¿En qué zona está la propiedad?`,
+        followUpQuestion: null,
+        toneFlags: { consultive: true },
+      };
+    }
+    if (state.expectedPrice == null) {
+      return {
+        responseText: `Perfecto, ${nm}. Tomé la zona (${state.locationText}). ¿Tienes un precio esperado de venta?`,
+        followUpQuestion: null,
+        toneFlags: { consultive: true },
+      };
+    }
+    if (!getPropertyType(state)) {
+      return {
+        responseText: `Entendido, ${nm}. ¿Es casa, departamento o terreno?`,
+        followUpQuestion: null,
+        toneFlags: { consultive: true },
+      };
+    }
+    return composeSellOccupancyQuestion(state);
   }
 
   return {
