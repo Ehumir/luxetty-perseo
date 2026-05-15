@@ -12,7 +12,15 @@ const { parseSprint1StrictCommand } = require('../../qaSprint1Commands');
 const { v3Log } = require('./v3Logger');
 
 /**
- * @param {{ conversationId: string, phone: string, rawPhone?: string, text: string, logEvent?: Function }} input
+ * @param {{
+ *   conversationId: string,
+ *   phone: string,
+ *   rawPhone?: string,
+ *   text: string,
+ *   logEvent?: Function,
+ *   campaignHeadline?: string|null,
+ *   legacyHydration?: object|null,
+ * }} input
  */
 function tryV3PrimaryReply(input) {
   const gate = evaluateV3PrimaryGate({
@@ -56,6 +64,8 @@ function tryV3PrimaryReply(input) {
       phone: input.phone,
       text: input.text,
       reset: cmd === 'reset',
+      campaignHeadline: input.campaignHeadline ?? null,
+      legacyHydration: input.legacyHydration ?? null,
     });
     if (!result.ok && result.fallbackToLegacy) {
       return {

@@ -11,12 +11,37 @@ const { CONVERSATION_GOALS } = require('../types/constants');
 function applyGoalOwnership(state, patch, decision) {
   const out = { ...patch };
 
+  if (state.conversationGoalLocked && !decision.explicitFlowSwitch) {
+    if (out.conversationGoal != null && out.conversationGoal !== state.conversationGoal) {
+      delete out.conversationGoal;
+      delete out.leadFlow;
+      delete out.operationType;
+    }
+  }
+
   if (decision.detectedIntent === 'SELL_PROPERTY' || out.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
-    out.conversationGoal = CONVERSATION_GOALS.SELL_PROPERTY;
-    out.conversationGoalLocked = true;
-    out.goalConfidence = Math.max(state.goalConfidence || 0, decision.confidence || 0.85);
-    out.leadFlow = 'offer';
-    out.operationType = 'sale';
+    if (!state.conversationGoalLocked || decision.explicitFlowSwitch || state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
+      out.conversationGoal = CONVERSATION_GOALS.SELL_PROPERTY;
+      out.conversationGoalLocked = true;
+      out.goalConfidence = Math.max(state.goalConfidence || 0, decision.confidence || 0.85);
+      out.leadFlow = 'offer';
+      out.operationType = 'sale';
+      out.propertySpecificIntent = false;
+    }
+  }
+
+  if (
+    decision.detectedIntent === 'PROPERTY_INQUIRY' ||
+    out.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY
+  ) {
+    if (!state.conversationGoalLocked || decision.explicitFlowSwitch) {
+      out.conversationGoal = CONVERSATION_GOALS.PROPERTY_INQUIRY;
+      out.conversationGoalLocked = true;
+      out.goalConfidence = Math.max(state.goalConfidence || 0, decision.confidence || 0.88);
+      out.leadFlow = 'demand';
+      out.operationType = out.operationType === 'rent' ? 'rent' : 'sale';
+      out.propertySpecificIntent = true;
+    }
   }
 
   if (decision.detectedIntent === 'BUY_PROPERTY' || out.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
@@ -26,6 +51,7 @@ function applyGoalOwnership(state, patch, decision) {
       out.goalConfidence = Math.max(state.goalConfidence || 0, decision.confidence || 0.8);
       out.leadFlow = 'demand';
       out.operationType = 'sale';
+      out.propertySpecificIntent = false;
     }
   }
 
@@ -35,6 +61,16 @@ function applyGoalOwnership(state, patch, decision) {
       out.conversationGoalLocked = true;
       out.goalConfidence = Math.max(state.goalConfidence || 0, decision.confidence || 0.8);
       out.leadFlow = 'demand';
+      out.operationType = 'rent';
+    }
+  }
+
+  if (decision.detectedIntent === 'RENT_OUT_PROPERTY' || out.conversationGoal === CONVERSATION_GOALS.RENT_OUT_PROPERTY) {
+    if (!state.conversationGoalLocked || decision.explicitFlowSwitch) {
+      out.conversationGoal = CONVERSATION_GOALS.RENT_OUT_PROPERTY;
+      out.conversationGoalLocked = true;
+      out.goalConfidence = Math.max(state.goalConfidence || 0, decision.confidence || 0.85);
+      out.leadFlow = 'offer';
       out.operationType = 'rent';
     }
   }
@@ -55,6 +91,18 @@ function applyGoalOwnership(state, patch, decision) {
     if (state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY) {
       out.leadFlow = 'demand';
       out.operationType = 'rent';
+    }
+    if (state.conversationGoal === CONVERSATION_GOALS.RENT_OUT_PROPERTY) {
+      out.leadFlow = 'offer';
+      out.operationType = 'rent';
+    }
+    if (state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY) {
+      out.leadFlow = 'demand';
+      out.operationType = state.operationType === 'rent' ? 'rent' : 'sale';
+      out.propertySpecificIntent = true;
+      if (state.propertyListingCode && out.propertyListingCode === undefined) {
+        out.propertyListingCode = state.propertyListingCode;
+      }
     }
   }
 

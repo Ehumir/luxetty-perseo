@@ -49,6 +49,9 @@ function createInitialConversationState(seed = {}) {
     lastUserText: null,
     timestamps: { createdAt: ts, updatedAt: ts },
     hasContact: false,
+    propertyListingCode: null,
+    propertySpecificIntent: false,
+    campaignHeadline: null,
   };
 }
 

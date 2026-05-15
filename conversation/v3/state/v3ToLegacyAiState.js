@@ -8,6 +8,8 @@
 function mapV3StateToLegacyAiState(v3State) {
   if (!v3State || typeof v3State !== 'object') return {};
 
+  const code = v3State.propertyListingCode != null ? String(v3State.propertyListingCode).trim() : '';
+
   return {
     lead_flow: v3State.leadFlow ?? null,
     operation_type: v3State.operationType ?? null,
@@ -33,6 +35,10 @@ function mapV3StateToLegacyAiState(v3State) {
       ? v3State.qualificationMissingSlots
       : [],
     crm_payload_preview: v3State.crmPayloadPreview ?? null,
+    property_code: code || null,
+    direct_property_code: code || null,
+    direct_property_reference: code.length > 0,
+    property_specific_intent: v3State.propertySpecificIntent === true || code.length > 0,
   };
 }
 

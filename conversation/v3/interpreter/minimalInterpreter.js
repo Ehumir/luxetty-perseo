@@ -11,6 +11,17 @@ const { parseOccupancyStatus } = require('./occupancyParser');
 const { tryParseSellLocation, tryParseQualificationLocation } = require('./sellLocationCapture');
 const { parseAdvisorContactConsent, shouldParseConsentTurn } = require('../planner/consentParser');
 const { isV3HandoffEnabled } = require('../../../config/perseoV3Flags');
+const { extractPropertyListingCode } = require('./propertyListingCode');
+const {
+  matchesSellerAcquisitionPattern,
+  extractLooseLocationPhrase,
+  isThinGenericInbound,
+  mentionsRentDemand,
+  isExplicitFlowSwitchToRentDemand,
+  isExplicitFlowSwitchToRentOut,
+  isExplicitFlowSwitchToSellFromRent,
+  isExplicitPropertyInquiryPhrase,
+} = require('./campaignIntake');
 
 function parseMoneyAmount(text) {
   const t = normalizeText(text);
@@ -45,7 +56,13 @@ function isExplicitFlowSwitchToBuy(text) {
 
 function isExplicitFlowSwitchToSell(text) {
   const t = normalizeText(text);
-  return t.includes('quiero vender') || t.includes('vender mi') || t.includes('poner en venta');
+  return (
+    t.includes('quiero vender') ||
+    t.includes('vender mi') ||
+    t.includes('poner en venta') ||
+    t.includes('mejor quiero vender') ||
+    t.includes('en realidad quiero vender')
+  );
 }
 
 function isRentOutIntent(text) {
@@ -98,13 +115,104 @@ function applyOccupancyPatch(patch, status) {
 /**
  * @param {import('../types/conversationState').ConversationState} state
  * @param {string} text
+ * @param {{ campaignHeadline?: string|null }} [options]
  */
-function interpretUserMessage(state, text) {
+function interpretUserMessage(state, text, options = {}) {
   const t = normalizeText(String(text || ''));
   const raw = cleanSpaces(String(text || ''));
   const decision = createEmptyDecision();
   /** @type {Partial<import('../types/conversationState').ConversationState>} */
   const patch = { lastUserText: raw };
+
+  const headline = options.campaignHeadline != null ? String(options.campaignHeadline).slice(0, 400) : null;
+  if (headline) {
+    patch.campaignHeadline = headline;
+  }
+
+  const sellFromRentLocked =
+    state.conversationGoalLocked &&
+    state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY &&
+    isExplicitFlowSwitchToSellFromRent(text);
+
+  const strongSellEarly =
+    isExplicitFlowSwitchToSell(text) || matchesSellerAcquisitionPattern(t) || sellFromRentLocked;
+  const weakSellEarly = t.includes('vender') && t.includes('casa') && !state.conversationGoalLocked;
+  if (strongSellEarly || weakSellEarly) {
+    decision.detectedIntent = V3_INTENT.SELL_PROPERTY;
+    decision.confidence = 0.9;
+    decision.explicitFlowSwitch =
+      !state.conversationGoalLocked ||
+      isExplicitFlowSwitchToSell(text) ||
+      sellFromRentLocked ||
+      matchesSellerAcquisitionPattern(t);
+    patch.conversationGoal = CONVERSATION_GOALS.SELL_PROPERTY;
+    patch.leadFlow = 'offer';
+    patch.operationType = 'sale';
+    applyPropertyTypePatch(patch, parsePropertyType(text) || 'house');
+    const zoneSellEarly = extractLooseLocationPhrase(raw);
+    if (zoneSellEarly) {
+      patch.locationText = zoneSellEarly;
+      decision.extractedEntities.locationText = zoneSellEarly;
+    }
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    decision.nextSuggestedStage = state.collectedFields?.fullName
+      ? CONVERSATION_STAGES.QUALIFYING
+      : CONVERSATION_STAGES.IDENTITY_PENDING;
+    return { patch, decision };
+  }
+
+  const codeHit = extractPropertyListingCode(raw);
+  const persistedCode = state.propertyListingCode || null;
+  const effectiveCode = (codeHit && codeHit.normalized) || persistedCode;
+
+  const lockedSellBlocksPropertyCode =
+    state.conversationGoalLocked &&
+    state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY &&
+    !isExplicitPropertyInquiryPhrase(raw);
+
+  if (
+    !lockedSellBlocksPropertyCode &&
+    effectiveCode &&
+    (codeHit || isExplicitPropertyInquiryPhrase(raw) || persistedCode)
+  ) {
+    const rentAsDemand = mentionsRentDemand(t) && !isRentOutIntent(text);
+    if (rentAsDemand) {
+      decision.detectedIntent = V3_INTENT.RENT_PROPERTY;
+      decision.confidence = 0.88;
+      decision.explicitFlowSwitch = state.conversationGoalLocked ? isExplicitFlowSwitchToRentDemand(text) : true;
+      patch.conversationGoal = CONVERSATION_GOALS.RENT_PROPERTY;
+      patch.leadFlow = 'demand';
+      patch.operationType = 'rent';
+      patch.propertyListingCode = effectiveCode;
+      patch.propertySpecificIntent = true;
+      const zone = extractLooseLocationPhrase(raw);
+      if (zone) {
+        patch.locationText = zone;
+        decision.extractedEntities.locationText = zone;
+      }
+      decision.shouldAskName = !state.collectedFields?.fullName;
+      decision.shouldSearchProperty = true;
+      return { patch, decision };
+    }
+
+    decision.detectedIntent = V3_INTENT.PROPERTY_INQUIRY;
+    decision.confidence = codeHit ? 0.9 : 0.82;
+    decision.explicitFlowSwitch =
+      !state.conversationGoalLocked || !!codeHit || isExplicitPropertyInquiryPhrase(raw);
+    patch.conversationGoal = CONVERSATION_GOALS.PROPERTY_INQUIRY;
+    patch.leadFlow = 'demand';
+    patch.operationType = 'sale';
+    patch.propertyListingCode = effectiveCode;
+    patch.propertySpecificIntent = true;
+    const zone = extractLooseLocationPhrase(raw);
+    if (zone) {
+      patch.locationText = zone;
+      decision.extractedEntities.locationText = zone;
+    }
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    decision.shouldSearchProperty = true;
+    return { patch, decision };
+  }
 
   const sellCtx = isOfferFlow(state);
   const qualLocation = isV3HandoffEnabled()
@@ -170,25 +278,29 @@ function interpretUserMessage(state, text) {
     return { patch, decision };
   }
 
-  if (isExplicitFlowSwitchToBuy(text) && (!state.conversationGoalLocked || isExplicitFlowSwitchToBuy(text))) {
+  if (
+    isExplicitFlowSwitchToBuy(text) &&
+    (!state.conversationGoalLocked || isExplicitFlowSwitchToBuy(text))
+  ) {
     decision.detectedIntent = V3_INTENT.BUY_PROPERTY;
     decision.confidence = 0.85;
     decision.explicitFlowSwitch = !state.conversationGoalLocked || isExplicitFlowSwitchToBuy(text);
     patch.conversationGoal = CONVERSATION_GOALS.BUY_PROPERTY;
     patch.leadFlow = 'demand';
     patch.operationType = 'sale';
-    if (t.includes('cumbres')) {
-      patch.locationText = 'Cumbres';
-      decision.extractedEntities.locationText = 'Cumbres';
+    const zoneBuy = extractLooseLocationPhrase(raw);
+    if (zoneBuy) {
+      patch.locationText = zoneBuy;
+      decision.extractedEntities.locationText = zoneBuy;
     }
     decision.shouldAskName = !state.collectedFields?.fullName;
     return { patch, decision };
   }
 
-  if (isRentOutIntent(text) && (!state.conversationGoalLocked || isRentOutIntent(text))) {
+  if (isRentOutIntent(text) && (!state.conversationGoalLocked || isExplicitFlowSwitchToRentOut(text))) {
     decision.detectedIntent = V3_INTENT.RENT_OUT_PROPERTY;
     decision.confidence = 0.85;
-    decision.explicitFlowSwitch = !state.conversationGoalLocked;
+    decision.explicitFlowSwitch = state.conversationGoalLocked ? isExplicitFlowSwitchToRentOut(text) : true;
     patch.conversationGoal = CONVERSATION_GOALS.RENT_OUT_PROPERTY;
     patch.leadFlow = 'offer';
     patch.operationType = 'rent';
@@ -197,11 +309,12 @@ function interpretUserMessage(state, text) {
     return { patch, decision };
   }
 
-  const wantsRent = t.includes('rentar') || t.includes('arrendar') || (t.includes('renta') && t.includes('busco'));
-  if (wantsRent && (!state.conversationGoalLocked || decision.explicitFlowSwitch)) {
+  const wantsRentPhrase =
+    t.includes('rentar') || t.includes('arrendar') || (t.includes('renta') && t.includes('busco'));
+  if (wantsRentPhrase && (!state.conversationGoalLocked || isExplicitFlowSwitchToRentDemand(text))) {
     decision.detectedIntent = V3_INTENT.RENT_PROPERTY;
     decision.confidence = 0.8;
-    decision.explicitFlowSwitch = !state.conversationGoalLocked;
+    decision.explicitFlowSwitch = state.conversationGoalLocked ? isExplicitFlowSwitchToRentDemand(text) : true;
     patch.conversationGoal = CONVERSATION_GOALS.RENT_PROPERTY;
     patch.leadFlow = 'demand';
     patch.operationType = 'rent';
@@ -209,31 +322,21 @@ function interpretUserMessage(state, text) {
     return { patch, decision };
   }
 
-  if (isExplicitFlowSwitchToSell(text) || (t.includes('vender') && t.includes('casa'))) {
-    decision.detectedIntent = V3_INTENT.SELL_PROPERTY;
-    decision.confidence = 0.9;
-    decision.explicitFlowSwitch = !state.conversationGoalLocked || isExplicitFlowSwitchToSell(text);
-    patch.conversationGoal = CONVERSATION_GOALS.SELL_PROPERTY;
-    patch.leadFlow = 'offer';
-    patch.operationType = 'sale';
-    applyPropertyTypePatch(patch, parsePropertyType(text) || 'house');
-    decision.shouldAskName = !state.collectedFields?.fullName;
-    decision.nextSuggestedStage = state.collectedFields?.fullName
-      ? CONVERSATION_STAGES.QUALIFYING
-      : CONVERSATION_STAGES.IDENTITY_PENDING;
-    return { patch, decision };
-  }
-
-  if (/\bbusco\b/.test(t) && t.includes('casa') && (!state.conversationGoalLocked || isExplicitFlowSwitchToBuy(text))) {
+  if (
+    /\bbusco\b/.test(t) &&
+    t.includes('casa') &&
+    (!state.conversationGoalLocked || isExplicitFlowSwitchToBuy(text))
+  ) {
     decision.detectedIntent = V3_INTENT.BUY_PROPERTY;
     decision.confidence = 0.8;
     decision.explicitFlowSwitch = !state.conversationGoalLocked;
     patch.conversationGoal = CONVERSATION_GOALS.BUY_PROPERTY;
     patch.leadFlow = 'demand';
     patch.operationType = 'sale';
-    if (t.includes('cumbres')) {
-      patch.locationText = 'Cumbres';
-      decision.extractedEntities.locationText = 'Cumbres';
+    const zone = extractLooseLocationPhrase(raw);
+    if (zone) {
+      patch.locationText = zone;
+      decision.extractedEntities.locationText = zone;
     }
     decision.shouldAskName = !state.collectedFields?.fullName;
     return { patch, decision };
@@ -297,6 +400,20 @@ function interpretUserMessage(state, text) {
     }
     decision.confidence = 0.88;
     decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
+  if (isThinGenericInbound(t)) {
+    if (state.conversationGoalLocked) {
+      decision.detectedIntent = V3_INTENT.UNKNOWN;
+      decision.confidence = 0.48;
+      decision.explicitFlowSwitch = false;
+      return { patch, decision };
+    }
+    decision.detectedIntent = V3_INTENT.CAMPAIGN_GENERIC_TOUCH;
+    decision.confidence = headline ? 0.62 : 0.45;
+    decision.explicitFlowSwitch = false;
+    decision.nextSuggestedStage = CONVERSATION_STAGES.UNDERSTANDING;
     return { patch, decision };
   }
 
