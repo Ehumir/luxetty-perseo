@@ -14,9 +14,9 @@
 | **V3-F0** | Congelamiento y contención | Dejar de expandir el motor legacy; solo hotfixes críticos documentados. | 100 % legacy |
 | **V3-F1** | Núcleo en paralelo | `conversation/v3/`: contratos + tests; sin cablear al webhook. | Legacy + flag `false` |
 | **V3-F2** | Stage + identidad mínimo | Flujo venta básico con nombre y zona; sin CRM duro. | Legacy; V3 solo tests / dev |
-| **V3-F3** | Decision Core shadow | JSON OpenAI; comparar vs legacy; logs de diff. | Legacy ejecuta; V3 observa |
-| **V3-F4** | Human Composer V3 | Redacción MX, frustración, una pregunta, sin “house”/menús. | Tras F2 en ramas QA |
-| **V3-F5** | Activación QA allowlist | WhatsApp real; números autorizados; ~20 conversaciones. | Subconjunto controlado |
+| **V3-F3** | Calificación + handoff + CRM dry-run | Planner conversión, consent asesor, stages `QUALIFICATION_COMPLETE`→`CRM_READY`; sin CRM write. | Allowlist QA |
+| **V3-F4** | Comercial avanzado + shadow opcional | `owner_relation`, motivación, objeciones, OpenAI diff opcional. | Tras F3.3 |
+| **V3-F5** | ~~Activación QA allowlist~~ | **Hecho en F2** (primary + allowlist Railway). | — |
 | **V3-F6** | CRM execution | Contacto, lead, idempotencia, eventos — **después** de conversación estable. | Tras PASS F5 |
 | **V3-F7** | Campaigns / Meta Ads | Referral, info/precio/ubicación/me interesa, propiedad desde pauta. | Tras F6 estable |
 | **V3-F8** | Multimedia | Audio, imagen, PDF, ubicación, interactive; honestidad. | Tras conversación base |
@@ -26,7 +26,11 @@ Cada fase debe tener **tests automatizados** y **criterios PASS/FAIL** explícit
 
 ### Objetivo comercial obligatorio (F3+)
 
-PERSEO debe lograr que el contacto **acepte ser contactado por un asesor inmobiliario Luxetty** (consentimiento explícito, sin CRM real hasta validar payload). Ejemplo de copy: *"¿Te parece bien que un asesor de Luxetty te contacte para continuar?"* — **fuera de alcance F2/F2.3**.
+PERSEO debe lograr que el contacto **acepte ser contactado por un asesor inmobiliario Luxetty**, como **continuación consultiva** (no “transferencia de bot”). Ver `docs/sprints/perseo-v3-f3-qualification-handoff.md`.
+
+**Definición:** PERSEO es un asesor IA comercial con slots internos invisibles — **no** un formulario conversacional.
+
+**Stages F3:** `QUALIFICATION_COMPLETE` → `HANDOFF_PENDING` → `HANDOFF_READY` → `CRM_READY` (dry-run; sin create hasta F6).
 
 ---
 

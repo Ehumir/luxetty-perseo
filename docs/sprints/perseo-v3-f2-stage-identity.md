@@ -75,7 +75,9 @@ Vale como 8 millones
 - No repite *"¿Está habitada, rentada o libre?"* si ya hay respuesta.
 - `!state` muestra `occupancy_status` y `awaiting_field` cuando aplica.
 
-**F2 cerrado** como milestone arquitectónico. Objetivo comercial (contacto asesor) → **F3**.
+**F2 cerrado** como milestone arquitectónico. Objetivo comercial (contacto asesor) → **F3** (`docs/sprints/perseo-v3-f3-qualification-handoff.md`).
+
+Nota: `READY_FOR_CRM` en código F2 significa “calificación técnica mínima alcanzada”; en F3 se renombrará a `QUALIFICATION_COMPLETE` y el CRM operativo quedará en `CRM_READY`.
 
 ## F2.2 — Robustez nombre + tipo inmueble
 

@@ -8,7 +8,9 @@ const { normalizeLocationFromUserText } = require('./locationNormalizer');
 const { shouldAcceptAsIdentityName } = require('./nameHeuristics');
 const { parsePropertyType } = require('./propertyTypeParser');
 const { parseOccupancyStatus } = require('./occupancyParser');
-const { tryParseSellLocation } = require('./sellLocationCapture');
+const { tryParseSellLocation, tryParseQualificationLocation } = require('./sellLocationCapture');
+const { parseAdvisorContactConsent, shouldParseConsentTurn } = require('../planner/consentParser');
+const { isV3HandoffEnabled } = require('../../../config/perseoV3Flags');
 
 function parseMoneyAmount(text) {
   const t = normalizeText(text);
@@ -44,6 +46,25 @@ function isExplicitFlowSwitchToBuy(text) {
 function isExplicitFlowSwitchToSell(text) {
   const t = normalizeText(text);
   return t.includes('quiero vender') || t.includes('vender mi') || t.includes('poner en venta');
+}
+
+function isRentOutIntent(text) {
+  const t = normalizeText(text);
+  return (
+    t.includes('poner en renta') ||
+    t.includes('rentar mi') ||
+    t.includes('rentarla') ||
+    (t.includes('renta') &&
+      (t.includes('mi casa') || t.includes('mi departamento') || t.includes('mi propiedad')))
+  );
+}
+
+function isOfferFlow(state) {
+  return (
+    state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY ||
+    state.conversationGoal === CONVERSATION_GOALS.RENT_OUT_PROPERTY ||
+    state.leadFlow === 'offer'
+  );
 }
 
 function isShortAck(text) {
@@ -85,15 +106,27 @@ function interpretUserMessage(state, text) {
   /** @type {Partial<import('../types/conversationState').ConversationState>} */
   const patch = { lastUserText: raw };
 
-  const sellCtx =
-    state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
-  const sellLocation = tryParseSellLocation(state, raw);
+  const sellCtx = isOfferFlow(state);
+  const qualLocation = isV3HandoffEnabled()
+    ? tryParseQualificationLocation(state, raw)
+    : tryParseSellLocation(state, raw);
+  const sellLocation = qualLocation;
   if (sellLocation) {
     decision.detectedIntent = V3_INTENT.LOCATION_CAPTURE;
     decision.confidence = 0.9;
     patch.locationText = sellLocation;
     patch.awaitingField = null;
     decision.extractedEntities.locationText = sellLocation;
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
+  const consentParsed = parseAdvisorContactConsent(text);
+  if (consentParsed && shouldParseConsentTurn(state)) {
+    decision.detectedIntent = V3_INTENT.ADVISOR_CONSENT_CAPTURE;
+    decision.confidence = 0.93;
+    patch.advisorContactConsent = consentParsed;
+    patch.awaitingField = null;
     decision.explicitFlowSwitch = false;
     return { patch, decision };
   }
@@ -152,6 +185,18 @@ function interpretUserMessage(state, text) {
     return { patch, decision };
   }
 
+  if (isRentOutIntent(text) && (!state.conversationGoalLocked || isRentOutIntent(text))) {
+    decision.detectedIntent = V3_INTENT.RENT_OUT_PROPERTY;
+    decision.confidence = 0.85;
+    decision.explicitFlowSwitch = !state.conversationGoalLocked;
+    patch.conversationGoal = CONVERSATION_GOALS.RENT_OUT_PROPERTY;
+    patch.leadFlow = 'offer';
+    patch.operationType = 'rent';
+    applyPropertyTypePatch(patch, parsePropertyType(text) || null);
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    return { patch, decision };
+  }
+
   const wantsRent = t.includes('rentar') || t.includes('arrendar') || (t.includes('renta') && t.includes('busco'));
   if (wantsRent && (!state.conversationGoalLocked || decision.explicitFlowSwitch)) {
     decision.detectedIntent = V3_INTENT.RENT_PROPERTY;
@@ -194,9 +239,16 @@ function interpretUserMessage(state, text) {
     return { patch, decision };
   }
 
-  const sellCtxEarly =
-    state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
+  const sellCtxEarly = isOfferFlow(state);
+  const buyCtxEarly = state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY;
   const propTypeEarly = parsePropertyType(text);
+  if (propTypeEarly && buyCtxEarly) {
+    decision.detectedIntent = V3_INTENT.PROPERTY_TYPE_CAPTURE;
+    decision.confidence = 0.9;
+    applyPropertyTypePatch(patch, propTypeEarly);
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
   if (propTypeEarly && sellCtxEarly) {
     decision.detectedIntent = V3_INTENT.PROPERTY_TYPE_CAPTURE;
     decision.confidence = 0.9;
@@ -233,8 +285,7 @@ function interpretUserMessage(state, text) {
 
   const amount = parseMoneyAmount(text);
   if (amount != null) {
-    const sellCtx = state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
-    if (sellCtx) {
+    if (isOfferFlow(state)) {
       decision.detectedIntent = V3_INTENT.SELLER_PRICE;
       patch.expectedPrice = amount;
       patch.budget = null;

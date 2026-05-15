@@ -7,6 +7,8 @@ const { composeHumanReplyText, composeHumanResponse } = require('../composer/hum
 const { getSession, setSession, resetSession } = require('./sessionStore');
 const { v3Log } = require('./v3Logger');
 const { detectFrustration } = require('../interpreter/frustrationDetector');
+const { isV3HandoffEnabled } = require('../../../config/perseoV3Flags');
+const { runF3Pipeline } = require('./f3Pipeline');
 
 /**
  * @param {{ conversationId: string, phone?: string|null, text: string, reset?: boolean }} input
@@ -57,19 +59,39 @@ function processV3Turn(input) {
     };
   }
 
-  const composed = composeHumanResponse({ state: nextState, decision, context: {} });
-  const replyText = composeHumanReplyText({ state: nextState, decision, context: {} });
-  const questionFromReply = (() => {
-    const matches = String(replyText || '').match(/¿[^?]+\?/g);
-    return matches && matches.length ? matches[matches.length - 1] : null;
-  })();
-  const finalState = {
-    ...nextState,
-    lastAssistantReply: replyText,
-    lastAssistantQuestion: composed.followUpQuestion || questionFromReply,
-    awaitingField:
-      composed.awaitingField !== undefined ? composed.awaitingField : nextState.awaitingField,
-  };
+  let finalState;
+  let replyText;
+  let responseSource = 'v3_core_f2';
+
+  if (isV3HandoffEnabled()) {
+    const f3 = runF3Pipeline({ state: nextState, decision, text });
+    finalState = f3.state;
+    replyText = f3.replyText;
+    responseSource = 'v3_core_f3_1';
+    v3Log('f3_planner', {
+      conversation_id: conversationId,
+      flow: f3.plannerOut?.flowKey,
+      missing_slots: f3.plannerOut?.missingSlots,
+      handoff_action: f3.handoffOut?.action,
+      qualification_complete: finalState.qualificationComplete,
+      advisor_contact_consent: finalState.advisorContactConsent,
+    });
+  } else {
+    const composed = composeHumanResponse({ state: nextState, decision, context: {} });
+    replyText = composeHumanReplyText({ state: nextState, decision, context: {} });
+    const questionFromReply = (() => {
+      const matches = String(replyText || '').match(/¿[^?]+\?/g);
+      return matches && matches.length ? matches[matches.length - 1] : null;
+    })();
+    finalState = {
+      ...nextState,
+      lastAssistantReply: replyText,
+      lastAssistantQuestion: composed.followUpQuestion || questionFromReply,
+      awaitingField:
+        composed.awaitingField !== undefined ? composed.awaitingField : nextState.awaitingField,
+    };
+  }
+
   setSession(conversationId, finalState);
 
   v3Log('composer_output', {
@@ -77,6 +99,7 @@ function processV3Turn(input) {
     stage: finalState.conversationStage,
     goal: finalState.conversationGoal,
     reply_length: replyText.length,
+    response_source: responseSource,
   });
 
   return {
@@ -85,7 +108,7 @@ function processV3Turn(input) {
     state: finalState,
     decision,
     guard,
-    responseSource: 'v3_core_f2',
+    responseSource,
     fallbackToLegacy: false,
   };
 }

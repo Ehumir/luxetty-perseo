@@ -1,6 +1,12 @@
 'use strict';
 
-const { CONVERSATION_STAGES, IDENTITY_STATES, CONVERSATION_MODE, FRUSTRATION_STATES } = require('./constants');
+const {
+  CONVERSATION_STAGES,
+  IDENTITY_STATES,
+  CONVERSATION_MODE,
+  FRUSTRATION_STATES,
+  ADVISOR_CONTACT_CONSENT,
+} = require('./constants');
 
 function nowIso() {
   return new Date().toISOString();
@@ -29,6 +35,12 @@ function createInitialConversationState(seed = {}) {
     budget: null,
     bedrooms: null,
     awaitingField: null,
+    advisorContactConsent: ADVISOR_CONTACT_CONSENT.UNKNOWN,
+    qualificationComplete: false,
+    crmPayloadReady: false,
+    crmPayloadPreview: null,
+    qualificationMissingSlots: [],
+    handoffStage: null,
     frustrationState: FRUSTRATION_STATES.NONE,
     mode: CONVERSATION_MODE.AI,
     collectedFields: {},

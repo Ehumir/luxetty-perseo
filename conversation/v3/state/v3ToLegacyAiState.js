@@ -25,6 +25,14 @@ function mapV3StateToLegacyAiState(v3State) {
     conversation_goal_locked: v3State.conversationGoalLocked === true,
     last_question: v3State.lastAssistantQuestion ?? null,
     v3_primary_active: true,
+    qualification_complete: v3State.qualificationComplete === true,
+    advisor_contact_consent: v3State.advisorContactConsent ?? null,
+    handoff_stage: v3State.handoffStage ?? null,
+    crm_payload_ready: v3State.crmPayloadReady === true,
+    qualification_missing_slots: Array.isArray(v3State.qualificationMissingSlots)
+      ? v3State.qualificationMissingSlots
+      : [],
+    crm_payload_preview: v3State.crmPayloadPreview ?? null,
   };
 }
 
