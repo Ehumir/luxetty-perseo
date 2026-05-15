@@ -22,6 +22,7 @@ const {
 const { appendNameRequestIfNeeded, hasValidHumanName } = require('./namePrompt');
 const contextualMemoryResolver = require('./contextualMemoryResolver');
 const { mergeSignalsWithMulti, extractMultiSignals } = require('./multiSignalExtractor');
+const antiLoopGuardrails = require('./antiLoopGuardrails');
 const { OPENAI_MODEL } = require('../config/env');
 
 function isEngineV2Enabled() {
@@ -297,6 +298,12 @@ async function processConversationTurnV2(input = {}, options = {}) {
   applyOrchestratorToAwaitingField(nextAiState, orchestratorDecision);
   Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(incomingSignals, previousAiState, nextAiState, text));
 
+  const inboundFrustration = antiLoopGuardrails.detectConversationalFrustration(text);
+  Object.assign(
+    nextAiState,
+    antiLoopGuardrails.buildStaleAwaitingFieldPatch(nextAiState, incomingSignals, text, input.contact || null)
+  );
+
   /** Propiedad explícita */
   let matchedProperties = Array.isArray(input.propertiesContext?.matchedProperties)
     ? [...input.propertiesContext.matchedProperties]
@@ -411,7 +418,12 @@ async function processConversationTurnV2(input = {}, options = {}) {
   const skipNameAppend = orchestratorDecision?.reply_strategy?.goal === 'capture_name';
 
   let outboundMessages = reply;
-  if (input.conversationId && input.skipNameAppend !== true && !skipNameAppend) {
+  if (
+    input.conversationId &&
+    input.skipNameAppend !== true &&
+    !skipNameAppend &&
+    !inboundFrustration.frustrated
+  ) {
     const nameAppendMode =
       nextAiState.lead_flow === 'demand' &&
       cleanSpaces(String(nextAiState.location_text || '')) &&
@@ -507,6 +519,22 @@ async function processConversationTurnV2(input = {}, options = {}) {
   Object.assign(out.nextAiState, subValidate.statePatch);
   out.outboundMessages = subValidate.messages;
   out.reply = subValidate.messages;
+
+  const recentOutboundTextsV2 = Array.isArray(input.recentMessages)
+    ? input.recentMessages
+        .filter((r) => r?.direction === 'outbound')
+        .map((r) => String(r?.message_text || ''))
+        .filter(Boolean)
+    : [];
+  const nearDupV2 = antiLoopGuardrails.applyOutboundNearDuplicateGuard(out.outboundMessages, {
+    recentOutboundTexts: recentOutboundTextsV2,
+    userInboundText: text,
+    nextAiState: out.nextAiState,
+  });
+  out.outboundMessages = nearDupV2.reply;
+  out.reply = nearDupV2.reply;
+  Object.assign(out.nextAiState, nearDupV2.patch);
+  antiLoopGuardrails.recordTurnAntiLoopMeta(out.nextAiState, out.outboundMessages, out.responseSource);
 
   return out;
 }
