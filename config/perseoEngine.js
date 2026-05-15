@@ -1,9 +1,10 @@
 'use strict';
 
 /**
- * V3-F0 — Selector de motor conversacional (solo contención).
- * `PERSEO_ENGINE=v3` queda reservado: el runtime productivo sigue siendo `legacy` hasta F1+.
+ * Selector de motor (`PERSEO_ENGINE`). Runtime productivo: `legacy` hasta rollout explícito.
+ * `v3` reservado; `PERSEO_V3_ENABLED` documentado en F1+.
  * @see docs/sprints/perseo-v3-f0-legacy-freeze.md
+ * @see docs/sprints/perseo-v3-f1-conversational-core.md
  */
 
 const LEGACY = 'legacy';
@@ -17,13 +18,27 @@ function normalizePerseoEngine(raw) {
 }
 
 /**
- * @returns {{ requested: string, effective: string, v3Ignored: boolean }}
+ * @returns {{
+ *   requested: string,
+ *   effective: string,
+ *   v3ReservedIgnored: boolean,
+ *   v3Ignored: boolean,
+ *   accidentalV3WithoutMasterFlag: boolean,
+ * }}
  */
 function getPerseoEngineRuntime() {
   const requested = normalizePerseoEngine(process.env.PERSEO_ENGINE);
+  const v3Master = process.env.PERSEO_V3_ENABLED === 'true';
   const effective = LEGACY;
-  const v3Ignored = requested === V3;
-  return { requested, effective, v3Ignored };
+  const v3ReservedIgnored = requested === V3;
+  const accidentalV3WithoutMasterFlag = requested === V3 && !v3Master;
+  return {
+    requested,
+    effective,
+    v3ReservedIgnored,
+    v3Ignored: v3ReservedIgnored,
+    accidentalV3WithoutMasterFlag,
+  };
 }
 
 module.exports = {

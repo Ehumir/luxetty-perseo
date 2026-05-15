@@ -11,6 +11,7 @@
 require('dotenv').config();
 
 const { getPerseoEngineRuntime } = require('../config/perseoEngine');
+const { getPerseoV3Config, shouldRouteInboundToV3Core } = require('../config/perseoV3Flags');
 
 const url = String(process.env.SUPABASE_URL || '').trim();
 let projectRef = null;
@@ -26,7 +27,10 @@ const v2Raw = process.env.PERSEO_POLICY_V2_ENABLED;
 const debugRaw = process.env.PERSEO_POLICY_DEBUG_LOG;
 const mediaRaw = process.env.PERSEO_INBOUND_MEDIA_STORAGE_ENABLED;
 const engineRaw = process.env.PERSEO_ENGINE;
+const v3EnabledRaw = process.env.PERSEO_V3_ENABLED;
+const v3ShadowRaw = process.env.PERSEO_V3_SHADOW_MODE;
 const engineRt = getPerseoEngineRuntime();
+const v3Cfg = getPerseoV3Config();
 
 const out = {
   PERSEO_POLICY_V2_ENABLED_raw: v2Raw === undefined || v2Raw === '' ? '(unset)' : v2Raw,
@@ -38,7 +42,14 @@ const out = {
   PERSEO_ENGINE_raw: engineRaw === undefined || engineRaw === '' ? '(unset)' : engineRaw,
   perseo_engine_requested: engineRt.requested,
   perseo_engine_effective: engineRt.effective,
-  perseo_engine_v3_reserved_ignored: engineRt.v3Ignored,
+  perseo_engine_v3_reserved_ignored: engineRt.v3ReservedIgnored,
+  perseo_engine_accidental_v3_without_master: engineRt.accidentalV3WithoutMasterFlag,
+  PERSEO_V3_ENABLED_raw: v3EnabledRaw === undefined || v3EnabledRaw === '' ? '(unset)' : v3EnabledRaw,
+  PERSEO_V3_SHADOW_MODE_raw: v3ShadowRaw === undefined || v3ShadowRaw === '' ? '(unset)' : v3ShadowRaw,
+  perseo_v3_enabled: v3Cfg.enabled,
+  perseo_v3_shadow_mode: v3Cfg.shadowMode,
+  perseo_v3_qa_allowlist_count: v3Cfg.qaAllowlist.length,
+  perseo_v3_inbound_route_would_activate: shouldRouteInboundToV3Core(),
   SUPABASE_URL_set: Boolean(url),
   supabase_project_ref_from_url: projectRef || '(no se pudo derivar; revisa formato https://<ref>.supabase.co)',
   SUPABASE_SERVICE_ROLE_KEY_set: Boolean(key && String(key).length > 20),
