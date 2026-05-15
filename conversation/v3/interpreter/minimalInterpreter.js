@@ -4,6 +4,7 @@ const { normalizeText, cleanSpaces } = require('../../../utils/text');
 const { createEmptyDecision } = require('../types/conversationDecision');
 const { CONVERSATION_STAGES, V3_INTENT, CONVERSATION_GOALS } = require('../types/constants');
 const { detectFrustration } = require('./frustrationDetector');
+const { normalizeLocationFromUserText } = require('./locationNormalizer');
 
 function parseMoneyAmount(text) {
   const t = normalizeText(text);
@@ -175,7 +176,7 @@ function interpretUserMessage(state, text) {
   if (t.includes('cumbres') || t.includes('zona') || t.includes('colonia') || t.includes('municipio') || t.includes('esta en ') || t.includes('está en ')) {
     decision.detectedIntent = V3_INTENT.LOCATION_CAPTURE;
     decision.confidence = 0.85;
-    patch.locationText = t.includes('cumbres') ? 'Cumbres' : cleanSpaces(raw).slice(0, 120) || null;
+    patch.locationText = normalizeLocationFromUserText(raw);
     decision.extractedEntities.locationText = patch.locationText;
     decision.explicitFlowSwitch = false;
     return { patch, decision };
@@ -209,4 +210,5 @@ module.exports = {
   interpretUserMessage,
   parseMoneyAmount,
   parseBedrooms,
+  normalizeLocationFromUserText,
 };

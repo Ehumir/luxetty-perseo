@@ -68,6 +68,13 @@ Vale como 8 millones
 - Allowlist mal configurada podría exponer V3 a número incorrecto
 - Fallback a legacy si V3 falla o rule guard bloquea
 
+## F2.1 — State + Composer (hotfix)
+
+- **Bridge V3 → `ai_state`:** cada turno V3 primary persiste `lead_flow`, `full_name`, `location_text`, stage, goal, identity en Supabase.
+- **`!state`:** lee sesión V3 in-memory + `ai_state`; campos extra: `conversation_stage`, `identity_state`, `conversation_goal`, `goal_locked`, `last_question`.
+- **Composer:** no duplica follow-up si ya está en el cuerpo del mensaje.
+- **Ubicación:** `Está en San Pedro` → `San Pedro` (`locationNormalizer.js`).
+
 ## Fuera de alcance F2
 
 CRM, contactos, leads, multimedia, Meta, property search, OpenAI global, Supabase persistente V3.
