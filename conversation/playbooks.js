@@ -1,3 +1,7 @@
+/**
+ * V3-F0 LEGACY FREEZE — Playbooks de pasos comerciales.
+ * No nuevos playbooks ni pasos aquí; evolución en V3 Stage Engine.
+ */
 const playbooks = {
   rent_search: [
     'ask_rent_property_type',

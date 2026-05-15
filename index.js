@@ -8,11 +8,14 @@ require('dotenv').config();
  * Reemplazo TOTAL de index.js: sin cascadas legacy de playbooks/templates como respuesta final.
  * Orquesta: inbound → dedupe → persist → gatekeeper (Sprint 2) → contexto mínimo → engineV2/fallback consultivo
  * → guardrail obligatorio de nombre → contacto provisional → lead (solo si aplica) → outbound vía sendPerseoAutomatedWhatsApp → WhatsApp.
+ *
+ * V3-F0 — Congelación legacy: no añadir aquí lógica conversacional nueva ni ramas de tono;
+ * migrar evolución a conversation/v3/ (ver docs/sprints/perseo-v3-f0-legacy-freeze.md).
  */
 
 const express = require('express');
 
-const { PORT, VERIFY_TOKEN } = require('./config/env');
+const { PORT, VERIFY_TOKEN, getPerseoEngineRuntime } = require('./config/env');
 const { supabase } = require('./services/supabaseService');
 const { sendPerseoAutomatedWhatsApp } = require('./services/perseoAutomatedWhatsApp');
 const { scheduleInboundMediaIngest } = require('./services/inboundMediaStorageIngest');
@@ -368,6 +371,10 @@ function hasConversationCapturedFullName(aiState = {}) {
   return !!cleanSpaces(String(aiState?.full_name || ''));
 }
 
+/**
+ * V3-F0 LEGACY FREEZE — Fallback consultivo productivo.
+ * Hotfix only (P0/security). Nuevas capacidades → PERSEO Conversational Core V3.
+ */
 function buildConsultiveFallbackReply({
   text,
   signals,
@@ -1047,13 +1054,17 @@ app.post('/webhook', async (req, res) => {
 });
 
 if (require.main === module) {
-  app.listen(PORT, () =>
+  app.listen(PORT, () => {
+    const engineRt = getPerseoEngineRuntime();
     logEvent('server_started', {
       port: PORT,
       perseo_policy_v2_reads_global_settings: process.env.PERSEO_POLICY_V2_ENABLED === 'true',
       perseo_policy_debug_log: process.env.PERSEO_POLICY_DEBUG_LOG === 'true',
-    })
-  );
+      perseo_engine_requested: engineRt.requested,
+      perseo_engine_effective: engineRt.effective,
+      perseo_engine_v3_reserved_ignored: engineRt.v3Ignored,
+    });
+  });
 }
 
 module.exports = {
