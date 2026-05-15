@@ -42,6 +42,7 @@ const propertySpecificFlow = require('./conversation/propertySpecificFlow');
 const propertyInventoryService = require('./services/propertyInventoryService');
 const leadEntryPointRouter = require('./conversation/leadEntryPointRouter');
 const nameFirstGuardrail = require('./conversation/nameFirstGuardrail');
+const antiLoopGuardrails = require('./conversation/antiLoopGuardrails');
 const { extractPossibleName } = require('./conversation/parsers');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
@@ -271,18 +272,59 @@ function enforceNameCapture(reply, context = {}) {
     recentOutboundTexts = [],
     userInboundText = '',
     leadFlow = null,
+    inboundFrustration = null,
+    hasValidHumanNameFn = null,
   } = context;
+
+  const frustration = inboundFrustration && typeof inboundFrustration === 'object' ? inboundFrustration : { frustrated: false };
+  const nameOkFn = typeof hasValidHumanNameFn === 'function' ? hasValidHumanNameFn : hasValidHumanName;
 
   if (!requiresName(contact, aiState, waProfileName)) return { reply, applied: false };
   const merged = Array.isArray(reply) ? reply.join('\n\n') : String(reply || '');
   if (replyAlreadyAsksName(merged)) return { reply, applied: false };
 
+  if (frustration.frustrated) {
+    if (aiState?.awaiting_field === 'full_name' && !cleanSpaces(String(aiState?.full_name || ''))) {
+      return {
+        reply: antiLoopGuardrails.buildFrustrationRecoveryReply({
+          aiState,
+          contact,
+          userText: userInboundText,
+          hasValidHumanNameFn: nameOkFn,
+        }),
+        applied: true,
+        reason: 'frustration_name_loop_break',
+        statePatch: { awaiting_field: null, complaint_followup: true },
+      };
+    }
+    if (cleanSpaces(merged)) {
+      return { reply, applied: false, statePatch: { awaiting_field: null } };
+    }
+  }
+
   // Insistir si ya estamos esperando nombre y el usuario no lo dio.
   if (aiState?.awaiting_field === 'full_name' && !cleanSpaces(String(aiState?.full_name || ''))) {
+    if (frustration.frustrated) {
+      return {
+        reply: antiLoopGuardrails.buildFrustrationRecoveryReply({
+          aiState,
+          contact,
+          userText: userInboundText,
+          hasValidHumanNameFn: nameOkFn,
+        }),
+        applied: true,
+        reason: 'frustration_instead_of_name_insist',
+        statePatch: { awaiting_field: null, complaint_followup: true },
+      };
+    }
     const insist = [cleanSpaces(merged), 'Para registrarte bien y orientarte mejor, ¿me compartes tu nombre?']
       .filter(Boolean)
       .join('\n\n');
     return { reply: insist, applied: true, reason: 'awaiting_full_name_insist' };
+  }
+
+  if (frustration.frustrated && cleanSpaces(merged)) {
+    return { reply, applied: false, statePatch: { awaiting_field: null } };
   }
 
   const nameAppendMode = operationalDemandContextComplete(aiState) ? 'name_only' : 'default';
@@ -731,6 +773,9 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
+    const inboundFrustration = antiLoopGuardrails.detectConversationalFrustration(text);
+    Object.assign(nextAiState, antiLoopGuardrails.buildStaleAwaitingFieldPatch(nextAiState, parsedSignals, text, contact));
+
     const engineV2 = isEngineV2Enabled() && shouldUseConversationEngineV2({ text, parsedSignals, inboundContext });
 
     let reply;
@@ -796,6 +841,14 @@ app.post('/webhook', async (req, res) => {
           resolvedPropertyRow,
           recentMessages,
         });
+        const fbLoop = antiLoopGuardrails.applyFallbackStreakRecovery(reply, {
+          nextAiState,
+          text,
+          contact,
+          waProfileName,
+        });
+        reply = fbLoop.reply;
+        Object.assign(nextAiState, fbLoop.patch);
         logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: false });
       }
 
@@ -831,7 +884,13 @@ app.post('/webhook', async (req, res) => {
             recentOutboundTexts,
             userInboundText: text,
             leadFlow: nextAiState.lead_flow || parsedSignals.lead_flow || null,
+            inboundFrustration,
+            hasValidHumanNameFn: hasValidHumanName,
           });
+
+      if (enforced.statePatch && typeof enforced.statePatch === 'object') {
+        Object.assign(nextAiState, enforced.statePatch);
+      }
 
       if (enforced.applied) {
         logEvent('name_required_guardrail_applied', { conversation_id: conversationId, reason: enforced.reason || null });
@@ -839,10 +898,23 @@ app.post('/webhook', async (req, res) => {
           reason: enforced.reason || null,
           response_source: responseSource,
         });
-        if (!nextAiState.full_name) nextAiState.awaiting_field = 'full_name';
+        const skipAwaitingReassert =
+          enforced.reason === 'frustration_name_loop_break' ||
+          enforced.reason === 'frustration_instead_of_name_insist';
+        if (!nextAiState.full_name && !skipAwaitingReassert) nextAiState.awaiting_field = 'full_name';
       }
 
       reply = enforced.reply;
+
+      const nearDup = antiLoopGuardrails.applyOutboundNearDuplicateGuard(reply, {
+        recentOutboundTexts,
+        userInboundText: text,
+        nextAiState,
+      });
+      reply = nearDup.reply;
+      Object.assign(nextAiState, nearDup.patch);
+
+      antiLoopGuardrails.recordTurnAntiLoopMeta(nextAiState, reply, responseSource);
 
       if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
         const mergedReplyText = Array.isArray(reply) ? reply.join('\n\n') : String(reply || '');

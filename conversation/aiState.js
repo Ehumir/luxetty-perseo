@@ -166,6 +166,14 @@ function getDefaultAiState() {
     handoff_ready: false,
     handoff_sent: false,
     closing_message_sent: false,
+
+    /** P0.1 — Anti-loop: tipos de pregunta saliente recientes (nombre, generic_help, etc.). */
+    anti_loop_recent_question_types: [],
+    /** P0.1 — Firmas normalizadas de outbound reciente (dedupe). */
+    anti_loop_last_outbound_sigs: [],
+    /** P0.1 — Rachas consecutivas del mismo bucket de fallback consultivo. */
+    anti_loop_fallback_streak: 0,
+    anti_loop_last_fallback_bucket: null,
   };
 }
 
@@ -202,6 +210,18 @@ function normalizeAiState(rawState) {
       rawState.property_context_by_code && typeof rawState.property_context_by_code === 'object'
         ? rawState.property_context_by_code
         : {},
+    anti_loop_recent_question_types: Array.isArray(rawState.anti_loop_recent_question_types)
+      ? rawState.anti_loop_recent_question_types
+      : [],
+    anti_loop_last_outbound_sigs: Array.isArray(rawState.anti_loop_last_outbound_sigs)
+      ? rawState.anti_loop_last_outbound_sigs
+      : [],
+    anti_loop_fallback_streak:
+      rawState.anti_loop_fallback_streak != null && Number.isFinite(Number(rawState.anti_loop_fallback_streak))
+        ? Number(rawState.anti_loop_fallback_streak)
+        : 0,
+    anti_loop_last_fallback_bucket:
+      rawState.anti_loop_last_fallback_bucket != null ? String(rawState.anti_loop_last_fallback_bucket) : null,
   };
 
   if (!normalized.intent_type && normalized.playbook_type) {
