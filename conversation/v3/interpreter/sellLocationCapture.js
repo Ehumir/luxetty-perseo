@@ -11,12 +11,19 @@ function isSellFlow(state) {
   return state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
 }
 
+function isQualificationFlow(state) {
+  return !!(
+    state.conversationGoal &&
+    (state.conversationGoalLocked || state.leadFlow || state.conversationGoal)
+  );
+}
+
 /**
  * @param {import('../types/conversationState').ConversationState} state
  * @param {string} raw
  */
-function shouldAcceptSellLocationTurn(state, raw) {
-  if (!isSellFlow(state) || state.locationText) return false;
+function shouldAcceptQualificationLocationTurn(state, raw) {
+  if (!isQualificationFlow(state) || state.locationText) return false;
 
   const loc = normalizeLocationFromUserText(raw);
   if (!loc) return false;
@@ -41,6 +48,15 @@ function shouldAcceptSellLocationTurn(state, raw) {
  * @param {import('../types/conversationState').ConversationState} state
  * @param {string} raw
  */
+function shouldAcceptSellLocationTurn(state, raw) {
+  return shouldAcceptQualificationLocationTurn(state, raw) && isSellFlow(state);
+}
+
+function tryParseQualificationLocation(state, raw) {
+  if (!shouldAcceptQualificationLocationTurn(state, raw)) return null;
+  return normalizeLocationFromUserText(raw);
+}
+
 function tryParseSellLocation(state, raw) {
   if (!shouldAcceptSellLocationTurn(state, raw)) return null;
   return normalizeLocationFromUserText(raw);
@@ -48,6 +64,9 @@ function tryParseSellLocation(state, raw) {
 
 module.exports = {
   isSellFlow,
+  isQualificationFlow,
+  shouldAcceptQualificationLocationTurn,
   shouldAcceptSellLocationTurn,
+  tryParseQualificationLocation,
   tryParseSellLocation,
 };

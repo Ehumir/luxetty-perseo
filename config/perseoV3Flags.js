@@ -141,9 +141,15 @@ function getPerseoV3Config() {
   return {
     enabled: process.env.PERSEO_V3_ENABLED === 'true',
     shadowMode: process.env.PERSEO_V3_SHADOW_MODE === 'true',
+    handoffEnabled: process.env.PERSEO_V3_HANDOFF_ENABLED === 'true',
+    crmDryRun: process.env.PERSEO_V3_CRM_DRY_RUN !== 'false',
     qaAllowlist: splitAllowlist(process.env.PERSEO_V3_QA_ALLOWLIST),
     logStructured: process.env.PERSEO_V3_LOG === 'true',
   };
+}
+
+function isV3HandoffEnabled() {
+  return getPerseoV3Config().handoffEnabled;
 }
 
 function isPhoneOnV3Allowlist(phone) {
@@ -160,6 +166,7 @@ function resolveInboundRoutingMode(phone) {
 
 module.exports = {
   getPerseoV3Config,
+  isV3HandoffEnabled,
   isPhoneOnV3Allowlist,
   shouldRouteInboundToV3Core,
   evaluateV3PrimaryGate,
