@@ -3,6 +3,9 @@
 /**
  * P0 — Conversation Orchestrator (OpenAI primero; código valida y ejecuta CRM después).
  * Este módulo NO escribe DB ni CRM: solo produce/valida decisión estructurada y sugerencias.
+ *
+ * V3-F0 LEGACY FREEZE — No extender decisiones ni prompts aquí salvo hotfix P0.
+ * Reemplazo planificado: orchestrator/v3/ + Decision Core V3 (roadmap).
  */
 
 const { openai } = require('../services/openaiService');

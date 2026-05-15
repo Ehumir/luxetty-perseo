@@ -3,6 +3,8 @@
 /**
  * PERSEO — Conversation Engine V2
  * OpenAI (orchestrator + advisor) protagonista; código valida, facts reales y CRM fuera del LLM.
+ *
+ * V3-F0 LEGACY FREEZE — No nuevas ramas de orquestación aquí salvo hotfix P0.
  */
 
 const { cleanSpaces, normalizeText } = require('../utils/text');

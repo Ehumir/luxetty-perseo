@@ -5,6 +5,11 @@ const { getDefaultAiState } = require('./aiState');
 const { classifySellerScenarios } = require('./sellerScenarioClassifier');
 const { normalizePropertyCode, extractPropertyCode: extractPropertyCodeResolved } = require('./propertyIntentResolver');
 
+/**
+ * V3-F0 LEGACY FREEZE — Parser de señales e intención.
+ * Sin nuevas heurísticas salvo hotfix P0; migración a V3 Intent & Context Interpreter.
+ */
+
 function normalizePropertyCodeFromText(rawValue) {
   return normalizePropertyCode(rawValue);
 }
