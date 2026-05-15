@@ -29,6 +29,7 @@ const PERSEO_POLICY_V2_ENABLED = process.env.PERSEO_POLICY_V2_ENABLED === 'true'
 const PERSEO_INBOUND_MEDIA_STORAGE_ENABLED = process.env.PERSEO_INBOUND_MEDIA_STORAGE_ENABLED === 'true';
 
 const { getPerseoEngineRuntime } = require('./perseoEngine');
+const { getPerseoV3Config, shouldRouteInboundToV3Core } = require('./perseoV3Flags');
 
 module.exports = {
   PORT,
@@ -51,4 +52,6 @@ module.exports = {
   PERSEO_POLICY_V2_ENABLED,
   PERSEO_INBOUND_MEDIA_STORAGE_ENABLED,
   getPerseoEngineRuntime,
+  getPerseoV3Config,
+  shouldRouteInboundToV3Core,
 };

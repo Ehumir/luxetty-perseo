@@ -1,21 +1,46 @@
 # PERSEO Conversational Core V3 — `conversation/v3/`
 
-**Fase:** V3-F0 (estructura paralela; **sin** imports productivos desde `index.js` todavía).
+**Fase:** V3-F1 — núcleo paralelo en código; **sin** imports productivos desde `index.js` hasta rollout (F5+).
 
 ## Propósito
 
-Contratos e implementación futura del núcleo conversacional (state, interpreter, rule guard, composer). El motor **legacy** permanece en `conversation/*.js` fuera de esta carpeta.
+Núcleo conversacional desacoplado (state, interpreter, rule guard, composer). El motor **legacy** permanece en `conversation/*.js` fuera de esta carpeta.
 
-## Reglas
+## Contenido (F1)
 
-- No cablear aquí CRM, multimedia ni webhooks hasta las fases aprobadas en `docs/sprints/perseo-conversational-core-v3-roadmap.md`.
-- Cambios de lógica conversacional nueva: preferir esta área tras F1; evitar crecer plantillas en `index.js` / `contextualMemoryResolver.js`.
+| Directorio | Rol |
+|------------|-----|
+| `types/` | `ConversationState`, `ConversationDecision`, enums |
+| `state/` | `stateManager` — merges puros + guard |
+| `rules/` | `ruleGuard` — invariantes sin side effects |
+| `stages/` | `resolveNextStage` determinista |
+| `identity/` | `resolveIdentityState` |
+| `interpreter/` | `mockInterpreter` (tests/harness solamente) |
+| `composer/` | Stub de contrato de redacción |
+| `crm/` | Placeholder F6 |
+| `core/` | `v3Logger`, `shadowHarness` |
+| `contracts/` | Índice documental de contratos |
+| `qa/` | Notas de fixtures V3 |
 
-## Relación con otras carpetas `*/v3/`
+## Otras carpetas `*/v3/` (F0)
 
 | Carpeta | Rol |
 |---------|-----|
-| `orchestrator/v3/` | Orquestación inbound/outbound futura (paralela a `index.js` + `conversationOrchestrator.js`). |
-| `state/v3/` | Modelos / merges de estado protegido (paralelo a `aiState.js` + `stateUpdater.js`). |
-| `handlers/v3/` | Handlers por canal o tipo de mensaje. |
-| `qa/v3/` | Harness y fixtures QA específicos de V3. |
+| `orchestrator/v3/` | Orquestación futura (paralela a `index.js`) |
+| `state/v3/` | Placeholder de modelos de estado |
+| `handlers/v3/` | Handlers por canal |
+| `qa/v3/` | Harness QA de repo |
+
+## Reglas
+
+- No cablear CRM, multimedia ni webhooks hasta la fase aprobada en `docs/sprints/perseo-conversational-core-v3-roadmap.md`.
+- Evitar crecer plantillas en `index.js` / `contextualMemoryResolver.js`; evolución conversacional nueva → aquí.
+
+## Documentación
+
+- `docs/sprints/perseo-v3-f0-legacy-freeze.md`
+- `docs/sprints/perseo-v3-f1-conversational-core.md`
+
+## Flags
+
+`config/perseoEngine.js`, `config/perseoV3Flags.js`, `.env.example`.
