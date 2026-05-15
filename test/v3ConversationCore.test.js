@@ -31,7 +31,7 @@ describe('V3-F1 venta mínima (mock, sin OpenAI)', () => {
     assert.equal(s.expectedPrice, 8_000_000);
     assert.equal(s.budget, null);
     assert.equal(s.collectedFields.fullName, 'Jorge');
-    assert.equal(s.conversationStage, CONVERSATION_STAGES.READY_FOR_CRM);
+    assert.equal(s.conversationStage, CONVERSATION_STAGES.PROPERTY_CONTEXT);
   });
 });
 

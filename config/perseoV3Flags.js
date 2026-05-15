@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Feature flags oficiales V3 (F1). No activan el webhook; solo contrato y observabilidad.
+ * Feature flags oficiales V3.
  */
 
 function splitAllowlist(raw) {
@@ -11,6 +11,10 @@ function splitAllowlist(raw) {
     .split(/[,;\s]+/)
     .map((x) => x.trim())
     .filter(Boolean);
+}
+
+function normalizePhoneForAllowlist(phone) {
+  return String(phone || '').replace(/\D/g, '').replace(/^0+/, '');
 }
 
 /**
@@ -30,17 +34,28 @@ function getPerseoV3Config() {
   };
 }
 
+function isPhoneOnV3Allowlist(phone) {
+  const cfg = getPerseoV3Config();
+  if (!cfg.enabled || !cfg.qaAllowlist.length) return false;
+  const digits = normalizePhoneForAllowlist(phone);
+  if (!digits) return false;
+  return cfg.qaAllowlist.some((entry) => {
+    const e = normalizePhoneForAllowlist(entry);
+    if (!e) return false;
+    return digits === e || digits.endsWith(e) || e.endsWith(digits);
+  });
+}
+
 /**
- * F1+: cuándo el proceso **podría** enrutar a V3 (aún no cableado en index).
- * Hoy siempre false hasta integración explícita.
+ * F2: enrutamiento real solo allowlist + enabled. Resto legacy.
  */
-function shouldRouteInboundToV3Core() {
-  const c = getPerseoV3Config();
-  const requested = String(process.env.PERSEO_ENGINE || '').trim().toLowerCase() === 'v3';
-  return !!(c.enabled && requested);
+function shouldRouteInboundToV3Core(phone) {
+  return isPhoneOnV3Allowlist(phone);
 }
 
 module.exports = {
   getPerseoV3Config,
+  isPhoneOnV3Allowlist,
   shouldRouteInboundToV3Core,
+  normalizePhoneForAllowlist,
 };

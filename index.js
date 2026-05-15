@@ -48,6 +48,7 @@ const nameFirstGuardrail = require('./conversation/nameFirstGuardrail');
 const antiLoopGuardrails = require('./conversation/antiLoopGuardrails');
 const r0ContextContinuity = require('./conversation/r0ContextContinuity');
 const { extractPossibleName } = require('./conversation/parsers');
+const v3InboundBridge = require('./conversation/v3/core/v3InboundBridge');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -749,6 +750,9 @@ app.post('/webhook', async (req, res) => {
 
     if (sprintQa?.handled) {
       const cmd = parseSprint1StrictCommand(text);
+      if (cmd === 'reset') {
+        v3InboundBridge.clearSession(conversationId);
+      }
       const reply = sprintQa.messages;
       await sendPerseoAutomatedWhatsApp({
         channel: 'qa',
@@ -839,8 +843,32 @@ app.post('/webhook', async (req, res) => {
     let reply;
     let responseSource = 'fallback_consultive';
     let nameFirstHandled = false;
+    let v3PrimaryHandled = false;
+    let skipLegacyCrm = false;
 
     if (policy.allowAutomatedReply) {
+      const v3Try = v3InboundBridge.tryV3PrimaryReply({
+        conversationId,
+        phone: from,
+        text,
+      });
+      if (v3Try.handled) {
+        v3PrimaryHandled = true;
+        skipLegacyCrm = !!v3Try.skipLegacyCrm;
+        reply = v3Try.reply;
+        responseSource = v3Try.responseSource || 'v3_core_f2';
+        logEvent('v3_primary_reply', {
+          conversation_id: conversationId,
+          route: v3Try.route,
+        });
+      } else if (v3Try.fallback) {
+        logEvent('v3_primary_fallback_legacy', {
+          conversation_id: conversationId,
+          reason: v3Try.reason || null,
+        });
+      }
+
+      if (!v3PrimaryHandled) {
       const guard = nameFirstGuardrail.evaluateInboundTurn({
         text,
         previousAiState,
@@ -999,6 +1027,19 @@ app.post('/webhook', async (req, res) => {
       if (cleanSpaces(String(nextAiState.full_name || '')) && nextAiState.awaiting_field === 'full_name') {
         nextAiState.awaiting_field = null;
       }
+
+      try {
+        v3InboundBridge.maybeRunV3Shadow({
+          conversationId,
+          phone: from,
+          text,
+          legacyReply: reply,
+        });
+      } catch (v3ShadowErr) {
+        console.error('v3_shadow_fatal', v3ShadowErr);
+      }
+      }
+
     } else {
       reply = [];
       responseSource = 'automation_gated_skip';
@@ -1019,20 +1060,24 @@ app.post('/webhook', async (req, res) => {
 
     await saveConversationState(conversationId, nextAiState);
 
-    await runCleanOrchestratorCrmPhase({
-      supabase,
-      conversationId,
-      conversationRow,
-      nextAiState,
-      parsedSignals,
-      text,
-      contact,
-      from,
-      waProfileName,
-      rawPayload: req.body || null,
-      property,
-      propertyId,
-    });
+    if (!skipLegacyCrm) {
+      await runCleanOrchestratorCrmPhase({
+        supabase,
+        conversationId,
+        conversationRow,
+        nextAiState,
+        parsedSignals,
+        text,
+        contact,
+        from,
+        waProfileName,
+        rawPayload: req.body || null,
+        property,
+        propertyId,
+      });
+    } else {
+      logEvent('v3_skip_legacy_crm', { conversation_id: conversationId });
+    }
 
     await sendPerseoAutomatedWhatsApp({
       channel: 'ia',

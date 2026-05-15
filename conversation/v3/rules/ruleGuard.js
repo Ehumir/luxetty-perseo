@@ -1,7 +1,14 @@
 'use strict';
 
-const { ALL_STAGES } = require('../types/constants');
-const { CONVERSATION_MODE } = require('../types/constants');
+const { ALL_STAGES, V3_INTENT, CONVERSATION_MODE } = require('../types/constants');
+
+function isDemandIntent(intent) {
+  return intent === 'demand' || intent === V3_INTENT.BUY_PROPERTY || intent === V3_INTENT.RENT_PROPERTY;
+}
+
+function isOfferIntent(intent) {
+  return intent === 'offer' || intent === V3_INTENT.SELL_PROPERTY;
+}
 
 /**
  * @typedef {object} RuleGuardResult
@@ -26,12 +33,20 @@ function evaluateRuleGuard(state, decision, context = {}) {
     blockedReasons.push('conversation_in_human_attention');
   }
 
-  if (state.leadFlow === 'offer' && decision.detectedIntent === 'demand' && !decision.explicitFlowSwitch) {
+  if (
+    (state.leadFlow === 'offer' || state.conversationGoalLocked) &&
+    isDemandIntent(decision.detectedIntent) &&
+    !decision.explicitFlowSwitch
+  ) {
     violations.push('offer_to_demand_without_confirmation');
     blockedReasons.push('sticky_lead_flow');
   }
 
-  if (state.leadFlow === 'demand' && decision.detectedIntent === 'offer' && !decision.explicitFlowSwitch) {
+  if (
+    state.leadFlow === 'demand' &&
+    isOfferIntent(decision.detectedIntent) &&
+    !decision.explicitFlowSwitch
+  ) {
     violations.push('demand_to_offer_without_confirmation');
     blockedReasons.push('sticky_lead_flow');
   }
