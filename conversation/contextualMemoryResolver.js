@@ -7,6 +7,7 @@
 
 const { normalizeText, cleanSpaces } = require('../utils/text');
 const { extractMaxPrice, extractBedrooms } = require('./parsers');
+const r0ContextContinuity = require('./r0ContextContinuity');
 
 const FORBIDDEN_GENERIC_SNIPPETS = [
   'claro, te ayudo. dime un poco mas de lo que buscas y te oriento',
@@ -223,7 +224,9 @@ function mergeContextualSignals(parsedSignals = {}, previousAiState = {}, nextAi
     prevSnap.lead_flow === 'demand' || built.lead_flow === 'demand' || sig.lead_flow === 'demand';
   const hasLoc = !!cleanSpaces(String(prevSnap.location_text || built.location_text || sig.location_text || ''));
   const offerCapture =
-    prevSnap.lead_flow === 'offer' || built.lead_flow === 'offer' || sig.lead_flow === 'offer';
+    r0ContextContinuity.isR0StickySaleCaptureThread(prevSnap) ||
+    built.lead_flow === 'offer' ||
+    sig.lead_flow === 'offer';
 
   let budget =
     sig.budget_max != null && Number.isFinite(Number(sig.budget_max)) ? Number(sig.budget_max) : null;
@@ -307,13 +310,10 @@ function propertyLines(matched = [], max = 3) {
 
 /**
  * P0.1.1 — Captación/venta: no usar plantillas de demanda/búsqueda.
- * Si lead_flow es explícitamente `demand`, seguimos permitiendo demanda aunque operation_type venga sucio.
+ * P0.1.2 — Misma heurística que sticky R0 (no confundir comprador demand+sale con vendedor).
  */
 function isOfferOrSellerSaleContext(aiState = {}) {
-  const st = aiState && typeof aiState === 'object' ? aiState : {};
-  if (st.lead_flow === 'offer') return true;
-  if (st.lead_flow === 'demand') return false;
-  return st.operation_type === 'sale';
+  return r0ContextContinuity.isR0StickySaleCaptureThread(aiState);
 }
 
 /**

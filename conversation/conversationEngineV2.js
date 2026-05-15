@@ -23,6 +23,7 @@ const { appendNameRequestIfNeeded, hasValidHumanName } = require('./namePrompt')
 const contextualMemoryResolver = require('./contextualMemoryResolver');
 const { mergeSignalsWithMulti, extractMultiSignals } = require('./multiSignalExtractor');
 const antiLoopGuardrails = require('./antiLoopGuardrails');
+const r0ContextContinuity = require('./r0ContextContinuity');
 const { OPENAI_MODEL } = require('../config/env');
 
 function isEngineV2Enabled() {
@@ -206,6 +207,7 @@ async function processConversationTurnV2(input = {}, options = {}) {
   const previousAiState = input.previousAiState && typeof input.previousAiState === 'object' ? input.previousAiState : {};
   let incomingSignals = input.parsedSignals && typeof input.parsedSignals === 'object' ? input.parsedSignals : {};
   incomingSignals = mergeSignalsWithMulti(incomingSignals, extractMultiSignals(text, previousAiState));
+  incomingSignals = r0ContextContinuity.applyR0StickySignalsGuard(previousAiState, incomingSignals, text);
   const propertyIntentResolver = require('./propertyIntentResolver');
   Object.assign(incomingSignals, propertyIntentResolver.resolvePropertyIntent(text, previousAiState));
 
@@ -239,7 +241,11 @@ async function processConversationTurnV2(input = {}, options = {}) {
   pushLog('orchestrator_decision', orchestratorDecision);
 
   if (orchestratorDecision?.safety?.requires_programmed_reply) {
-    const mergedSig0 = mergeCapturedIntoSignals(incomingSignals, orchestratorDecision);
+    const mergedSig0 = r0ContextContinuity.applyR0StickySignalsGuard(
+      previousAiState,
+      mergeCapturedIntoSignals(incomingSignals, orchestratorDecision),
+      text
+    );
     const changeType0 = detectStateChange(previousAiState, mergedSig0);
     let nextAiState0 = buildNextState(previousAiState, mergedSig0, changeType0);
     nextAiState0 = applyDecisionToAiState(orchestratorDecision, nextAiState0);
@@ -291,6 +297,7 @@ async function processConversationTurnV2(input = {}, options = {}) {
   }
 
   incomingSignals = mergeCapturedIntoSignals(incomingSignals, orchestratorDecision);
+  incomingSignals = r0ContextContinuity.applyR0StickySignalsGuard(previousAiState, incomingSignals, text);
 
   const changeType = detectStateChange(previousAiState, incomingSignals);
   let nextAiState = buildNextState(previousAiState, incomingSignals, changeType);

@@ -408,6 +408,7 @@ function recordTurnAntiLoopMeta(nextAiState, reply, responseSource = '') {
 module.exports = {
   detectConversationalFrustration,
   classifyInboundShortIntent,
+  isLikelyShortPersonNameToken,
   normalizeOutboundSignature,
   classifyOutboundQuestionKind,
   classifyFallbackBucket,
