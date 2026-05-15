@@ -24,6 +24,10 @@
 
 Cada fase debe tener **tests automatizados** y **criterios PASS/FAIL** explícitos antes de avanzar.
 
+### Objetivo comercial obligatorio (F3+)
+
+PERSEO debe lograr que el contacto **acepte ser contactado por un asesor inmobiliario Luxetty** (consentimiento explícito, sin CRM real hasta validar payload). Ejemplo de copy: *"¿Te parece bien que un asesor de Luxetty te contacte para continuar?"* — **fuera de alcance F2/F2.3**.
+
 ---
 
 ## 2. Mapa de módulos legacy a reemplazar (por responsabilidad)

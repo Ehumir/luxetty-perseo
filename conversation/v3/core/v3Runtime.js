@@ -59,10 +59,16 @@ function processV3Turn(input) {
 
   const composed = composeHumanResponse({ state: nextState, decision, context: {} });
   const replyText = composeHumanReplyText({ state: nextState, decision, context: {} });
+  const questionFromReply = (() => {
+    const matches = String(replyText || '').match(/¿[^?]+\?/g);
+    return matches && matches.length ? matches[matches.length - 1] : null;
+  })();
   const finalState = {
     ...nextState,
     lastAssistantReply: replyText,
-    lastAssistantQuestion: composed.followUpQuestion,
+    lastAssistantQuestion: composed.followUpQuestion || questionFromReply,
+    awaitingField:
+      composed.awaitingField !== undefined ? composed.awaitingField : nextState.awaitingField,
   };
   setSession(conversationId, finalState);
 

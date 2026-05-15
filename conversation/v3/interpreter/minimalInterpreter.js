@@ -7,6 +7,7 @@ const { detectFrustration } = require('./frustrationDetector');
 const { normalizeLocationFromUserText } = require('./locationNormalizer');
 const { shouldAcceptAsIdentityName } = require('./nameHeuristics');
 const { parsePropertyType } = require('./propertyTypeParser');
+const { parseOccupancyStatus } = require('./occupancyParser');
 
 function parseMoneyAmount(text) {
   const t = normalizeText(text);
@@ -65,6 +66,13 @@ function applyPropertyTypePatch(patch, type) {
   patch.collectedFields = { ...(patch.collectedFields || {}), propertyType: type };
 }
 
+function applyOccupancyPatch(patch, status) {
+  if (!status) return;
+  patch.occupancyStatus = status;
+  patch.collectedFields = { ...(patch.collectedFields || {}), occupancyStatus: status };
+  patch.awaitingField = null;
+}
+
 /**
  * @param {import('../types/conversationState').ConversationState} state
  * @param {string} text
@@ -88,6 +96,18 @@ function interpretUserMessage(state, text) {
     decision.confidence = 0.9;
     decision.shouldEscalateHuman = false;
     patch.frustrationState = fr.level;
+    return { patch, decision };
+  }
+
+  const sellCtx =
+    state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
+  const occupancyParsed = parseOccupancyStatus(text);
+  if (occupancyParsed && sellCtx) {
+    decision.detectedIntent = V3_INTENT.OCCUPANCY_CAPTURE;
+    decision.confidence = 0.92;
+    applyOccupancyPatch(patch, occupancyParsed);
+    decision.explicitFlowSwitch = false;
+    decision.nextSuggestedStage = CONVERSATION_STAGES.READY_FOR_CRM;
     return { patch, decision };
   }
 

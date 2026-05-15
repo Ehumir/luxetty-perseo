@@ -48,13 +48,18 @@ function resolveNextStage(currentStage, decision, state) {
   }
 
   if (cur === CONVERSATION_STAGES.PROPERTY_CONTEXT) {
+    if (state.occupancyStatus || state.collectedFields?.occupancyStatus) {
+      return CONVERSATION_STAGES.READY_FOR_CRM;
+    }
     return CONVERSATION_STAGES.PROPERTY_CONTEXT;
   }
 
+  if (cur === CONVERSATION_STAGES.READY_FOR_CRM) {
+    return CONVERSATION_STAGES.READY_FOR_CRM;
+  }
+
   if (decision.nextSuggestedStage && ALL_STAGES.has(decision.nextSuggestedStage)) {
-    const ns = decision.nextSuggestedStage;
-    if (ns === CONVERSATION_STAGES.READY_FOR_CRM) return CONVERSATION_STAGES.PROPERTY_CONTEXT;
-    return ns;
+    return decision.nextSuggestedStage;
   }
 
   return cur;

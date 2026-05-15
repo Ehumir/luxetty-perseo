@@ -4,10 +4,9 @@ const { cleanSpaces, normalizeText } = require('../../../utils/text');
 const {
   CONVERSATION_GOALS,
   V3_INTENT,
-  CONVERSATION_STAGES,
-  IDENTITY_STATES,
   FORBIDDEN_COMPOSER_PATTERNS,
 } = require('../types/constants');
+const { occupancyStatusLabel } = require('../interpreter/occupancyParser');
 
 function formatMoneyMx(amount) {
   const n = Number(amount);
@@ -41,6 +40,10 @@ function getPropertyType(state) {
   return state.propertyType || state.collectedFields?.propertyType || null;
 }
 
+function getOccupancyStatus(state) {
+  return state.occupancyStatus || state.collectedFields?.occupancyStatus || null;
+}
+
 function sellContextReady(state) {
   const nm = firstName(state);
   return !!(
@@ -51,6 +54,10 @@ function sellContextReady(state) {
   );
 }
 
+function sellNeedsOccupancy(state) {
+  return sellContextReady(state) && !getOccupancyStatus(state);
+}
+
 function composeSellOccupancyQuestion(state) {
   const nm = firstName(state);
   const zone = state.locationText || 'esa zona';
@@ -59,6 +66,19 @@ function composeSellOccupancyQuestion(state) {
   return {
     responseText: `Perfecto, ${nm}. Tengo tu ${tipo} en ${zone} con precio esperado de ${pres}. ¿Está habitada, rentada o libre?`,
     followUpQuestion: null,
+    awaitingField: 'occupancy_status',
+    toneFlags: { consultive: true },
+  };
+}
+
+function composeSellQualificationComplete(state) {
+  const nm = firstName(state);
+  const zone = state.locationText || 'esa zona';
+  const occ = occupancyStatusLabel(getOccupancyStatus(state));
+  return {
+    responseText: `Perfecto, ${nm}. Tomé que la propiedad está ${occ}. Ya tengo registrados los datos principales de tu venta en ${zone}.`,
+    followUpQuestion: null,
+    awaitingField: null,
     toneFlags: { consultive: true },
   };
 }
@@ -74,9 +94,16 @@ function composeHumanResponse(input) {
   const sell = state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
   const buy = state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY || state.leadFlow === 'demand';
 
+  if (intent === V3_INTENT.OCCUPANCY_CAPTURE && sell && nm) {
+    return composeSellQualificationComplete(state);
+  }
+
   if (intent === V3_INTENT.FRUSTRATION) {
-    if (sell && sellContextReady(state)) {
+    if (sell && sellNeedsOccupancy(state)) {
       return composeSellOccupancyQuestion(state);
+    }
+    if (sell && sellContextReady(state) && getOccupancyStatus(state)) {
+      return composeSellQualificationComplete(state);
     }
     return {
       responseText:
@@ -136,12 +163,11 @@ function composeHumanResponse(input) {
   if (intent === V3_INTENT.LOCATION_CAPTURE && sell) {
     const zone = state.locationText || 'esa zona';
     if (nm) {
-      if (state.expectedPrice != null) {
-        return {
-          responseText: `Listo, ${nm}. Con la venta en ${zone} y alrededor de ${formatMoneyMx(state.expectedPrice)}, ¿la propiedad está habitada, rentada o libre?`,
-          followUpQuestion: '¿Está habitada, rentada o libre?',
-          toneFlags: { consultive: true },
-        };
+      if (state.expectedPrice != null && sellNeedsOccupancy(state)) {
+        return composeSellOccupancyQuestion(state);
+      }
+      if (state.expectedPrice != null && getOccupancyStatus(state)) {
+        return composeSellQualificationComplete(state);
       }
       return {
         responseText: `Perfecto, ${nm}. Tomé la zona (${zone}). ¿Tienes un precio esperado de venta?`,
@@ -157,8 +183,11 @@ function composeHumanResponse(input) {
   }
 
   if (intent === V3_INTENT.PROPERTY_TYPE_CAPTURE && sell && nm) {
-    if (state.locationText && state.expectedPrice != null) {
+    if (state.locationText && state.expectedPrice != null && sellNeedsOccupancy(state)) {
       return composeSellOccupancyQuestion(state);
+    }
+    if (state.locationText && state.expectedPrice != null && getOccupancyStatus(state)) {
+      return composeSellQualificationComplete(state);
     }
     return {
       responseText: `Perfecto, ${nm}. Tomé que es casa. ¿En qué zona está la propiedad?`,
@@ -170,8 +199,11 @@ function composeHumanResponse(input) {
   if (intent === V3_INTENT.SELLER_PRICE && sell) {
     const pres = formatMoneyMx(state.expectedPrice);
     const zone = state.locationText ? ` en ${state.locationText}` : '';
-    if (nm && getPropertyType(state)) {
+    if (nm && getPropertyType(state) && sellNeedsOccupancy(state)) {
       return composeSellOccupancyQuestion(state);
+    }
+    if (nm && getPropertyType(state) && getOccupancyStatus(state)) {
+      return composeSellQualificationComplete(state);
     }
     if (nm) {
       return {
@@ -241,8 +273,12 @@ function composeHumanResponse(input) {
     };
   }
 
-  if (sell && nm && sellContextReady(state)) {
+  if (sell && nm && sellNeedsOccupancy(state)) {
     return composeSellOccupancyQuestion(state);
+  }
+
+  if (sell && nm && sellContextReady(state) && getOccupancyStatus(state)) {
+    return composeSellQualificationComplete(state);
   }
 
   if (sell && nm) {
@@ -267,7 +303,10 @@ function composeHumanResponse(input) {
         toneFlags: { consultive: true },
       };
     }
-    return composeSellOccupancyQuestion(state);
+    if (sellNeedsOccupancy(state)) {
+      return composeSellOccupancyQuestion(state);
+    }
+    return composeSellQualificationComplete(state);
   }
 
   return {
