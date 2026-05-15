@@ -11,11 +11,14 @@ function normalizeLocationFromUserText(raw) {
   let t = cleanSpaces(String(raw || ''));
   if (!t) return null;
 
+  // Corrección conversacional: "No, está en San Pedro" → zona San Pedro
+  t = t.replace(/^(?:no|nop|nope)[,\s]+/i, '').trim();
+
   const lower = normalizeText(t);
   if (lower.includes('cumbres')) return 'Cumbres';
 
   const prefixPatterns = [
-    /^(?:esta|está|ubicada|ubicado|queda|se encuentra|localizada|localizado)\s+en\s+(.+)$/i,
+    /^(?:no,?\s*)?(?:esta|está|ubicada|ubicado|queda|se encuentra|localizada|localizado)\s+en\s+(.+)$/i,
     /^(?:en|la zona es|zona|colonia|municipio)\s+(.+)$/i,
     /^(?:es|seria|sería)\s+en\s+(.+)$/i,
   ];
