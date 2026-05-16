@@ -37,6 +37,10 @@ function mapV3StateToLegacyAiState(v3State) {
       ? v3State.qualificationMissingSlots
       : [],
     crm_payload_preview: v3State.crmPayloadPreview ?? null,
+    crm_execution_completed: v3State.crmExecutionCompleted === true,
+    crm_contact_id: v3State.crmContactId ?? null,
+    crm_lead_id: v3State.crmLeadId ?? null,
+    handoff_reason: v3State.handoffReason ?? v3State.unhandledReason ?? null,
     property_code: code || null,
     direct_property_code: code || null,
     direct_property_reference: code.length > 0,

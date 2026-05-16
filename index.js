@@ -51,6 +51,8 @@ const { extractPossibleName } = require('./conversation/parsers');
 const v3InboundBridge = require('./conversation/v3/core/v3InboundBridge');
 const { getSession: getV3Session } = require('./conversation/v3/core/sessionStore');
 const { mapV3StateToLegacyAiState } = require('./conversation/v3/state/v3ToLegacyAiState');
+const { executeV3CrmIfEligible } = require('./conversation/v3/crm/crmExecutor');
+const { setSession } = require('./conversation/v3/core/sessionStore');
 const { sanitizeV3PrimaryLegacyAiState } = require('./conversation/v3/state/sanitizeV3PrimaryLegacyAiState');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
@@ -906,7 +908,30 @@ app.post('/webhook', async (req, res) => {
         reply = v3Try.reply;
         responseSource = v3Try.responseSource || 'v3_core_f2';
         if (v3Try.v3State) {
-          Object.assign(nextAiState, mapV3StateToLegacyAiState(v3Try.v3State));
+          let v3StateForCrm = v3Try.v3State;
+          if (skipLegacyCrm) {
+            const crmOut = await executeV3CrmIfEligible({
+              v3State: v3Try.v3State,
+              phone: from,
+              rawPhone: rawFrom,
+              conversationRow,
+              supabase,
+              property,
+              propertyId,
+              waProfileName,
+              rawPayload: req.body || null,
+              logEvent,
+              ensureContactForConversation: ensureContactForConversationCore,
+              createOrReuseLeadFromConversation,
+              saveConversationEvent,
+              updateConversationMeta,
+            });
+            if (crmOut?.v3State) {
+              v3StateForCrm = crmOut.v3State;
+              setSession(conversationId, v3StateForCrm);
+            }
+          }
+          Object.assign(nextAiState, mapV3StateToLegacyAiState(v3StateForCrm));
           sanitizeV3PrimaryLegacyAiState(nextAiState);
         }
         logEvent('v3_primary_reply', {
