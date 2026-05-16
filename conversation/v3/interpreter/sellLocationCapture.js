@@ -43,6 +43,15 @@ function hasLocationStructuralHint(t) {
 function shouldAcceptQualificationLocationTurn(state, raw) {
   if (!isQualificationFlow(state) || state.locationText) return false;
 
+  /**
+   * PROPERTY_INQUIRY solo califica código + nombre; no hay slot `location_text`.
+   * Si el asistente menciona "zona" en modo Q&A, no debemos tomar "¿dónde está?" / "¿precio?"
+   * como colonia del lead (provoca LOCATION_CAPTURE y el menú genérico en bucle).
+   */
+  if (state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY) {
+    return state.awaitingField === 'location_text';
+  }
+
   const loc = normalizeLocationFromUserText(raw);
   if (!loc) return false;
 

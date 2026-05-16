@@ -183,7 +183,15 @@ function interpretUserMessage(state, text, options = {}) {
     !codeHit &&
     !isExplicitPropertyInquiryPhrase(raw);
 
+  /** Ya en Q&A de propiedad: no re-disparar intake por palabras sueltas ("precio", "disponible" en preguntas). */
+  const skipPropertyIntakeReentry =
+    state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY &&
+    !!persistedCode &&
+    state.propertySubMode === 'PROPERTY_QA' &&
+    !(codeHit && codeHit.normalized && codeHit.normalized !== persistedCode);
+
   if (
+    !skipPropertyIntakeReentry &&
     !lockedSellBlocksPropertyCode &&
     effectiveCode &&
     (codeHit || isExplicitPropertyInquiryPhrase(raw) || persistedCode) &&

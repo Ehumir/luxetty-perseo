@@ -18,7 +18,7 @@ after(() => {
   else process.env.PERSEO_V3_CRM_DRY_RUN = PREV_CRM;
 });
 
-const { processV3Turn, clearV3Session, ADVISOR_CONTACT_CONSENT } = require('../conversation/v3');
+const { processV3Turn, clearV3Session, ADVISOR_CONTACT_CONSENT, V3_INTENT } = require('../conversation/v3');
 const { mergeConversationState } = require('../conversation/v3/types/conversationState');
 const { getSession, setSession } = require('../conversation/v3/core/sessionStore');
 
@@ -63,6 +63,23 @@ describe('F3.3A PROPERTY_QA_MODE + anti-loop', () => {
     const r = processV3Turn({ conversationId: cid, phone: '521', text: 'mmm ok' });
     assert.equal(r.state.advisorContactConsent, ADVISOR_CONTACT_CONSENT.UNKNOWN);
     assert.doesNotMatch(String(r.reply || ''), /te\s+contactan/i);
+  });
+
+  it('precio / ubicación no se interpretan como LOCATION_CAPTURE (regresión plantilla con "zona")', () => {
+    const cid = 'f33-not-location';
+    clearV3Session(cid);
+    processV3Turn({ conversationId: cid, phone: '521', text: 'Hola, me interesa la propiedad A0462' });
+    processV3Turn({ conversationId: cid, phone: '521', text: 'Jorge' });
+    const rPrice = processV3Turn({
+      conversationId: cid,
+      phone: '521',
+      text: '¿Me puedes dar el precio?',
+    });
+    assert.equal(rPrice.decision.detectedIntent, V3_INTENT.PROPERTY_FACT_QUESTION);
+    assert.notEqual(rPrice.state.locationText, '¿Me puedes dar el precio?');
+    const rWhere = processV3Turn({ conversationId: cid, phone: '521', text: '¿Dónde está?' });
+    assert.equal(rWhere.decision.detectedIntent, V3_INTENT.PROPERTY_FACT_QUESTION);
+    assert.notEqual(rWhere.state.locationText, '¿Dónde está?');
   });
 
   it('anti-loop: segundo intento de handoff CTA sin consentimiento cambia el mensaje', () => {
