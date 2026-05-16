@@ -10,6 +10,7 @@ const { processHandoff } = require('../planner/handoffPlanner');
 const { buildCrmDryRunPayload } = require('../crm/payloadBuilder');
 const { composePlannerResponse, composePlannerReplyText } = require('../composer/plannerComposer');
 const { applyPropertyReplyAntiLoop } = require('../composer/slotTemplates');
+const { tryComposeF4PlannerTurn } = require('../composer/f4TurnComposer');
 const { getPerseoV3Config } = require('../../../config/perseoV3Flags');
 const { v3Log } = require('./v3Logger');
 
@@ -52,19 +53,26 @@ function runF3Pipeline(input) {
     }
   }
 
-  const composed = composePlannerResponse({
-    state: next,
-    decision,
-    plannerOut,
-    handoffOut,
-  });
-
-  const rawReply = composePlannerReplyText({
-    state: next,
-    decision,
-    plannerOut,
-    handoffOut,
-  });
+  const f4Planner = tryComposeF4PlannerTurn({ state: next, decision, text, handoffOut });
+  let composed;
+  let rawReply;
+  if (f4Planner) {
+    composed = f4Planner;
+    rawReply = f4Planner.responseText;
+  } else {
+    composed = composePlannerResponse({
+      state: next,
+      decision,
+      plannerOut,
+      handoffOut,
+    });
+    rawReply = composePlannerReplyText({
+      state: next,
+      decision,
+      plannerOut,
+      handoffOut,
+    });
+  }
 
   const anti = applyPropertyReplyAntiLoop({
     state: next,
@@ -118,6 +126,7 @@ function runF3Pipeline(input) {
     replyText,
     plannerOut,
     handoffOut,
+    f4Applied: !!f4Planner,
   };
 }
 

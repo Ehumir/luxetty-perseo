@@ -18,10 +18,11 @@ function runForcedHandoffTurn(input) {
   const state = input.state;
   const decision = input.decision || { detectedIntent: V3_INTENT.UNKNOWN, confidence: 0 };
   const reason = String(input.reason || 'intent_unknown');
+  const userText = input.userText != null ? String(input.userText) : String(state.lastUserText || '');
 
   const handoffOut = forceHandoff(state, { reason, decision });
   let next = mergeConversationState(state, handoffOut.patch);
-  const composed = composeForcedHandoffFallback(next, reason);
+  const composed = composeForcedHandoffFallback(next, reason, { userText });
 
   if (composed.awaitingField !== undefined && composed.awaitingField !== null) {
     next = mergeConversationState(next, { awaitingField: composed.awaitingField });
