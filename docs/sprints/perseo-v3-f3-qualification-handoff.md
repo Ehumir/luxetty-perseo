@@ -346,11 +346,11 @@ v3Runtime.processV3Turn
 - Evento `v3_crm_payload_preview`
 - `!state`: `crm_payload_ready`, preview acotado (sin PII sensible en logs)
 
-### F3.3B — Fallback forzado (canalización obligatoria)
+### F3.3B — Fallback forzado (canalización obligatoria) — implementado
 
-- `handoffPlanner.forceHandoff` + plantilla composer §5.1
-- Cablear triggers desde `ruleGuard`, anti-loop, errores runtime
-- Tests regresión §5.1 (roadmap V3 §8.0)
+- `handoffPlanner.forceHandoff` + `composeForcedHandoffFallback` + `forcedHandoffDetector`
+- `v3Runtime` / `v3InboundBridge`: sin fallback silencioso a legacy en V3 primary
+- Tests: `test/v3F33bForcedHandoff.test.js`
 - Stage `CRM_READY` al validar schema
 - **Cero** writes CRM
 

@@ -64,6 +64,10 @@ function createInitialConversationState(seed = {}) {
     loopRiskScore: 0,
     /** @type {string|null} */
     lastAnsweredPropertyFamily: null,
+    /** F3.3B — razón de escalada / fallback forzado */
+    unhandledReason: null,
+    handoffReason: null,
+    unknownIntentStreak: 0,
   };
 }
 

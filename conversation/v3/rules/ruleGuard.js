@@ -7,7 +7,8 @@ function isDemandIntent(intent) {
     intent === 'demand' ||
     intent === V3_INTENT.BUY_PROPERTY ||
     intent === V3_INTENT.RENT_PROPERTY ||
-    intent === V3_INTENT.PROPERTY_INQUIRY
+    intent === V3_INTENT.PROPERTY_INQUIRY ||
+    intent === V3_INTENT.BUYER_BUDGET
   );
 }
 
