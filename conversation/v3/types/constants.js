@@ -53,9 +53,21 @@ const V3_INTENT = Object.freeze({
   PROPERTY_TYPE_CAPTURE: 'PROPERTY_TYPE_CAPTURE',
   OCCUPANCY_CAPTURE: 'OCCUPANCY_CAPTURE',
   ADVISOR_CONSENT_CAPTURE: 'ADVISOR_CONSENT_CAPTURE',
+  /** F3.3A — pregunta factual sobre la propiedad (familia en `decision.propertyInquiryFamily`). */
+  PROPERTY_FACT_QUESTION: 'PROPERTY_FACT_QUESTION',
+  /** Usuario pide visita / asesor / coordinación humana explícita. */
+  PROPERTY_HUMAN_HANDOFF_REQUEST: 'PROPERTY_HUMAN_HANDOFF_REQUEST',
+  /** Cierre suave post-respuesta (gracias / ok) para permitir handoff sin forzar en pregunta. */
+  PROPERTY_QA_SOFT_CLOSE: 'PROPERTY_QA_SOFT_CLOSE',
   RENT_OUT_PROPERTY: 'RENT_OUT_PROPERTY',
   FRUSTRATION: 'FRUSTRATION',
   UNKNOWN: 'UNKNOWN',
+});
+
+/** Submodo PROPERTY_INQUIRY (F3.3A). */
+const PROPERTY_SUB_MODE = Object.freeze({
+  PROPERTY_QA: 'PROPERTY_QA',
+  HANDOFF_OFFERED: 'HANDOFF_OFFERED',
 });
 
 /** @enum {string} */
@@ -96,6 +108,7 @@ module.exports = {
   V3_INTENT,
   CONVERSATION_GOALS,
   ADVISOR_CONTACT_CONSENT,
+  PROPERTY_SUB_MODE,
   ALL_STAGES,
   FORBIDDEN_COMPOSER_PATTERNS,
 };
