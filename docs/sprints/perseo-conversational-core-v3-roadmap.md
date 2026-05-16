@@ -185,7 +185,8 @@ Los siguientes quedan como **candidatos a sustitución** por las capas V3 (no bo
 | Variable | Default | Fase introducida | Propósito |
 |----------|---------|------------------|-----------|
 | `PERSEO_ENGINE` | `legacy` (o sin definir) | **F0** | Selector documentado: `legacy` productivo; `v3` reservado (F0 fuerza efectivo legacy). |
-| `PERSEO_CONVERSATIONAL_CORE_V3_ENABLED` | `false` | F1 | Maestro: enrutar inbound a motor V3 |
+| `PERSEO_V3_ENABLED` | `false` | F1/F2 | **Maestro operativo** — enrutar inbound a V3 primary (allowlist) |
+| `PERSEO_CONVERSATIONAL_CORE_V3_ENABLED` | — | — | **Solo alias documental** (= `PERSEO_V3_ENABLED`; no leer en runtime F1) |
 | `PERSEO_V3_SHADOW_MODE` | `false` | F3 | Calcular decisión V3 sin aplicar a estado ni copy |
 | `PERSEO_V3_QA_ALLOWLIST` | vacío | F5 | Lista JSON o CSV de `wa_id` / tel normalizado permitidos |
 | `PERSEO_V3_LOG_DECISION_DIFF` | `false` | F3 | Log estructurado legacy vs V3 (sin PII en claro si policy lo exige) |
