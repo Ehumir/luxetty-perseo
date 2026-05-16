@@ -5,6 +5,10 @@
 
 **Relación con roadmap anterior:** lo que antes se agrupaba como “P0 parches + R0 guardrails” queda **congelado como legacy**; el avance oficial pasa a ser **V3-F0 … V3-F9** bajo este documento.
 
+**Catálogo de escenarios (oficial):** ~**200 pláticas** de QA — captación (oferta) + compradores (demanda) + tipologías A–H / A–D. Cobertura por **olas** (familias), no por 200 ramas en código. Detalle en **§1.1** y **§1.2**.
+
+**Regla de producto (inviolable):** si PERSEO **no puede manejar** la plática de forma segura y útil, **debe** informar que **canalizará el caso con un asesor** y que **lo contactarán** (ver **§1.3**). Sin excepciones silenciosas ni “me quedo callado”.
+
 ---
 
 ## 1. Plan de refactorización por fases (V3-F0 … F9)
@@ -20,9 +24,111 @@
 | **V3-F6** | CRM execution | Contacto, lead, idempotencia, eventos — **después** de conversación estable. | Tras PASS F5 |
 | **V3-F7** | Campaigns / Meta Ads | Referral, info/precio/ubicación/me interesa, propiedad desde pauta. | Tras F6 estable |
 | **V3-F8** | Multimedia | Audio, imagen, PDF, ubicación, interactive; honestidad. | Tras conversación base |
-| **V3-F9** | Release estable y retiro legacy | Matriz grande, deprecación gradual, runbook. | Rollout parcial → total |
+| **V3-F9** | Release estable y retiro legacy | Matriz **~200** pláticas (oferta + demanda), deprecación gradual, runbook. | Rollout parcial → total |
 
 Cada fase debe tener **tests automatizados** y **criterios PASS/FAIL** explícitos antes de avanzar.
+
+### 1.1 Alcance conversacional oficial (~200 escenarios)
+
+PERSEO debe poder **atender o canalizar correctamente** el universo acordado con negocio/QA. No implica automatizar el 100 % sin humano: implica **flujo correcto** (calificar, responder con inventario cuando aplique, o **handoff obligatorio**).
+
+| Carril | Documentos fuente | Goals V3 | Bloques tipología | Casos referencia |
+|--------|-------------------|----------|-------------------|------------------|
+| **Oferta (captación)** | Tipología captadores A–H; Matriz QA captación; *Ejemplo pláticas captación* (~100) | `SELL_PROPERTY`, `RENT_OUT_PROPERTY` | A estructurado → H caos | Vender/rentar **su** inmueble; pauta confusa; objeciones; legal; CRM |
+| **Demanda anclada** | Tipología compradores A–D; *Pláticas compradores* (oro LUX-Axxxx + bloque A parcial) | `PROPERTY_INQUIRY` + `PROPERTY_QA` | A–B inicial | Código, ficha, link, Q&A factual, visita, “quiero agente” |
+| **Demanda abierta** | Mismo catálogo compradores | `BUY_PROPERTY` (+ renta demanda) | A–D | Búsqueda sin código: zona, presupuesto, crédito/contado, comparación, premium |
+
+**Familias de implementación** (8 familias compartidas; cada caso MD mapea a una):
+
+| Familia | Oferta (ej.) | Demanda (ej.) | Fases V3 principales |
+|---------|--------------|---------------|----------------------|
+| **F1** Estructurado | Venta feliz, nombre→zona→precio | CASO 1–25 comprador | F2–F3 |
+| **F2** Anclado pauta/código | Meta captación | LUX-Axxxx, Instagram | F3.3A, F7 |
+| **F3** Búsqueda abierta | — | Crédito, contado, zona | F3.2, F4 |
+| **F4** Ambiguo / fragmentado | “Info”, mensajes cortos | CASO 26–50 | F4 + goal lock |
+| **F5** Objeciones comerciales | Comisión, exclusiva, bot | CASO 51–75 | F4 |
+| **F6** Delicado / premium / legal | Herencia, intestada | Foráneo, Infonavit, confidencialidad | F4 + escalada |
+| **F7** CRM / continuidad | Reapertura, otro número | Multi-propiedad, hilo viejo | F6 |
+| **F8** Caos / abuso / multimedia | Flooding, jailbreak | Audio, screenshot, ubicación | F8, F9 |
+
+**Olas de cobertura QA** (orden recomendado; paralelizable **solo** tras plataforma P — ver §1.4):
+
+| Ola | Contenido | PASS mínimo |
+|-----|-----------|-------------|
+| **P** | Plataforma: identidad, handoff, consent, cierre, payload dry-run | 2 guiones oro (1 oferta + 1 demanda anclada) |
+| **O1–O2** | Oferta estructurada + `owner_relation` / premium | Bloque A captación |
+| **D1–D2** | Demanda anclada + abierta | Bloque A comprador + guiones LUX-Axxxx |
+| **O3 / D3** | Ambigüedad oferta y demanda | Bloques B |
+| **O4–O5 / D4–D5** | Objeciones + delicado | Bloques C–D |
+| **O6–O7 / D6** | CRM + caos + multimedia | Bloques F–H + F8 |
+
+### 1.2 Objetivos comerciales por carril (F3+)
+
+| Carril | Objetivo | Cierre esperado (pláticas oro) |
+|--------|----------|-------------------------------|
+| Oferta | Calificar captación → consentimiento asesor | “Ya notifiqué al asesor…” + cierre conversión |
+| Demanda anclada | Resolver Q&A con inventario → visita/interés | Mismo + código de propiedad en payload |
+| Demanda abierta | Calificar búsqueda → asesor con opciones | Canalización con zona/presupuesto en payload |
+
+Ver `docs/sprints/perseo-v3-f3-qualification-handoff.md` para stages y copy de handoff.
+
+### 1.3 Fallback universal — canalización obligatoria al asesor
+
+**Principio:** PERSEO **nunca** debe dejar al contacto sin salida cuando **no puede** continuar la plática de forma responsable. El fallback **no** es “respuesta genérica vaga”: es **compromiso explícito de canalización** con un asesor Luxetty y **contacto posterior** (idealmente por el mismo WhatsApp, sujeto a consentimiento cuando aplique).
+
+#### Cuándo activar fallback (lista no exhaustiva)
+
+| Trigger | Ejemplos | Acción |
+|---------|----------|--------|
+| **Intención no clasificable** | Mensaje fuera de giro, señal contradictoria persistente | Handoff forzado |
+| **Confianza baja / fuera de catálogo** | Escenario no cubierto por familia activa tras N turnos | Handoff forzado |
+| **Rule guard / violación** | Inventario inexistente, dato que no puede inventar, flip offer↔demand no resuelto | Handoff forzado |
+| **Bucle / frustración** | Anti-loop agotado; usuario reclama tono o repite queja | Handoff forzado |
+| **Multimedia no procesable** (pre-F8) | Audio, imagen, PDF sin pipeline | Handoff forzado + honestidad (“no puedo procesar X aquí”) |
+| **Legal / riesgo alto** | Asesoría legal cerrada, disputa, amenaza | Handoff forzado + tono prudente |
+| **Error técnico** | Timeout V3, JSON inválido, fallo runtime → **no** caer a legacy silencioso en allowlist V3 | Handoff forzado |
+| **Usuario pide humano** | “Quiero hablar con alguien real” | Handoff forzado (prioridad) |
+| **Descalificación comercial** | Geo/precio bajo piso | Cierre cordial **con oferta** de asesor si el usuario quiere revisar; si insiste → handoff |
+
+**Excepciones estrechas** (documentar en tests):
+
+- Usuario **rechaza explícitamente** contacto (`declined`) → cierre cordial sin prometer llamada; **sí** dejar puerta abierta (“cuando gustes, aquí seguimos”).
+- Abuso/spam tras política F9 → cierre mínimo; **no** crear lead basura.
+
+#### Copy obligatorio (plantilla — Composer V3)
+
+Debe incluir **las tres ideas** (redacción natural, no literal única):
+
+1. **Reconocimiento** breve del límite o de la situación (“para ayudarte bien con esto…”).
+2. **Canalización:** “voy a **canalizar tu caso** con un **asesor** de Luxetty”.
+3. **Seguimiento:** “te **contactará** / te **escribirá** por **WhatsApp**” (o “por este medio” si ya hay consentimiento de canal).
+
+**Ejemplo de referencia:**
+
+> Entiendo, [nombre]. Para ayudarte bien con esto, voy a **canalizar tu caso con un asesor de Luxetty**. En breve **te contactará por WhatsApp** para continuar contigo y afinar los detalles.
+
+**Prohibido en fallback:**
+
+- “No puedo ayudarte” sin ofrecer asesor.
+- “Intenta más tarde” / “escribe de nuevo” como única salida.
+- Inventar datos (precio, disponibilidad, legal) para “responder algo”.
+- Quedarse en loop de preguntas cuando ya se disparó el trigger.
+
+#### Implementación (fases)
+
+| Fase | Entregable |
+|------|------------|
+| **F3.3B** | `handoffPlanner.forceHandoff({ reason })`; stage `HANDOFF_PENDING` o `HUMAN_ESCALATION` según consent; flag `unhandledReason` en state |
+| **F3** | `ruleGuard` y `v3Runtime`: violación → **no** solo `fallbackToLegacy`; en V3 primary → handoff copy |
+| **F4** | Plantillas por `reason` (legal, media, frustration, unknown) — misma estructura de 3 ideas |
+| **F6** | Payload CRM con `handoff_reason` + resumen para asesor aunque calificación incompleta |
+| **F9** | Tests: cada trigger de la tabla → assert copy contiene canalización + contacto |
+
+### 1.4 Paralelismo oferta vs demanda
+
+- **Plataforma P** (§1.1 ola P) es **bloqueante** para ambos carriles.
+- Tras P: **O1** (oferta) y **D1** (demanda anclada) pueden avanzar en paralelo si hay capacidad; comparten handoff/composer.
+- **No** retrasar D1 por cerrar las 100 pláticas de captación ni al revés; **sí** compartir tests de fallback (§1.3).
 
 ### Objetivo comercial obligatorio (F3+)
 
@@ -99,6 +205,8 @@ Convención: flags **explícitos**; nunca “activado por omisión” en `main` 
 | **Regresión CRM** | F6 explícitamente después de conversación; tests de idempotencia |
 | **Complejidad operativa** | Runbook, dashboards de diff shadow, allowlist pequeña |
 | **Expectativa de “plática”** | Composer V3 con criterios de aceptación y pruebas ciegas (F4/F5) |
+| **Escenario fuera de catálogo** | Fallback §1.3 obligatorio; tests por trigger en F3.3B+ |
+| **Usuario atrapado sin salida** | Prohibido: siempre canalización a asesor salvo `declined` explícito |
 
 ---
 
@@ -107,17 +215,32 @@ Convención: flags **explícitos**; nunca “activado por omisión” en `main` 
 1. **F0** — Política de congelación + lista de “solo emergencia”.  
 2. **F1** — Carpeta `conversation/v3/` + contratos + tests unitarios.  
 3. **F2** — State manager + stage + identity mínimos en V3 (sin CRM).  
-4. **F3** — Interpreter + JSON + rule guard **solo shadow**.  
-5. **F4** — Composer V3 + frustración + una pregunta.  
-6. **F5** — Allowlist QA en Railway.  
-7. **F6** — CRM execution detrás de “READY_FOR_CRM”.  
-8. **F7** — Ads/campañas.  
-9. **F8** — Multimedia.  
-10. **F9** — Matriz 100, deprecación legacy, documentación final.
+4. **F3** — Calificación + handoff + **F3.3B fallback forzado** (§1.3).  
+5. **F3.3A / F7** — Demanda anclada (`PROPERTY_INQUIRY`) + campañas.  
+6. **F3.2** — Demanda abierta (`BUY_PROPERTY`) + oferta multi-flujo.  
+7. **F4** — Composer + objeciones + plantillas fallback por `reason`.  
+8. **F5** — Allowlist QA (hecho en F2; extender matrices).  
+9. **F6** — CRM execution + payload con `handoff_reason`.  
+10. **F8** — Multimedia (reduce triggers de fallback media).  
+11. **F9** — Matriz **~200** pláticas (olas §1.1), deprecación legacy, runbook.
+
+**Olas QA en paralelo** (tras F3.3B): ver §1.1 — **O1+D1** primero; luego B/C/D por familia, no por documento completo.
 
 ---
 
 ## 8. Matriz QA (mínima ampliable)
+
+### 8.0 Fallback — criterios PASS globales (todas las fases F3+)
+
+Aplica a **cualquier** guion (oferta, demanda, fuera de catálogo):
+
+| # | Criterio | PASS |
+|---|----------|------|
+| F1 | Ante trigger §1.3, el último mensaje ofrece **canalización con asesor** | Sí |
+| F2 | El mensaje indica que el contacto **será contactado** (WhatsApp / este medio) | Sí |
+| F3 | **No** inventa precio, disponibilidad ni asesoría legal definitiva | Sí |
+| F4 | Stage coherente (`HANDOFF_*`, `HUMAN_ESCALATION` o `CLOSED` con razón) | Sí |
+| F5 | Error técnico V3 en allowlist → mismo comportamiento (no silencio) | Sí |
 
 ### 8.1 Definición de éxito mínima (antes de CRM / campañas / multimedia)
 
@@ -151,8 +274,21 @@ Vale como 8 millones
 | # | Script corto | PASS |
 |---|----------------|------|
 | A | “Busco casa en Cumbres” → presupuesto → opciones | Copy comprador; montos como presupuesto |
+| B | `LUX-A0462` → nombre → “me interesa verla” → consent | Ficha + link; handoff; cierre oro |
+| C | “Info” (sin contexto) → nombre → zona | Recuperación bloque B; no loop |
+| D | “¿Eres bot?” / mensaje ilegible tras 2 turnos | Fallback §1.3 (canalización + contacto) |
 
-### 8.3 F5 — Lote corto (20 conversaciones)
+### 8.3 Catálogo ~200 pláticas (F9)
+
+| Bloque | Fuente | Meta PASS (F9) |
+|--------|--------|----------------|
+| Captación A–H | Matriz + tipología captadores + MD captación | ≥90 % familia F1–F5 automatizado o handoff correcto |
+| Comprador A–D | Tipología compradores + MD compradores | Idem |
+| Fallback | §8.0 | **100 %** triggers críticos |
+
+Checklist por conversación: stage correcto, identidad, no flip `lead_flow`, **fallback si aplica**, latencia &lt; umbral.
+
+### 8.4 F5 — Lote corto (20 conversaciones)
 
 Checklist por conversación: stage correcto, identidad, no flip de `lead_flow`, latencia &lt; umbral, cero errores CRM si F6 aún off.
 
@@ -223,7 +359,7 @@ Inbound → [flag V3?]
 
 ## 14. Criterios para retirar legacy
 
-- Matriz **≥100** conversaciones (F9) con PASS en tono, identidad, stage, CRM cuando aplique.  
+- Matriz **≥200** conversaciones documentadas (100 oferta + 100 demanda) o muestreo estratificado por **familia** §1.1 con PASS en tono, identidad, stage, **fallback §1.3**, CRM cuando aplique.  
 - **0** incidentes críticos abiertos en ventana acordada (p. ej. 2 semanas).  
 - Cobertura de tests V3 ≥ umbral definido por el equipo.  
 - Runbook y owner de on-call.  
@@ -232,6 +368,8 @@ Inbound → [flag V3?]
 ---
 
 ## 15. Primera fase exacta a implementar: **V3-F0**
+
+**Estado ETAPA 0:** ver checklist operativo en `docs/sprints/perseo-etapa-0-congelamiento-control.md` (diagnóstico, flags, rollback, rama control).
 
 **Entregables concretos de F0 (sin reconstruir aún el motor):**
 
@@ -249,11 +387,23 @@ Inmediatamente después, **V3-F1**: ampliar `conversation/v3/` con interfaces / 
 
 1. **Conversation State Manager** — estado protegido y merges auditables.  
 2. **Intent & Context Interpreter** — OpenAI principal con salida **estructurada y validada**.  
-3. **Rule Guard / Business Validator** — invariantes (lead_flow, CRM, inventario, humano).  
-4. **Conversation Stage Engine** — enum mínimo (NEW → … → CLOSED).  
-5. **Human Conversation Composer** — español MX, una pregunda, frustración, sin menús ni “house”.  
-6. **CRM Execution Layer** — solo tras gate explícito; nunca mezclado con redacción.
+3. **Rule Guard / Business Validator** — invariantes (lead_flow, CRM, inventario, humano); violación → **fallback §1.3**.  
+4. **Conversation Stage Engine** — enum mínimo (NEW → … → CLOSED / HANDOFF_* / HUMAN_ESCALATION).  
+5. **Human Conversation Composer** — español MX, una pregunda, frustración, **copy de canalización obligatoria** en fallback.  
+6. **CRM Execution Layer** — solo tras gate explícito; nunca mezclado con redacción; admite handoff con calificación parcial + `handoff_reason`.
+
+### Apéndice B — Documentos fuente del catálogo QA
+
+| Documento | Rol |
+|-----------|-----|
+| Tipología conversacional captadores (A–H) | Priorización oferta |
+| Matriz QA captación PERSEO | Casos y PASS/FAIL |
+| *Ejemplo pláticas captación* | Guiones oro + ~100 casos |
+| Tipología conversacional compradores (A–D) | Priorización demanda |
+| *Ejemplo pláticas compradores* | Guiones LUX-Axxxx + ~100 casos |
+| `perseo-v3-f3-qualification-handoff.md` | Handoff, consent, stages |
+| `plan-oficial-perseo-madurez-conversacional-p0-p6.md` | Tesis rectora v2.x |
 
 ---
 
-*Documento vivo: actualizar al cerrar cada fase (fecha, SHA, owner).*
+*Documento vivo: actualizar al cerrar cada fase (fecha, SHA, owner). Última ampliación: catálogo ~200 escenarios + fallback universal §1.3.*

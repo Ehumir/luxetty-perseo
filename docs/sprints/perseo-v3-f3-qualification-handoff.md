@@ -64,7 +64,7 @@ En F2, `READY_FOR_CRM` se usa tras ocupación pero **antes** de consentimiento, 
 | `HANDOFF_PENDING` | Se ofreció contacto asesor; esperando sí/no/ambiguo | Continuación consultiva |
 | `HANDOFF_READY` | Consentimiento explícito aceptado | “Me van a apoyar” |
 | `CRM_READY` | Payload ATENA armado y validado (**dry-run** en F3) | (invisible) |
-| `HUMAN_ESCALATION` | Rechazo, fuera de zona, frustración alta, pide humano | Cierre cordial |
+| `HUMAN_ESCALATION` | Rechazo consent, frustración alta, **fallback forzado** (§5.1), pide humano | Cierre cordial **o** canalización prometida |
 | `CLOSED` | Conversación cerrada | — |
 
 **Nota implementación:** `READY_FOR_CRM` en código F2 se **renombrará/migrará** a `QUALIFICATION_COMPLETE` al iniciar F3. `CRM_READY` es nuevo y **no** implica `insert` en Supabase.
@@ -243,6 +243,54 @@ Usuario: *“Quiero vender en San Pedro y me urge.”*
 - **F3.3:** armar payload → `CRM_READY` (log / `!state`, sin create)
 - **F3.4+:** “¿Este número te funciona?” (confirmación canal)
 
+### 5.1 Fallback forzado — cuando PERSEO no puede manejar la plática
+
+**Regla de producto (inviolable):** igual que plan oficial v2.1 §2.1 y roadmap V3 §1.3. Si el motor **no puede** continuar de forma responsable, el contacto **siempre** recibe canalización a asesor + promesa de contacto — **no** un callejón sin salida.
+
+#### Diferencia vs handoff “feliz” (§5)
+
+| | Handoff tras calificación (§5) | Fallback forzado (§5.1) |
+|--|-------------------------------|-------------------------|
+| **Cuándo** | Slots suficientes / interés comercial claro | Error, bloqueo, intención no resuelta, regla violada, media no soportada |
+| **Tono** | Valor consultivo + continuidad premium | Reconocimiento del límite + misma promesa de asesor |
+| **Calificación** | Idealmente completa | Puede ser **parcial**; payload F6 incluye `handoff_reason` + resumen |
+| **Consent** | Pregunta natural si aún no hay `accepted` | Si ya dijo “sí” antes, confirmar canal; si no, ofrecer contacto por este WhatsApp |
+
+#### Triggers (activan `handoffPlanner.forceHandoff({ reason })`)
+
+- `intent_unknown` / confianza baja persistente  
+- `rule_guard_violation` (inventario, flip offer/demand, dato no inventable)  
+- `loop_exhausted` / `frustration_high`  
+- `media_unsupported` (pre-F8)  
+- `legal_escalation`  
+- `runtime_error` / JSON inválido en V3 primary (**no** silencio ni solo legacy)  
+- `user_requests_human`  
+- `out_of_catalog` (escenario no mapeable tras política de turnos)
+
+#### Copy obligatorio (tres ideas)
+
+1. Reconocimiento breve.  
+2. **“Voy a canalizar tu caso con un asesor de Luxetty.”**  
+3. **“Te contactará por WhatsApp”** (o “por este medio”).
+
+**Ejemplo:**
+
+> Entiendo, Laura. Para ayudarte bien con esto, voy a **canalizar tu caso con un asesor de Luxetty**. En breve **te contactará por WhatsApp** para continuar contigo.
+
+**Prohibido:** “No puedo ayudarte” sin asesor; inventar precio/disponibilidad/legal; solo “escribe más tarde”.
+
+#### State / stage
+
+- `state.unhandledReason = <reason>` (auditoría QA / CRM)  
+- `stage`: `HANDOFF_PENDING` si falta consent; `HANDOFF_READY` si ya aceptó; `HUMAN_ESCALATION` si rechazó o solo cierre  
+- Composer: plantilla `fallback_handoff` en `slotTemplates.js` (F3.3B), variantes por `reason` en F4  
+
+#### Implementación F3.3B
+
+- Extender `handoffPlanner.js` con `forceHandoff`  
+- `ruleGuard` + `v3Runtime`: en violación/error → invocar `forceHandoff`, **no** únicamente `fallbackToLegacy` en allowlist V3  
+- Tests: un caso por trigger crítico → assert substring “canalizar” + “asesor” + “contact”
+
 ---
 
 ## 6. Arquitectura de módulos (sin cambios de filosofía)
@@ -252,7 +300,7 @@ v3Runtime.processV3Turn
   1. minimalInterpreter      → entidades, intents, patches
   2. stateManager            → merge, goalLock, identity
   3. qualificationPlanner    → nextSlot | sufficientForHandoff | disqualify
-  4. handoffPlanner          → si sufficient → offer | parse consent
+  4. handoffPlanner          → sufficient → offer | parse consent | forceHandoff (§5.1)
   5. stageEngine             → stages §1
   6. ruleGuard               → geo, price, ownership, CRM guards
   7. humanComposer           → slotTemplates (advisor persona)
@@ -297,6 +345,12 @@ v3Runtime.processV3Turn
 - `payloadBuilder` → shape ATENA documentado
 - Evento `v3_crm_payload_preview`
 - `!state`: `crm_payload_ready`, preview acotado (sin PII sensible en logs)
+
+### F3.3B — Fallback forzado (canalización obligatoria)
+
+- `handoffPlanner.forceHandoff` + plantilla composer §5.1
+- Cablear triggers desde `ruleGuard`, anti-loop, errores runtime
+- Tests regresión §5.1 (roadmap V3 §8.0)
 - Stage `CRM_READY` al validar schema
 - **Cero** writes CRM
 
@@ -419,7 +473,8 @@ PERSEO_V3_LOG=true
 - [ ] Filosofía PERSEO § definición oficial
 - [ ] Planner §4 (conversión, no solo slots)
 - [ ] Handoff §5 (copy consultivo)
-- [ ] Sub-fases F3.1 → F3.3 orden
+- [ ] Fallback forzado §5.1 (canalización + contacto cuando no puede manejar)
+- [ ] Sub-fases F3.1 → F3.3 → F3.3B orden
 - [ ] QA matrix §8
 
 Tras checkboxes: implementar **solo F3.1** en rama dedicada.
