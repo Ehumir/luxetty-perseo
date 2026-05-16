@@ -53,6 +53,17 @@ function createInitialConversationState(seed = {}) {
     propertySpecificIntent: false,
     campaignHeadline: null,
     channelPreference: null,
+    /** @type {'PROPERTY_QA'|'HANDOFF_OFFERED'|null} */
+    propertySubMode: null,
+    propertyQaUserTurnCount: 0,
+    propertyQaAnswerCount: 0,
+    /** @type {string|null} */
+    lastComposerIntent: null,
+    /** @type {'HANDOFF_PROPERTY'|'FACT'|null} */
+    lastOfferType: null,
+    loopRiskScore: 0,
+    /** @type {string|null} */
+    lastAnsweredPropertyFamily: null,
   };
 }
 

@@ -211,6 +211,11 @@ describe('F3.2 Luxetty tone + identity + compuesto (propiedad específica)', () 
     clearV3Session(cidSi);
     processV3Turn({ conversationId: cidSi, phone: '521', text: 'LUX-A0462' });
     processV3Turn({ conversationId: cidSi, phone: '521', text: 'Ana' });
+    processV3Turn({
+      conversationId: cidSi,
+      phone: '521',
+      text: 'Sí, quiero que un asesor me contacte para revisar la propiedad',
+    });
     const rSi = processV3Turn({ conversationId: cidSi, phone: '521', text: 'Sí' });
     assert.equal(rSi.state.advisorContactConsent, ADVISOR_CONTACT_CONSENT.ACCEPTED);
 
@@ -218,6 +223,11 @@ describe('F3.2 Luxetty tone + identity + compuesto (propiedad específica)', () 
     clearV3Session(cidWa);
     processV3Turn({ conversationId: cidWa, phone: '521', text: 'LUX-A0462' });
     processV3Turn({ conversationId: cidWa, phone: '521', text: 'Luis' });
+    processV3Turn({
+      conversationId: cidWa,
+      phone: '521',
+      text: 'Me gustaría hablar con un asesor sobre la referencia',
+    });
     const rWa = processV3Turn({ conversationId: cidWa, phone: '521', text: 'Por WhatsApp' });
     assert.equal(rWa.state.advisorContactConsent, ADVISOR_CONTACT_CONSENT.ACCEPTED);
     assert.equal(rWa.state.channelPreference, 'whatsapp');
@@ -228,6 +238,11 @@ describe('F3.2 Luxetty tone + identity + compuesto (propiedad específica)', () 
     clearV3Session(cid);
     processV3Turn({ conversationId: cid, phone: '521', text: 'LUX-A0462' });
     processV3Turn({ conversationId: cid, phone: '521', text: 'Marta' });
+    processV3Turn({
+      conversationId: cid,
+      phone: '521',
+      text: 'Quiero coordinar con un asesor, por favor',
+    });
     const r = processV3Turn({ conversationId: cid, phone: '521', text: 'Va' });
     assert.equal(r.state.advisorContactConsent, ADVISOR_CONTACT_CONSENT.ACCEPTED);
   });

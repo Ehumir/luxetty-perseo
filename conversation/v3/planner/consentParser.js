@@ -34,10 +34,8 @@ function parseAdvisorContactConsent(text) {
  * @param {import('../types/conversationState').ConversationState} state
  */
 function shouldParseConsentTurn(state) {
-  return (
-    state.awaitingField === 'advisor_contact_consent' ||
-    state.advisorContactConsent === 'REQUESTED'
-  );
+  /** F3.3A: sin `awaitingField` explícito no interpretamos “sí/ok” como consentimiento (evita loops en PROPERTY_QA). */
+  return state.awaitingField === 'advisor_contact_consent';
 }
 
 module.exports = {

@@ -39,6 +39,8 @@ function createEmptyDecision() {
     explicitFlowSwitch: false,
     inventedPropertyClaim: false,
     warnings: [],
+    /** @type {string|null} familia factual PROPERTY_INQUIRY (F3.3A) */
+    propertyInquiryFamily: null,
   };
 }
 

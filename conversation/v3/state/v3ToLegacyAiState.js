@@ -40,6 +40,9 @@ function mapV3StateToLegacyAiState(v3State) {
     direct_property_reference: code.length > 0,
     property_specific_intent: v3State.propertySpecificIntent === true || code.length > 0,
     channel_preference: v3State.channelPreference ?? null,
+    property_qa_sub_mode: v3State.propertySubMode ?? null,
+    v3_loop_risk_score: v3State.loopRiskScore ?? null,
+    v3_last_composer_intent: v3State.lastComposerIntent ?? null,
   };
 }
 

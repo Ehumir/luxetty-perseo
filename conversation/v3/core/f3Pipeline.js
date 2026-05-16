@@ -1,7 +1,7 @@
 'use strict';
 
 const { mergeConversationState } = require('../types/conversationState');
-const { CONVERSATION_STAGES, ADVISOR_CONTACT_CONSENT } = require('../types/constants');
+const { CONVERSATION_STAGES, ADVISOR_CONTACT_CONSENT, V3_INTENT } = require('../types/constants');
 const {
   evaluateQualification,
   buildPlannerStatePatch,
@@ -9,6 +9,7 @@ const {
 const { processHandoff } = require('../planner/handoffPlanner');
 const { buildCrmDryRunPayload } = require('../crm/payloadBuilder');
 const { composePlannerResponse, composePlannerReplyText } = require('../composer/plannerComposer');
+const { applyPropertyReplyAntiLoop } = require('../composer/slotTemplates');
 const { getPerseoV3Config } = require('../../../config/perseoV3Flags');
 const { v3Log } = require('./v3Logger');
 
@@ -58,17 +59,44 @@ function runF3Pipeline(input) {
     handoffOut,
   });
 
-  const replyText = composePlannerReplyText({
+  const rawReply = composePlannerReplyText({
     state: next,
     decision,
     plannerOut,
     handoffOut,
   });
 
+  const anti = applyPropertyReplyAntiLoop({
+    state: next,
+    replyText: rawReply,
+    handoffOut,
+  });
+  const replyText = anti.text;
+
   const questionFromReply = (() => {
     const matches = String(replyText || '').match(/¿[^?]+\?/g);
     return matches && matches.length ? matches[matches.length - 1] : null;
   })();
+
+  const isFactHelpfulTurn =
+    decision.detectedIntent === V3_INTENT.PROPERTY_FACT_QUESTION &&
+    handoffOut.action === 'PROPERTY_QA_CONTINUE';
+
+  const composerIntent = `${decision.detectedIntent || 'null'}|${handoffOut.action}`;
+
+  let nextLoopRisk = Number(next.loopRiskScore) || 0;
+  if (anti.replaced) nextLoopRisk += 1;
+
+  let nextAnswerCount = Number(next.propertyQaAnswerCount) || 0;
+  if (isFactHelpfulTurn) nextAnswerCount += 1;
+
+  let lastOfferTypeNext = next.lastOfferType != null ? next.lastOfferType : null;
+  if (handoffOut.action === 'OFFER_HANDOFF') lastOfferTypeNext = 'HANDOFF_PROPERTY';
+  else if (isFactHelpfulTurn) lastOfferTypeNext = 'FACT';
+
+  const lastFam = isFactHelpfulTurn
+    ? decision.propertyInquiryFamily || next.lastAnsweredPropertyFamily || null
+    : next.lastAnsweredPropertyFamily ?? null;
 
   const finalState = mergeConversationState(next, {
     lastAssistantReply: replyText,
@@ -77,6 +105,11 @@ function runF3Pipeline(input) {
       composed.awaitingField !== undefined && composed.awaitingField !== null
         ? composed.awaitingField
         : next.awaitingField,
+    lastComposerIntent: composerIntent,
+    lastOfferType: lastOfferTypeNext,
+    propertyQaAnswerCount: nextAnswerCount,
+    lastAnsweredPropertyFamily: lastFam,
+    loopRiskScore: nextLoopRisk,
   });
 
   return {

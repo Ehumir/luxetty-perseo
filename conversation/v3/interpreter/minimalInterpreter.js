@@ -23,6 +23,7 @@ const {
   isExplicitPropertyInquiryPhrase,
 } = require('./campaignIntake');
 const { splitNameAndTail, parseChannelPreference, isLikelyFirstNameOnly } = require('./identityCompoundCapture');
+const { classifyPropertyInquiryTurn } = require('./propertyInquiryQaClassifier');
 
 function parseMoneyAmount(text) {
   const t = normalizeText(text);
@@ -300,6 +301,30 @@ function interpretUserMessage(state, text, options = {}) {
         decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
         decision.confidence = 0.93;
       }
+      decision.explicitFlowSwitch = false;
+      return { patch, decision };
+    }
+  }
+
+  const qaTurn = classifyPropertyInquiryTurn(state, text, raw);
+  if (qaTurn && state.propertySubMode === 'PROPERTY_QA') {
+    patch.propertyQaUserTurnCount = (state.propertyQaUserTurnCount || 0) + 1;
+    if (qaTurn.kind === 'HUMAN_HANDOFF') {
+      decision.detectedIntent = V3_INTENT.PROPERTY_HUMAN_HANDOFF_REQUEST;
+      decision.confidence = 0.88;
+      decision.explicitFlowSwitch = false;
+      return { patch, decision };
+    }
+    if (qaTurn.kind === 'FACT') {
+      decision.detectedIntent = V3_INTENT.PROPERTY_FACT_QUESTION;
+      decision.propertyInquiryFamily = qaTurn.family;
+      decision.confidence = 0.82;
+      decision.explicitFlowSwitch = false;
+      return { patch, decision };
+    }
+    if (qaTurn.kind === 'SOFT_CLOSE') {
+      decision.detectedIntent = V3_INTENT.PROPERTY_QA_SOFT_CLOSE;
+      decision.confidence = 0.72;
       decision.explicitFlowSwitch = false;
       return { patch, decision };
     }
