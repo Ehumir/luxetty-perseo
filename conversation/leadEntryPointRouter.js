@@ -234,7 +234,7 @@ function buildNameAcknowledgementReply(name, context = {}) {
   const code = cleanSpaces(String(aiState.property_code || aiState.direct_property_code || entry.property_code || ''));
 
   if (entry.entry_type === 'property_ad' || isPropertyContextState(aiState)) {
-    return `Gracias, ${first}. Ya te tengo registrado. Sobre ${code || 'la propiedad'}, puedo ayudarte a confirmar disponibilidad o coordinar una visita con un asesor.`;
+    return `Gracias, ${first}. Ya tengo tu nombre para continuar. Sobre ${code || 'la propiedad'}, puedo ayudarte a confirmar disponibilidad o coordinar una visita con un asesor.`;
   }
 
   const loc = cleanSpaces(String(entry.location_text || aiState.location_text || ''));

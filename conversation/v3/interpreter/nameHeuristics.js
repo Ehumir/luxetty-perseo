@@ -2,6 +2,7 @@
 
 const { normalizeText } = require('../../../utils/text');
 const { CONVERSATION_STAGES } = require('../types/constants');
+const { isLikelyFirstNameOnly } = require('./identityCompoundCapture');
 
 const NON_NAME_EXACT = new Set([
   'nada',
@@ -17,6 +18,7 @@ const NON_NAME_EXACT = new Set([
   'ninguno',
   'ninguna',
   'gracias',
+  'va',
 ]);
 
 const NON_NAME_PATTERNS = [
@@ -43,12 +45,21 @@ function isNonNameUtterance(text) {
 }
 
 /**
+ * Tonos Luxetty: reconoce solicitud de nombre profesional (no "¿cómo te llamo/llamas?").
  * @param {import('../types/conversationState').ConversationState} state
  */
 function isAwaitingIdentityName(state) {
+  if (!state || typeof state !== 'object') return false;
+  if (state.awaitingField === 'full_name') return true;
   if (state.conversationStage === CONVERSATION_STAGES.IDENTITY_PENDING) return true;
   const q = String(state.lastAssistantQuestion || state.lastAssistantReply || '');
-  return /c[oó]mo te llamas/i.test(q);
+  return (
+    /compartes tu nombre|comparte tu nombre/i.test(q) ||
+    /qui[eé]n tengo el gusto/i.test(q) ||
+    /me ayudas con tu nombre/i.test(q) ||
+    /para continuar.*compartes tu nombre/i.test(q) ||
+    /me compartes tu nombre/i.test(q)
+  );
 }
 
 /**
@@ -62,10 +73,9 @@ function shouldAcceptAsIdentityName(state, text, opts = {}) {
   if (!isAwaitingIdentityName(state)) return false;
   if (isNonNameUtterance(text)) return false;
   const raw = String(text || '').trim();
-  if (!raw || /\d/.test(raw)) return false;
-  if (raw.length < 2 || raw.length > 48) return false;
-  const words = raw.split(/\s+/).filter(Boolean);
-  if (words.length > 3) return false;
+  if (!raw) return false;
+  if (/\bwhatsapp\b|por\s+whatsapp|por\s+wa\b/i.test(raw)) return false;
+  if (!isLikelyFirstNameOnly(raw)) return false;
   return true;
 }
 

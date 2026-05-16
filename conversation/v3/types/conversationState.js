@@ -52,6 +52,7 @@ function createInitialConversationState(seed = {}) {
     propertyListingCode: null,
     propertySpecificIntent: false,
     campaignHeadline: null,
+    channelPreference: null,
   };
 }
 

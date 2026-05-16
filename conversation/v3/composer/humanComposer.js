@@ -124,8 +124,8 @@ function composeHumanResponse(input) {
   if (intent === V3_INTENT.SELL_PROPERTY) {
     if (!nm) {
       return {
-        responseText: 'Claro, te apoyo con la venta de tu casa. Para orientarte mejor, ¿cómo te llamas?',
-        followUpQuestion: '¿Cómo te llamas?',
+        responseText: 'Claro, te apoyo con la venta de tu casa. Para orientarte mejor, ¿me compartes tu nombre?',
+        followUpQuestion: '¿Me compartes tu nombre?',
         toneFlags: { consultive: true },
       };
     }
@@ -179,8 +179,8 @@ function composeHumanResponse(input) {
       };
     }
     return {
-      responseText: `Tomé la zona (${zone}). ¿Cómo te llamas para seguir con la venta?`,
-      followUpQuestion: '¿Cómo te llamas?',
+      responseText: `Tomé la zona (${zone}). Para seguir con la venta, ¿me compartes tu nombre?`,
+      followUpQuestion: '¿Me compartes tu nombre?',
       toneFlags: { consultive: true },
     };
   }
@@ -216,8 +216,8 @@ function composeHumanResponse(input) {
       };
     }
     return {
-      responseText: `Tomé el precio esperado (${pres}). ¿Cómo te llamas para seguir con la venta?`,
-      followUpQuestion: '¿Cómo te llamas?',
+      responseText: `Tomé el precio esperado (${pres}). Para seguir con la venta, ¿me compartes tu nombre?`,
+      followUpQuestion: '¿Me compartes tu nombre?',
       toneFlags: { consultive: true },
     };
   }
@@ -226,8 +226,8 @@ function composeHumanResponse(input) {
     const zone = state.locationText || 'esa zona';
     if (!nm) {
       return {
-        responseText: `Te ayudo a buscar en ${zone}. ¿Cómo te llamas?`,
-        followUpQuestion: '¿Cómo te llamas?',
+        responseText: `Te ayudo a buscar en ${zone}. ¿Me compartes tu nombre?`,
+        followUpQuestion: '¿Me compartes tu nombre?',
         toneFlags: { consultive: true },
       };
     }
@@ -262,8 +262,8 @@ function composeHumanResponse(input) {
       };
     }
     return {
-      responseText: `Tomé tu presupuesto en ${zone}. ¿Cómo te llamas?`,
-      followUpQuestion: '¿Cómo te llamas?',
+      responseText: `Tomé tu presupuesto en ${zone}. ¿Me compartes tu nombre?`,
+      followUpQuestion: '¿Me compartes tu nombre?',
       toneFlags: { consultive: true },
     };
   }

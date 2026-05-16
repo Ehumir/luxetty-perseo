@@ -5,7 +5,7 @@ const { createEmptyDecision } = require('../types/conversationDecision');
 const { CONVERSATION_STAGES, V3_INTENT, CONVERSATION_GOALS } = require('../types/constants');
 const { detectFrustration } = require('./frustrationDetector');
 const { normalizeLocationFromUserText } = require('./locationNormalizer');
-const { shouldAcceptAsIdentityName } = require('./nameHeuristics');
+const { shouldAcceptAsIdentityName, isAwaitingIdentityName } = require('./nameHeuristics');
 const { parsePropertyType } = require('./propertyTypeParser');
 const { parseOccupancyStatus } = require('./occupancyParser');
 const { tryParseSellLocation, tryParseQualificationLocation } = require('./sellLocationCapture');
@@ -22,6 +22,7 @@ const {
   isExplicitFlowSwitchToSellFromRent,
   isExplicitPropertyInquiryPhrase,
 } = require('./campaignIntake');
+const { splitNameAndTail, parseChannelPreference, isLikelyFirstNameOnly } = require('./identityCompoundCapture');
 
 function parseMoneyAmount(text) {
   const t = normalizeText(text);
@@ -99,6 +100,9 @@ function isShortAck(text) {
   );
 }
 
+/** Mensaje de usuario que indica solo preferencia por WhatsApp (texto ya normalizado o mixto). */
+const WHATSAPP_ONLY_REPLY = /^(?:wa|whatsapp|por\s+wa|por\s+whatsapp)$/i;
+
 function applyPropertyTypePatch(patch, type) {
   if (!type) return;
   patch.propertyType = type;
@@ -170,10 +174,19 @@ function interpretUserMessage(state, text, options = {}) {
     state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY &&
     !isExplicitPropertyInquiryPhrase(raw);
 
+  /** Ya en PROPERTY_INQUIRY con código guardado: no re-disparar el bloque con cada turno (nombre, consentimiento, etc.). */
+  const propertyInquiryContinuationOnly =
+    state.conversationGoalLocked &&
+    state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY &&
+    persistedCode &&
+    !codeHit &&
+    !isExplicitPropertyInquiryPhrase(raw);
+
   if (
     !lockedSellBlocksPropertyCode &&
     effectiveCode &&
-    (codeHit || isExplicitPropertyInquiryPhrase(raw) || persistedCode)
+    (codeHit || isExplicitPropertyInquiryPhrase(raw) || persistedCode) &&
+    !propertyInquiryContinuationOnly
   ) {
     const rentAsDemand = mentionsRentDemand(t) && !isRentOutIntent(text);
     if (rentAsDemand) {
@@ -229,16 +242,6 @@ function interpretUserMessage(state, text, options = {}) {
     return { patch, decision };
   }
 
-  const consentParsed = parseAdvisorContactConsent(text);
-  if (consentParsed && shouldParseConsentTurn(state)) {
-    decision.detectedIntent = V3_INTENT.ADVISOR_CONSENT_CAPTURE;
-    decision.confidence = 0.93;
-    patch.advisorContactConsent = consentParsed;
-    patch.awaitingField = null;
-    decision.explicitFlowSwitch = false;
-    return { patch, decision };
-  }
-
   const fr = detectFrustration(text);
   if (fr.isFrustrated) {
     const sellCtxFr =
@@ -261,6 +264,63 @@ function interpretUserMessage(state, text, options = {}) {
     applyOccupancyPatch(patch, occupancyParsed);
     decision.explicitFlowSwitch = false;
     decision.nextSuggestedStage = CONVERSATION_STAGES.READY_FOR_CRM;
+    return { patch, decision };
+  }
+
+  const awaitingNameCapture = isAwaitingIdentityName(state) && !state.collectedFields?.fullName;
+
+  if (awaitingNameCapture && state.awaitingField === 'full_name') {
+    const tw = normalizeText(raw);
+    if (WHATSAPP_ONLY_REPLY.test(tw)) {
+      decision.detectedIntent = V3_INTENT.UNKNOWN;
+      decision.confidence = 0.58;
+      patch.channelPreference = 'whatsapp';
+      decision.explicitFlowSwitch = false;
+      return { patch, decision };
+    }
+  }
+
+  if (awaitingNameCapture) {
+    const split = splitNameAndTail(raw);
+    if (split && isLikelyFirstNameOnly(split.name)) {
+      const tailNorm = normalizeText(split.tail);
+      const ch = parseChannelPreference(tailNorm);
+      const channelOnlyTail = WHATSAPP_ONLY_REPLY.test(tailNorm.trim());
+      const consent = channelOnlyTail ? null : parseAdvisorContactConsent(split.tail);
+      patch.collectedFields = { ...(patch.collectedFields || {}), fullName: split.name };
+      decision.extractedEntities.fullName = split.name;
+      decision.shouldAskName = false;
+      if (ch) patch.channelPreference = ch;
+      if (consent === 'ACCEPTED') {
+        patch.advisorContactConsent = 'ACCEPTED';
+        patch.awaitingField = null;
+        decision.detectedIntent = V3_INTENT.ADVISOR_CONSENT_CAPTURE;
+        decision.confidence = 0.94;
+      } else {
+        decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
+        decision.confidence = 0.93;
+      }
+      decision.explicitFlowSwitch = false;
+      return { patch, decision };
+    }
+  }
+
+  let consentParsed = null;
+  if (shouldParseConsentTurn(state)) {
+    const tn = normalizeText(text);
+    if (WHATSAPP_ONLY_REPLY.test(tn)) {
+      consentParsed = 'ACCEPTED';
+      patch.channelPreference = 'whatsapp';
+    } else {
+      consentParsed = parseAdvisorContactConsent(text);
+    }
+  }
+  if (consentParsed && shouldParseConsentTurn(state)) {
+    decision.detectedIntent = V3_INTENT.ADVISOR_CONSENT_CAPTURE;
+    decision.confidence = 0.93;
+    patch.advisorContactConsent = consentParsed;
+    patch.awaitingField = null;
+    decision.explicitFlowSwitch = false;
     return { patch, decision };
   }
 
