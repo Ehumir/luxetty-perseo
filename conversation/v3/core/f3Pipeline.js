@@ -1,7 +1,12 @@
 'use strict';
 
 const { mergeConversationState } = require('../types/conversationState');
-const { CONVERSATION_STAGES, ADVISOR_CONTACT_CONSENT, V3_INTENT } = require('../types/constants');
+const {
+  CONVERSATION_STAGES,
+  ADVISOR_CONTACT_CONSENT,
+  V3_INTENT,
+  CONVERSATION_GOALS,
+} = require('../types/constants');
 const {
   evaluateQualification,
   buildPlannerStatePatch,
@@ -32,6 +37,19 @@ function runF3Pipeline(input) {
     next = mergeConversationState(next, {
       conversationStage: CONVERSATION_STAGES.QUALIFICATION_COMPLETE,
       handoffStage: CONVERSATION_STAGES.QUALIFICATION_COMPLETE,
+    });
+  }
+
+  if (
+    next.advisorContactConsent === ADVISOR_CONTACT_CONSENT.ACCEPTED &&
+    next.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY &&
+    next.propertyListingCode &&
+    next.collectedFields?.fullName &&
+    !next.qualificationComplete
+  ) {
+    next = mergeConversationState(next, {
+      qualificationComplete: true,
+      qualificationMissingSlots: [],
     });
   }
 

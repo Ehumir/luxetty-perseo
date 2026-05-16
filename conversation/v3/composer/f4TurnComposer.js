@@ -3,7 +3,11 @@
 const { mergeConversationState } = require('../types/conversationState');
 const { tryComposePostHandoffTurn } = require('./postHandoffComposer');
 const { tryComposeObjectionTurn } = require('./objectionComposer');
-const { classifyObjection } = require('../interpreter/objectionClassifier');
+const {
+  classifyObjection,
+  isHandoffFlowActive,
+  isPositiveHandoffAck,
+} = require('../interpreter/objectionClassifier');
 const { FORCED_HANDOFF_REASONS } = require('../types/forcedHandoffReasons');
 const { V3_INTENT } = require('../types/constants');
 
@@ -34,12 +38,23 @@ function tryComposeF4EarlyTurn(input) {
 
   const objection = tryComposeObjectionTurn(state, text);
   if (objection) {
-    const next = mergeConversationState(state, {
+    const kind = classifyObjection(text, state);
+    /** @type {Partial<import('../types/conversationState').ConversationState>} */
+    const objectionPatch = {
       lastAssistantReply: objection.responseText,
       lastAssistantQuestion: objection.followUpQuestion,
       awaitingField: objection.awaitingField,
-      lastComposerIntent: `f4_objection|${classifyObjection(text, state)}`,
-    });
+      lastComposerIntent: `f4_objection|${kind}`,
+    };
+    if (kind === 'sell_valuation_unknown') {
+      objectionPatch.priceUnknown = true;
+      objectionPatch.valuationRequested = true;
+      objectionPatch.collectedFields = {
+        ...(state.collectedFields || {}),
+        valuationRequested: true,
+      };
+    }
+    const next = mergeConversationState(state, objectionPatch);
     return { composed: objection, state: next, responseSource: 'v3_core_f4' };
   }
 
@@ -70,8 +85,21 @@ function tryComposeF4PlannerTurn(input) {
  * @param {import('../types/conversationState').ConversationState} state
  * @param {import('../types/conversationDecision').ConversationDecision} decision
  */
-function shouldSuppressForcedHandoff(forcedReason, state, decision) {
+function shouldSuppressForcedHandoff(forcedReason, state, decision, text) {
   if (!forcedReason) return false;
+  if (
+    isHandoffFlowActive(state) &&
+    (forcedReason === FORCED_HANDOFF_REASONS.INTENT_UNKNOWN ||
+      forcedReason === FORCED_HANDOFF_REASONS.OUT_OF_CATALOG)
+  ) {
+    return true;
+  }
+  if (isHandoffFlowActive(state) && text && isPositiveHandoffAck(text)) {
+    return true;
+  }
+  if (decision.detectedIntent === V3_INTENT.ADVISOR_CONSENT_CAPTURE && isHandoffFlowActive(state)) {
+    return true;
+  }
   if (
     state.qualificationComplete &&
     (forcedReason === FORCED_HANDOFF_REASONS.INTENT_UNKNOWN ||

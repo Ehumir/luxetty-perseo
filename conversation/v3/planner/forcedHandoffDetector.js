@@ -11,6 +11,8 @@ const { FORCED_HANDOFF_REASONS } = require('../types/forcedHandoffReasons');
 const {
   isBotIdentityQuestion,
   isExplicitHumanRequest,
+  isHandoffFlowActive,
+  isPositiveHandoffAck,
 } = require('../interpreter/objectionClassifier');
 
 const LOOP_RISK_THRESHOLD = 3;
@@ -71,6 +73,21 @@ function detectForcedHandoffReason(input) {
 
   if (input.explicitReason && String(input.explicitReason).trim()) {
     return String(input.explicitReason).trim();
+  }
+
+  if (isHandoffFlowActive(state) && isPositiveHandoffAck(text)) {
+    return null;
+  }
+  if (isHandoffFlowActive(state) && decision.detectedIntent === V3_INTENT.ADVISOR_CONSENT_CAPTURE) {
+    return null;
+  }
+  if (
+    isHandoffFlowActive(state) &&
+    state.conversationGoal &&
+    decision.detectedIntent === V3_INTENT.UNKNOWN &&
+    (Number(state.unknownIntentStreak) || 0) < UNKNOWN_STREAK_THRESHOLD
+  ) {
+    return null;
   }
 
   if (isMediaUnsupportedSignal(text)) {

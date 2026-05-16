@@ -11,6 +11,17 @@ function composeObjectionReply(kind, state) {
   const nm = firstName(state);
 
   switch (kind) {
+    case 'sell_valuation_unknown': {
+      const zone = state.locationText || 'esa zona';
+      const nm = firstName(state);
+      const head = nm ? `Entiendo, ${nm}.` : 'Entiendo.';
+      return {
+        responseText: `${head} Sin problema si aún no tienes un precio esperado: un asesor de Luxetty puede apoyarte con la valuación en ${zone}. ¿La propiedad está habitada, rentada o libre?`,
+        followUpQuestion: null,
+        awaitingField: 'occupancy_status',
+        toneFlags: { consultive: true, valuation: true },
+      };
+    }
     case 'bot_identity':
       return {
         responseText:

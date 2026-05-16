@@ -12,6 +12,48 @@ const REQUIRED_SLOTS_BY_FLOW = Object.freeze({
 });
 
 const BUY_DEMAND_ORDER = ['full_name', 'location_text', 'budget', 'property_type_or_bedrooms'];
+const SELL_OFFER_ORDER = ['full_name', 'location_text', 'expected_price', 'property_type', 'occupancy_status'];
+
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ */
+function sellOfferPriceSatisfied(state) {
+  if (state.expectedPrice != null) return true;
+  if (state.valuationRequested === true || state.priceUnknown === true) return true;
+  if (state.collectedFields?.valuationRequested === true) return true;
+  return false;
+}
+
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ */
+function getSellOfferMissingSlots(state) {
+  /** @type {string[]} */
+  const missing = [];
+  if (!state.collectedFields?.fullName) missing.push('full_name');
+  if (!state.locationText) missing.push('location_text');
+  if (!sellOfferPriceSatisfied(state)) missing.push('expected_price');
+  if (!state.propertyType && !state.collectedFields?.propertyType) missing.push('property_type');
+  if (!state.occupancyStatus && !state.collectedFields?.occupancyStatus) missing.push('occupancy_status');
+  return missing;
+}
+
+/**
+ * @param {string[]} missing
+ */
+function resolveSellOfferNextSlot(missing, state) {
+  if (!missing.length) return null;
+  if (missing.includes('expected_price') && sellOfferPriceSatisfied(state)) {
+    return missing.find((s) => s !== 'expected_price') || null;
+  }
+  for (const slot of SELL_OFFER_ORDER) {
+    if (missing.includes(slot)) {
+      if (slot === 'expected_price' && state.valuationRequested) return 'occupancy_status';
+      return slot;
+    }
+  }
+  return missing[0];
+}
 
 /**
  * @param {import('../types/conversationState').ConversationState} state
@@ -51,7 +93,7 @@ function getSlotValue(state, slotId) {
     case 'location_text':
       return state.locationText || null;
     case 'expected_price':
-      return state.expectedPrice != null ? state.expectedPrice : null;
+      return sellOfferPriceSatisfied(state) ? state.expectedPrice ?? 'valuation_pending' : null;
     case 'budget':
       return state.budget != null ? state.budget : null;
     case 'property_type':
@@ -99,6 +141,20 @@ function evaluateQualification(state) {
     };
   }
 
+  if (flowKey === 'sellOffer' || flowKey === 'rentOffer') {
+    const missingSlots = getSellOfferMissingSlots(state);
+    const qualificationComplete = missingSlots.length === 0;
+    const nextSlot = qualificationComplete ? null : resolveSellOfferNextSlot(missingSlots, state);
+    return {
+      flowKey,
+      nextSlot,
+      missingSlots,
+      sufficientForHandoff: qualificationComplete,
+      qualificationComplete,
+      plannerReason: qualificationComplete ? 'conversion_ready' : `missing_${missingSlots[0]}`,
+    };
+  }
+
   const required = REQUIRED_SLOTS_BY_FLOW[flowKey] || [];
   const missingSlots = required.filter((slot) => !getSlotValue(state, slot));
   const qualificationComplete = missingSlots.length === 0;
@@ -130,6 +186,8 @@ function buildPlannerStatePatch(state, plannerOut) {
 module.exports = {
   REQUIRED_SLOTS_BY_FLOW,
   getSlotValue,
+  sellOfferPriceSatisfied,
+  getSellOfferMissingSlots,
   getBuyDemandMissingSlots,
   evaluateQualification,
   buildPlannerStatePatch,

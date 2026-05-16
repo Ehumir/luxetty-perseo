@@ -23,6 +23,8 @@ const {
   isExplicitPropertyInquiryPhrase,
 } = require('./campaignIntake');
 const { splitNameAndTail, parseChannelPreference, isLikelyFirstNameOnly } = require('./identityCompoundCapture');
+const { extractAffirmationName } = require('./identityNameParser');
+const { isSellValuationUnknownRequest } = require('./sellValuationSignals');
 const { classifyPropertyInquiryTurn } = require('./propertyInquiryQaClassifier');
 const { parsePaymentMethod } = require('./paymentMethodParser');
 
@@ -333,6 +335,16 @@ function interpretUserMessage(state, text, options = {}) {
   }
 
   if (awaitingNameCapture) {
+    const affName = extractAffirmationName(raw);
+    if (affName && isLikelyFirstNameOnly(affName)) {
+      patch.collectedFields = { ...(patch.collectedFields || {}), fullName: affName };
+      decision.extractedEntities.fullName = affName;
+      decision.shouldAskName = false;
+      decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
+      decision.confidence = 0.93;
+      decision.explicitFlowSwitch = false;
+      return { patch, decision };
+    }
     const split = splitNameAndTail(raw);
     if (split && isLikelyFirstNameOnly(split.name)) {
       const tailNorm = normalizeText(split.tail);
@@ -500,6 +512,23 @@ function interpretUserMessage(state, text, options = {}) {
     patch.paymentMethod = payMethod;
     decision.detectedIntent = V3_INTENT.UNKNOWN;
     decision.confidence = 0.8;
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
+  if (
+    isOfferFlow(state) &&
+    (state.awaitingField === 'expected_price' || !state.expectedPrice) &&
+    isSellValuationUnknownRequest(text)
+  ) {
+    patch.priceUnknown = true;
+    patch.valuationRequested = true;
+    patch.collectedFields = {
+      ...(patch.collectedFields || {}),
+      valuationRequested: true,
+    };
+    decision.detectedIntent = V3_INTENT.UNKNOWN;
+    decision.confidence = 0.9;
     decision.explicitFlowSwitch = false;
     return { patch, decision };
   }
