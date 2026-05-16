@@ -1,6 +1,6 @@
 'use strict';
 
-const { createInitialConversationState } = require('../types/conversationState');
+const { createInitialConversationState, mergeConversationState } = require('../types/conversationState');
 const { interpretUserMessage } = require('../interpreter/minimalInterpreter');
 const { applyV3StateTransition } = require('../state/stateManager');
 const { composeHumanReplyText, composeHumanResponse } = require('../composer/humanComposer');
@@ -11,7 +11,14 @@ const { isV3HandoffEnabled } = require('../../../config/perseoV3Flags');
 const { runF3Pipeline } = require('./f3Pipeline');
 
 /**
- * @param {{ conversationId: string, phone?: string|null, text: string, reset?: boolean }} input
+ * @param {{
+ *   conversationId: string,
+ *   phone?: string|null,
+ *   text: string,
+ *   reset?: boolean,
+ *   campaignHeadline?: string|null,
+ *   legacyHydration?: { propertyListingCode?: string|null, locationText?: string|null, campaignHeadline?: string|null }|null,
+ * }} input
  */
 function processV3Turn(input) {
   const conversationId = String(input.conversationId || '');
@@ -31,6 +38,14 @@ function processV3Turn(input) {
   let state = getSession(conversationId);
   if (!state) {
     state = createInitialConversationState({ conversationId, phone });
+    const h = input.legacyHydration && typeof input.legacyHydration === 'object' ? input.legacyHydration : null;
+    if (h) {
+      const hyd = {};
+      if (h.propertyListingCode) hyd.propertyListingCode = String(h.propertyListingCode).trim();
+      if (h.locationText) hyd.locationText = String(h.locationText).trim();
+      if (h.campaignHeadline) hyd.campaignHeadline = String(h.campaignHeadline).slice(0, 400);
+      state = mergeConversationState(state, hyd);
+    }
     setSession(conversationId, state);
   }
 
@@ -39,7 +54,12 @@ function processV3Turn(input) {
     v3Log('frustration_detected', { conversation_id: conversationId, level: fr.level });
   }
 
-  const { patch, decision } = interpretUserMessage(state, text);
+  const headline =
+    input.campaignHeadline != null && String(input.campaignHeadline).trim()
+      ? String(input.campaignHeadline).slice(0, 400)
+      : state.campaignHeadline || null;
+
+  const { patch, decision } = interpretUserMessage(state, text, { campaignHeadline: headline });
   v3Log('interpreter_decision', {
     conversation_id: conversationId,
     intent: decision.detectedIntent,

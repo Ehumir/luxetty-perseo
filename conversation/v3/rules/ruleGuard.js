@@ -3,7 +3,12 @@
 const { ALL_STAGES, V3_INTENT, CONVERSATION_MODE } = require('../types/constants');
 
 function isDemandIntent(intent) {
-  return intent === 'demand' || intent === V3_INTENT.BUY_PROPERTY || intent === V3_INTENT.RENT_PROPERTY;
+  return (
+    intent === 'demand' ||
+    intent === V3_INTENT.BUY_PROPERTY ||
+    intent === V3_INTENT.RENT_PROPERTY ||
+    intent === V3_INTENT.PROPERTY_INQUIRY
+  );
 }
 
 function isOfferIntent(intent) {

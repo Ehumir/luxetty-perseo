@@ -8,6 +8,7 @@ const REQUIRED_SLOTS_BY_FLOW = Object.freeze({
   rentOffer: ['full_name', 'location_text', 'expected_price', 'property_type', 'occupancy_status'],
   buyDemand: ['full_name', 'location_text', 'budget', 'property_type'],
   rentDemand: ['full_name', 'location_text', 'budget'],
+  propertyInquiryDemand: ['property_listing_code', 'full_name'],
 });
 
 /**
@@ -28,6 +29,8 @@ function getSlotValue(state, slotId) {
       return state.propertyType || state.collectedFields?.propertyType || null;
     case 'occupancy_status':
       return state.occupancyStatus || state.collectedFields?.occupancyStatus || null;
+    case 'property_listing_code':
+      return state.propertyListingCode || null;
     default:
       return null;
   }

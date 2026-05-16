@@ -21,7 +21,7 @@ const { sendPerseoAutomatedWhatsApp } = require('./services/perseoAutomatedWhats
 const { scheduleInboundMediaIngest } = require('./services/inboundMediaStorageIngest');
 const { saveConversationMessage, inboundMessageAlreadyProcessed } = require('./services/saveConversationMessage');
 const { ensureContactForConversationCore } = require('./services/contactProvisioning');
-const { createOrReuseLeadFromConversation } = require('./services/leadAutomation');
+const { createOrReuseLeadFromConversation, extractCampaignReferralContext } = require('./services/leadAutomation');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
 const { processSprint1QaInbound, parseSprint1StrictCommand, isSprint1QaTesterPhone } = require('./conversation/qaSprint1Commands');
@@ -51,6 +51,7 @@ const { extractPossibleName } = require('./conversation/parsers');
 const v3InboundBridge = require('./conversation/v3/core/v3InboundBridge');
 const { getSession: getV3Session } = require('./conversation/v3/core/sessionStore');
 const { mapV3StateToLegacyAiState } = require('./conversation/v3/state/v3ToLegacyAiState');
+const { sanitizeV3PrimaryLegacyAiState } = require('./conversation/v3/state/sanitizeV3PrimaryLegacyAiState');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
 const {
@@ -851,12 +852,29 @@ app.post('/webhook', async (req, res) => {
     let skipLegacyCrm = false;
 
     if (policy.allowAutomatedReply) {
+      const { campaignContext } = extractCampaignReferralContext({
+        aiState: previousAiState,
+        referral: previousAiState?.whatsapp_referral || null,
+        rawPayload: inboundRow?.raw_payload || req.body || {},
+        messageText: text,
+      });
+      const campaignHeadline =
+        (campaignContext && (campaignContext.headline || campaignContext.ad_name)) || null;
+
+      const legacyHydration = {
+        propertyListingCode: previousAiState.property_code || previousAiState.direct_property_code || null,
+        locationText: previousAiState.location_text || null,
+        campaignHeadline: campaignHeadline || previousAiState.campaignHeadline || null,
+      };
+
       const v3Try = v3InboundBridge.tryV3PrimaryReply({
         conversationId,
         phone: from,
         rawPhone: rawFrom,
         text,
         logEvent,
+        campaignHeadline,
+        legacyHydration,
       });
       if (v3Try.handled) {
         v3PrimaryHandled = true;
@@ -865,6 +883,7 @@ app.post('/webhook', async (req, res) => {
         responseSource = v3Try.responseSource || 'v3_core_f2';
         if (v3Try.v3State) {
           Object.assign(nextAiState, mapV3StateToLegacyAiState(v3Try.v3State));
+          sanitizeV3PrimaryLegacyAiState(nextAiState);
         }
         logEvent('v3_primary_reply', {
           conversation_id: conversationId,
