@@ -43,13 +43,14 @@ describe('V3-F2.1 location normalization', () => {
 });
 
 describe('V3-F2.1 composer dedupe', () => {
-  it('no duplica ¿Cómo te llamas? en venta sin nombre', () => {
+  it('tono Luxetty: pide nombre sin “cómo te llamas” (una sola pregunta)', () => {
     const reply = composeHumanReplyText({
       state: { conversationGoal: CONVERSATION_GOALS.SELL_PROPERTY, leadFlow: 'offer', collectedFields: {} },
       decision: { detectedIntent: 'SELL_PROPERTY' },
     });
-    const count = (reply.match(/cómo te llamas/gi) || []).length;
-    assert.equal(count, 1, reply);
+    assert.equal((reply.match(/cómo te llamas/gi) || []).length, 0, reply);
+    assert.equal((reply.match(/cómo te llamo/gi) || []).length, 0, reply);
+    assert.equal((reply.match(/compartes tu nombre/gi) || []).length, 1, reply);
   });
 
   it('no duplica tipo de inmueble tras precio (SELLER_PRICE)', () => {

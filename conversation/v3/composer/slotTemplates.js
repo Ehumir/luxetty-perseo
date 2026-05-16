@@ -131,7 +131,7 @@ function composeSlotQuestion(state, slotId) {
     case 'full_name':
       if (state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
         return {
-          responseText: 'Claro, te apoyo con la venta. Para orientarte mejor, ¿cómo te llamas?',
+          responseText: 'Claro, te apoyo con la venta. Para orientarte mejor, ¿me compartes tu nombre?',
           followUpQuestion: null,
           awaitingField: 'full_name',
           toneFlags: { consultive: true },
@@ -139,17 +139,21 @@ function composeSlotQuestion(state, slotId) {
       }
       if (state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY) {
         const code = cleanSpaces(String(state.propertyListingCode || ''));
+        const chNote =
+          state.channelPreference === 'whatsapp'
+            ? ' Anoté que prefieres WhatsApp para el seguimiento.'
+            : '';
         return {
           responseText: code
-            ? `Perfecto. Para la referencia ${code}, ¿cómo te llamo para continuar?`
-            : 'Con gusto. Para seguir, ¿cómo te llamas?',
+            ? `Perfecto. Para la referencia ${code}, ¿me compartes tu nombre?${chNote}`
+            : `Con gusto. Para continuar, ¿me compartes tu nombre?${chNote}`,
           followUpQuestion: null,
           awaitingField: 'full_name',
           toneFlags: { consultive: true },
         };
       }
       return {
-        responseText: 'Con gusto. Para seguir, ¿cómo te llamas?',
+        responseText: 'Con gusto. Para continuar, ¿me compartes tu nombre?',
         followUpQuestion: null,
         awaitingField: 'full_name',
         toneFlags: { consultive: true },

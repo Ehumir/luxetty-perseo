@@ -148,7 +148,7 @@ function evaluateInboundTurn(context = {}) {
       return {
         handled: true,
         reply: fn
-          ? `Soy el asistente de Luxetty. Ya te tengo registrado como ${fn}; dime cómo te ayudo a seguir.`
+          ? `Soy el asistente de Luxetty. Gracias, ${fn}: ya tengo tu nombre para continuar. ¿En qué te ayudo a seguir?`
           : 'Soy el asistente de Luxetty. Dime cómo te ayudo a seguir.',
         statePatch: {},
         skipEnforce: true,

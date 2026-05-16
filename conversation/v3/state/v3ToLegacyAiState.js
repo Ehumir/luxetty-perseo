@@ -39,6 +39,7 @@ function mapV3StateToLegacyAiState(v3State) {
     direct_property_code: code || null,
     direct_property_reference: code.length > 0,
     property_specific_intent: v3State.propertySpecificIntent === true || code.length > 0,
+    channel_preference: v3State.channelPreference ?? null,
   };
 }
 

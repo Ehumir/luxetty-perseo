@@ -19,6 +19,24 @@ function isQualificationFlow(state) {
 }
 
 /**
+ * Evita tomar un nombre propio (ej. "Jorge") como colonia cuando el asistente acaba de pedir nombre.
+ * @param {string} t texto normalizado (normalizeText)
+ */
+function hasLocationStructuralHint(t) {
+  if (/^no,/.test(t) || /^nop,/.test(t)) return true;
+  if (
+    /\b(esta en|que en|no en|ubicad|ubicada|municipio|colonia|\bzona\b|queda|localizada|localizado|se encuentra)\b/.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (t.includes('cumbres')) return true;
+  if (/\b(en san|en garcia|en mitras|en sur|en norte|en valle)\b/.test(t)) return true;
+  return false;
+}
+
+/**
  * @param {import('../types/conversationState').ConversationState} state
  * @param {string} raw
  */
@@ -29,12 +47,27 @@ function shouldAcceptQualificationLocationTurn(state, raw) {
   if (!loc) return false;
 
   const t = normalizeText(String(raw || ''));
-  if (state.awaitingField === 'location_text') return true;
-
   const q = normalizeText(
     String(state.lastAssistantQuestion || state.lastAssistantReply || '')
   );
-  if (/zona|ubicad|colonia|municipio|cumbres|garcia|garc[ií]a|propiedad/.test(q)) return true;
+  const namePrompt = /compartes tu nombre|qui[eé]n tengo el gusto|me ayudas con tu nombre|nombre para continuar/i.test(
+    q,
+  );
+
+  // Tras pedir nombre (F2 sin awaiting_field): no tomar "Jorge" como colonia.
+  if (namePrompt && !state.collectedFields?.fullName && !hasLocationStructuralHint(t)) {
+    return false;
+  }
+
+  if (state.awaitingField === 'location_text') return true;
+
+  if (
+    /zona|ubicad|colonia|municipio|cumbres|garcia|garc[ií]a|propiedad|compartes tu nombre|qui[eé]n tengo el gusto|nombre para continuar/i.test(
+      q
+    )
+  ) {
+    return true;
+  }
 
   if (/\b(en|esta en|está en|que en|no en)\b/.test(t)) return true;
   if (t.includes('cumbres') || t.includes('zona') || t.includes('colonia') || t.includes('municipio')) {

@@ -18,11 +18,12 @@ function parseAdvisorContactConsent(text) {
   if (decline) return 'DECLINED';
 
   const accept =
-    /^(si|sí|claro|vale|ok|esta bien|está bien|de acuerdo|adelante|por favor)\b/.test(t) ||
+    /^(si|sí|claro|vale|ok|va|esta bien|está bien|de acuerdo|adelante|por favor)\b/.test(t) ||
     t.includes('que me contacte') ||
     t.includes('que me contacten') ||
     t.includes('contacten') ||
     t.includes('contacte') ||
+    /\bpor\s+whatsapp\b/.test(t) ||
     (t.includes('asesor') && (t.includes('si') || t.includes('sí') || t.startsWith('si,')));
   if (accept) return 'ACCEPTED';
 
