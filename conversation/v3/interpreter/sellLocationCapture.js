@@ -1,8 +1,9 @@
 'use strict';
 
-const { normalizeText } = require('../../../utils/text');
+const { normalizeText, cleanSpaces } = require('../../../utils/text');
 const { CONVERSATION_GOALS } = require('../types/constants');
 const { normalizeLocationFromUserText } = require('./locationNormalizer');
+const { extractLooseLocationPhrase } = require('./campaignIntake');
 
 /**
  * @param {import('../types/conversationState').ConversationState} state
@@ -24,6 +25,7 @@ function isQualificationFlow(state) {
  */
 function hasLocationStructuralHint(t) {
   if (/^no,/.test(t) || /^nop,/.test(t)) return true;
+  if (/\bbusco\s+en\b/.test(t)) return true;
   if (
     /\b(esta en|que en|no en|ubicad|ubicada|municipio|colonia|\bzona\b|queda|localizada|localizado|se encuentra)\b/.test(
       t,
@@ -34,6 +36,10 @@ function hasLocationStructuralHint(t) {
   if (t.includes('cumbres')) return true;
   if (/\b(en san|en garcia|en mitras|en sur|en norte|en valle)\b/.test(t)) return true;
   return false;
+}
+
+function isBuyFlow(state) {
+  return state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY;
 }
 
 /**
@@ -70,6 +76,10 @@ function shouldAcceptQualificationLocationTurn(state, raw) {
 
   if (state.awaitingField === 'location_text') return true;
 
+  if (isBuyFlow(state) && (/\bbusco\s+en\b/.test(t) || state.awaitingField === 'location_text')) {
+    return true;
+  }
+
   if (
     /zona|ubicad|colonia|municipio|cumbres|garcia|garc[ií]a|propiedad|compartes tu nombre|qui[eé]n tengo el gusto|nombre para continuar/i.test(
       q
@@ -96,6 +106,13 @@ function shouldAcceptSellLocationTurn(state, raw) {
 
 function tryParseQualificationLocation(state, raw) {
   if (!shouldAcceptQualificationLocationTurn(state, raw)) return null;
+  if (isBuyFlow(state)) {
+    return (
+      extractLooseLocationPhrase(raw) ||
+      normalizeLocationFromUserText(raw) ||
+      (state.awaitingField === 'location_text' ? cleanSpaces(String(raw || '')).slice(0, 120) : null)
+    );
+  }
   return normalizeLocationFromUserText(raw);
 }
 

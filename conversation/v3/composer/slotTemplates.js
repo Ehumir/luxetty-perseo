@@ -2,6 +2,7 @@
 
 const { cleanSpaces, normalizeText } = require('../../../utils/text');
 const { CONVERSATION_GOALS, V3_INTENT } = require('../types/constants');
+const { getBuyDemandPolicyHint } = require('./buyDemandComposer');
 const { occupancyStatusLabel } = require('../interpreter/occupancyParser');
 
 function formatMoneyMx(amount) {
@@ -124,6 +125,7 @@ function composeHandoffPropertyOrCode(state) {
 function composeSlotQuestion(state, slotId) {
   const nm = firstName(state);
   const zone = state.locationText || 'esa zona';
+  const isBuy = state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY;
 
   switch (slotId) {
     case 'intent':
@@ -159,6 +161,14 @@ function composeSlotQuestion(state, slotId) {
         toneFlags: { consultive: true },
       };
     case 'location_text':
+      if (isBuy) {
+        return {
+          responseText: '¿En qué zona te gustaría buscar?',
+          followUpQuestion: null,
+          awaitingField: 'location_text',
+          toneFlags: { consultive: true },
+        };
+      }
       return {
         responseText: nm
           ? `Perfecto, ${nm}. ¿En qué zona está la propiedad?`
@@ -177,6 +187,16 @@ function composeSlotQuestion(state, slotId) {
         toneFlags: { consultive: true },
       };
     case 'budget':
+      if (isBuy) {
+        return {
+          responseText: zone && zone !== 'esa zona'
+            ? `¿Qué presupuesto aproximado manejas para buscar en ${zone}?`
+            : '¿Qué presupuesto aproximado manejas?',
+          followUpQuestion: null,
+          awaitingField: 'budget',
+          toneFlags: { consultive: true },
+        };
+      }
       return {
         responseText: nm
           ? `Perfecto, ${nm}. En ${zone}, ¿qué presupuesto aproximado manejas?`
@@ -186,12 +206,27 @@ function composeSlotQuestion(state, slotId) {
         toneFlags: { consultive: true },
       };
     case 'property_type':
+      if (isBuy) {
+        return {
+          responseText: '¿Buscas casa, departamento o terreno?',
+          followUpQuestion: null,
+          awaitingField: 'property_type',
+          toneFlags: { consultive: true },
+        };
+      }
       return {
         responseText: nm
           ? `Entendido, ${nm}. ¿Es casa, departamento o terreno?`
           : '¿Es casa, departamento o terreno?',
         followUpQuestion: null,
         awaitingField: 'property_type',
+        toneFlags: { consultive: true },
+      };
+    case 'bedrooms':
+      return {
+        responseText: '¿Cuántas recámaras necesitas?',
+        followUpQuestion: null,
+        awaitingField: 'bedrooms',
         toneFlags: { consultive: true },
       };
     case 'occupancy_status': {
@@ -225,6 +260,32 @@ function composeHandoffOffer(state) {
 
   return {
     responseText: `Perfecto, ${nm}. ${rangeHint} Si te parece, puedo pedirle a uno de nuestros asesores de Luxetty que te contacte para ayudarte con una valuación más precisa.`,
+    followUpQuestion: null,
+    awaitingField: 'advisor_contact_consent',
+    toneFlags: { consultive: true, handoff: true },
+  };
+}
+
+/**
+ * Handoff consultivo compra abierta (F3.2).
+ * @param {import('../types/conversationState').ConversationState} state
+ */
+function composeHandoffBuyDemand(state) {
+  const nm = firstName(state) || 'perfecto';
+  const zone = state.locationText || 'esa zona';
+  const pres = state.budget != null ? formatMoneyMx(state.budget) : null;
+  const tipo =
+    state.bedrooms != null
+      ? `${state.bedrooms} recámaras`
+      : propertyTypeLabel(state) !== 'inmueble'
+        ? propertyTypeLabel(state)
+        : 'lo que buscas';
+  const rangeHint = pres
+    ? `Con ${pres} en ${zone} y ${tipo}, sí vale revisar opciones reales contigo.`
+    : `Por lo que buscas en ${zone}, sí vale revisar opciones reales contigo.`;
+
+  return {
+    responseText: `Perfecto, ${nm}. ${rangeHint} Si te parece, puedo pedirle a un asesor de Luxetty que te contacte por aquí para seguir la búsqueda contigo.`,
     followUpQuestion: null,
     awaitingField: 'advisor_contact_consent',
     toneFlags: { consultive: true, handoff: true },
@@ -508,6 +569,45 @@ function applyPropertyReplyAntiLoop(input) {
 function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   const intent = decision.detectedIntent;
 
+  const buyPolicyHint = getBuyDemandPolicyHint(state, decision, plannerOut, handoffOut);
+  if (buyPolicyHint) {
+    const slotQ = buyPolicyHint.nextSlot ? composeSlotQuestion(state, buyPolicyHint.nextSlot) : null;
+    if (buyPolicyHint.kind === 'geo_out_of_coverage' && state.locationText) {
+      const zone = state.locationText;
+      const tail =
+        slotQ && slotQ.responseText
+          ? ` ${slotQ.responseText}`
+          : ' Si te parece, un asesor de Luxetty puede orientarte sobre alternativas.';
+      return {
+        responseText: `Gracias por comentarlo. Por ahora nuestro inventario activo está en el área metropolitana de Monterrey (Cumbres, San Pedro, Carretera Nacional y zona sur); para ${zone} no tenemos cobertura directa en catálogo.${tail}`,
+        followUpQuestion: slotQ?.followUpQuestion || null,
+        awaitingField: slotQ?.awaitingField ?? buyPolicyHint.nextSlot ?? state.awaitingField,
+        toneFlags: { consultive: true, geoPolicy: true },
+      };
+    }
+    if (buyPolicyHint.kind === 'price_below_floor' && state.budget != null) {
+      const pres = formatMoneyMx(state.budget);
+      const tail =
+        slotQ && slotQ.responseText
+          ? ` ${slotQ.responseText}`
+          : ' ¿En qué zona te gustaría enfocar la búsqueda?';
+      return {
+        responseText: `Tomé un presupuesto de ${pres}. En compra, ese rango puede tener menos opciones premium, pero sí vale explorar con cuidado.${tail}`,
+        followUpQuestion: slotQ?.followUpQuestion || null,
+        awaitingField: slotQ?.awaitingField ?? buyPolicyHint.nextSlot ?? state.awaitingField,
+        toneFlags: { consultive: true, pricePolicy: true },
+      };
+    }
+    if (buyPolicyHint.kind === 'price_ambiguous') {
+      return {
+        responseText: 'Para orientarte mejor, ¿qué presupuesto aproximado manejas (en millones de pesos)?',
+        followUpQuestion: null,
+        awaitingField: 'budget',
+        toneFlags: { consultive: true, pricePolicy: true },
+      };
+    }
+  }
+
   if (intent === V3_INTENT.CAMPAIGN_GENERIC_TOUCH) return composeCampaignGenericTouch(state);
 
   if (handoffOut.action === 'CONSENT_ACCEPTED' || handoffOut.action === 'HANDOFF_COMPLETE') {
@@ -532,6 +632,9 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
       (state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY && state.propertyListingCode)
     ) {
       return composeHandoffPropertyOrCode(state);
+    }
+    if (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+      return composeHandoffBuyDemand(state);
     }
     return composeHandoffOffer(state);
   }
@@ -582,7 +685,22 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
     ) {
       return composeHandoffPropertyOrCode(state);
     }
+    if (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+      return composeHandoffBuyDemand(state);
+    }
     return composeHandoffOffer(state);
+  }
+
+  if (intent === V3_INTENT.BUY_PROPERTY && plannerOut.nextSlot) {
+    return composeSlotQuestion(state, plannerOut.nextSlot);
+  }
+
+  if (intent === V3_INTENT.BUYER_BUDGET && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY && plannerOut.nextSlot) {
+    return composeSlotQuestion(state, plannerOut.nextSlot);
+  }
+
+  if (intent === V3_INTENT.BEDROOMS_CAPTURE && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY && plannerOut.nextSlot) {
+    return composeSlotQuestion(state, plannerOut.nextSlot);
   }
 
   return {
@@ -599,6 +717,7 @@ module.exports = {
   composeHandoffPropertyOrCode,
   composeSlotQuestion,
   composeHandoffOffer,
+  composeHandoffBuyDemand,
   composeConsentAccepted,
   composeConsentDeclined,
   composeFromPlannerContext,

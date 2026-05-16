@@ -34,6 +34,8 @@ function createInitialConversationState(seed = {}) {
     expectedPrice: null,
     budget: null,
     bedrooms: null,
+    /** @type {'credit'|'cash'|'unknown'|null} */
+    paymentMethod: null,
     awaitingField: null,
     advisorContactConsent: ADVISOR_CONTACT_CONSENT.UNKNOWN,
     qualificationComplete: false,

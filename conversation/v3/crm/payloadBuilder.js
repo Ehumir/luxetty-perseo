@@ -28,6 +28,8 @@ function buildCrmDryRunPayload(state) {
 
   if (state.expectedPrice != null) payload.expected_price = state.expectedPrice;
   if (state.budget != null) payload.budget = state.budget;
+  if (state.bedrooms != null) payload.bedrooms = state.bedrooms;
+  if (state.paymentMethod) payload.payment_method = state.paymentMethod;
   if (state.propertyListingCode) payload.property_listing_code = state.propertyListingCode;
   if (state.occupancyStatus || state.collectedFields?.occupancyStatus) {
     payload.occupancy_status = state.occupancyStatus || state.collectedFields?.occupancyStatus;
