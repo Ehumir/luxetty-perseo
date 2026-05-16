@@ -1,0 +1,68 @@
+'use strict';
+
+const { cleanSpaces } = require('../../../utils/text');
+const {
+  isShortPostCloseAck,
+  isPostHandoffTerminalState,
+  isHandoffPendingState,
+} = require('../interpreter/objectionClassifier');
+
+function firstName(state) {
+  const full = cleanSpaces(String(state.collectedFields?.fullName || ''));
+  if (!full) return null;
+  return full.split(/\s+/)[0];
+}
+
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ */
+function composePostHandoffAck(state) {
+  const nm = firstName(state);
+  const head = nm ? `Con gusto, ${nm}.` : 'Con gusto.';
+  return {
+    responseText: `${head} Ya quedó anotado; en breve te escribe un asesor de Luxetty por aquí. Si surge algo más, me avisas.`,
+    followUpQuestion: null,
+    awaitingField: null,
+    toneFlags: { consultive: true, postClose: true },
+  };
+}
+
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ */
+function composeHandoffPendingContinuity(state) {
+  const nm = firstName(state);
+  const head = nm ? `Lamento la confusión, ${nm}.` : 'Lamento la confusión.';
+  return {
+    responseText: `${head} Ya tengo anotada la canalización con un asesor de Luxetty; en breve te contactan por WhatsApp. Si te parece bien el contacto, un “sí” me ayuda a confirmarlo.`,
+    followUpQuestion: null,
+    awaitingField: state.awaitingField === 'advisor_contact_consent' ? 'advisor_contact_consent' : null,
+    toneFlags: { consultive: true, handoffContinuity: true },
+  };
+}
+
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ * @param {string} text
+ */
+function tryComposePostHandoffTurn(state, text) {
+  if (isPostHandoffTerminalState(state) && isShortPostCloseAck(text)) {
+    return composePostHandoffAck(state);
+  }
+  if (isHandoffPendingState(state) && !isPostHandoffTerminalState(state)) {
+    const t = String(text || '').toLowerCase();
+    if (
+      /no\s+me\s+est[aá]s?\s+entendiendo|no\s+entiendes|esto\s+no\s+sirve|no\s+sirve/i.test(t)
+    ) {
+      return composeHandoffPendingContinuity(state);
+    }
+  }
+  return null;
+}
+
+module.exports = {
+  composePostHandoffAck,
+  composeHandoffPendingContinuity,
+  tryComposePostHandoffTurn,
+  firstName,
+};

@@ -1,0 +1,94 @@
+'use strict';
+
+const { normalizeText } = require('../../../utils/text');
+const { CONVERSATION_STAGES, ADVISOR_CONTACT_CONSENT } = require('../types/constants');
+
+/** @typedef {'post_close_ack'|'handoff_pending_frustration'|'bot_identity'|'frustration_not_understood'|'useless'|'human_request'|'commission'|'competitor_price'|'no_exclusivity'|'already_listed'} ObjectionKind */
+
+function isShortPostCloseAck(text) {
+  const t = normalizeText(String(text || ''));
+  return /^(?:gracias|muchas\s+gracias|ok|vale|perfecto|excelente|genial|va|listo|de\s+acuerdo|bien|si|sí)(?:\s+gracias)?$/i.test(
+    t,
+  );
+}
+
+function isPostHandoffTerminalState(state) {
+  if (!state || typeof state !== 'object') return false;
+  if (state.advisorContactConsent === ADVISOR_CONTACT_CONSENT.ACCEPTED) return true;
+  const stage = state.conversationStage;
+  return stage === CONVERSATION_STAGES.CRM_READY || stage === CONVERSATION_STAGES.HANDOFF_READY;
+}
+
+function isHandoffPendingState(state) {
+  if (!state) return false;
+  return (
+    state.conversationStage === CONVERSATION_STAGES.HANDOFF_PENDING ||
+    state.handoffStage === CONVERSATION_STAGES.HANDOFF_PENDING ||
+    state.advisorContactConsent === ADVISOR_CONTACT_CONSENT.REQUESTED
+  );
+}
+
+function isBotIdentityQuestion(text) {
+  const t = normalizeText(String(text || ''))
+    .replace(/[¿?¡!.,;:]+/g, ' ')
+    .trim();
+  return /\b(eres\s+un?\s*)?bot\b|\binteligencia\s+artificial\b|\bsoy\s+ia\b/i.test(t);
+}
+
+function isExplicitHumanRequest(text) {
+  const t = normalizeText(String(text || ''));
+  return (
+    /\bhablar\s+con\s+(alguien|una\s+persona|un\s+asesor|un\s+humano)\b/i.test(t) ||
+    /\b(persona\s+real|humano\s+real)\b/i.test(t) ||
+    /\bquiero\s+un\s+asesor\b/i.test(t)
+  );
+}
+
+/**
+ * @param {string} text
+ * @param {import('../types/conversationState').ConversationState} state
+ * @returns {ObjectionKind|null}
+ */
+function classifyObjection(text, state) {
+  const t = normalizeText(String(text || ''));
+  if (!t) return null;
+
+  if (isPostHandoffTerminalState(state) && isShortPostCloseAck(text)) {
+    return 'post_close_ack';
+  }
+
+  if (isHandoffPendingState(state) && !isPostHandoffTerminalState(state)) {
+    if (/no\s+me\s+est[aá]s?\s+entendiendo|no\s+entiendes|no\s+est[aá]s?\s+entendiendo/i.test(t)) {
+      return 'handoff_pending_frustration';
+    }
+    if (/esto\s+no\s+sirve|no\s+sirve|no\s+funciona/i.test(t)) {
+      return 'handoff_pending_frustration';
+    }
+  }
+
+  if (isBotIdentityQuestion(text) && !isExplicitHumanRequest(text)) {
+    return 'bot_identity';
+  }
+
+  if (isExplicitHumanRequest(text)) return 'human_request';
+  if (/no\s+me\s+est[aá]s?\s+entendiendo|no\s+entiendes/i.test(t)) return 'frustration_not_understood';
+  if (/esto\s+no\s+sirve|no\s+sirve/i.test(t)) return 'useless';
+
+  if (/\bcomisi[oó]n\b|\bcu[aá]nto\s+cobran\b|\bqu[eé]\s+%\s+cobran/i.test(t)) return 'commission';
+  if (/otra\s+inmobiliaria|cobran\s+menos|m[aá]s\s+barato/i.test(t)) return 'competitor_price';
+  if (/no\s+quiero\s+exclusiva|sin\s+exclusiva|exclusiva\s+no/i.test(t)) return 'no_exclusivity';
+  if (/ya\s+la\s+tengo\s+publicada|ya\s+est[aá]\s+publicada|ya\s+la\s+publiqu[eé]/i.test(t)) {
+    return 'already_listed';
+  }
+
+  return null;
+}
+
+module.exports = {
+  classifyObjection,
+  isShortPostCloseAck,
+  isPostHandoffTerminalState,
+  isHandoffPendingState,
+  isBotIdentityQuestion,
+  isExplicitHumanRequest,
+};

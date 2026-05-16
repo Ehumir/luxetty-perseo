@@ -12,6 +12,7 @@ const { runF3Pipeline } = require('./f3Pipeline');
 const { detectForcedHandoffReason } = require('../planner/forcedHandoffDetector');
 const { runForcedHandoffTurn } = require('./forcedHandoffTurn');
 const { V3_INTENT } = require('../types/constants');
+const { tryComposeF4EarlyTurn, shouldSuppressForcedHandoff } = require('../composer/f4TurnComposer');
 
 /**
  * @param {{
@@ -106,7 +107,21 @@ function processV3Turn(input) {
 
   const { state: nextState, guard } = applyV3StateTransition(state, patchWithStreak, decision);
 
-  const forcedReason = detectForcedHandoffReason({
+  const f4Early = tryComposeF4EarlyTurn({ state: nextState, decision, text });
+  if (f4Early) {
+    setSession(conversationId, f4Early.state);
+    return {
+      ok: true,
+      reply: f4Early.composed.responseText,
+      state: f4Early.state,
+      decision,
+      guard,
+      responseSource: f4Early.responseSource,
+      fallbackToLegacy: false,
+    };
+  }
+
+  let forcedReason = detectForcedHandoffReason({
     state: nextState,
     decision,
     text,
@@ -114,8 +129,12 @@ function processV3Turn(input) {
     guard,
   });
 
+  if (shouldSuppressForcedHandoff(forcedReason, nextState, decision)) {
+    forcedReason = null;
+  }
+
   if (forcedReason) {
-    const forced = runForcedHandoffTurn({ state: nextState, decision, reason: forcedReason });
+    const forced = runForcedHandoffTurn({ state: nextState, decision, reason: forcedReason, userText: text });
     setSession(conversationId, forced.state);
     v3Log('forced_handoff_applied', {
       conversation_id: conversationId,
@@ -161,7 +180,7 @@ function processV3Turn(input) {
     const f3 = runF3Pipeline({ state: nextState, decision, text });
     finalState = f3.state;
     replyText = f3.replyText;
-    responseSource = 'v3_core_f3_1';
+    responseSource = f3.f4Applied ? 'v3_core_f4' : 'v3_core_f3_1';
     v3Log('f3_planner', {
       conversation_id: conversationId,
       flow: f3.plannerOut?.flowKey,

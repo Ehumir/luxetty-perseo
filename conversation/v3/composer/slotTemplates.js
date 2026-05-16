@@ -1,8 +1,10 @@
 'use strict';
 
 const { cleanSpaces, normalizeText } = require('../../../utils/text');
-const { CONVERSATION_GOALS, V3_INTENT } = require('../types/constants');
+const { CONVERSATION_GOALS, CONVERSATION_STAGES, V3_INTENT } = require('../types/constants');
 const { getBuyDemandPolicyHint } = require('./buyDemandComposer');
+const { isPostHandoffTerminalState } = require('../interpreter/objectionClassifier');
+const { composePostHandoffAck, composeHandoffPendingContinuity } = require('./postHandoffComposer');
 const { occupancyStatusLabel } = require('../interpreter/occupancyParser');
 
 function formatMoneyMx(amount) {
@@ -545,6 +547,35 @@ function applyPropertyReplyAntiLoop(input) {
   const state = input.state || {};
   const text = String(input.replyText || '');
   const handoffOut = input.handoffOut || {};
+
+  if (handoffOut.action === 'CONSENT_ACCEPTED' || handoffOut.action === 'HANDOFF_COMPLETE') {
+    return { text, replaced: false };
+  }
+
+  if (isPostHandoffTerminalState(state)) {
+    const prev = String(state.lastAssistantReply || '');
+    if (prev && (isCommercialHandoffReply(text) || isCommercialHandoffReply(prev))) {
+      return { text: composePostHandoffAck(state).responseText, replaced: true };
+    }
+    return { text, replaced: false };
+  }
+
+  if (
+    state.conversationStage === CONVERSATION_STAGES.HANDOFF_PENDING ||
+    state.handoffStage === CONVERSATION_STAGES.HANDOFF_PENDING
+  ) {
+    const prev = String(state.lastAssistantReply || '');
+    if (prev && isCommercialHandoffReply(text) && isCommercialHandoffReply(prev)) {
+      if (
+        state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY &&
+        state.propertyListingCode
+      ) {
+        return { text: composePropertyLoopBreak(state), replaced: true };
+      }
+      return { text: composeHandoffPendingContinuity(state).responseText, replaced: true };
+    }
+  }
+
   if (!isCommercialHandoffReply(text)) return { text, replaced: false };
   const prev = String(state.lastAssistantReply || '');
   if (!prev || !isCommercialHandoffReply(prev)) return { text, replaced: false };
@@ -555,7 +586,10 @@ function applyPropertyReplyAntiLoop(input) {
     fp === prevFp &&
     (handoffOut.action === 'OFFER_HANDOFF' || state.lastOfferType === 'HANDOFF_PROPERTY')
   ) {
-    return { text: composePropertyLoopBreak(state), replaced: true };
+    if (state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY && state.propertySubMode === 'PROPERTY_QA') {
+      return { text: composePropertyLoopBreak(state), replaced: true };
+    }
+    return { text: composeHandoffPendingContinuity(state).responseText, replaced: true };
   }
   return { text, replaced: false };
 }

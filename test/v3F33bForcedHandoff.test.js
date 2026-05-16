@@ -42,7 +42,7 @@ const { evaluateRuleGuard } = require('../conversation/v3/rules/ruleGuard');
 
 const REQUIRED_COPY = /\b(asesor|asesora)\b/i;
 const CANALIZE = /\b(canalizar|canalizaci[oó]n)\b/i;
-const CONTACT = /\b(contactar[aá]|escribir[aá]|seguimiento)\b/i;
+const CONTACT = /\b(contactar[aá]|contactar[aá]n|escribir[aá]|seguimiento|whatsapp)\b/i;
 
 function assertForcedCopy(text, label) {
   assert.match(String(text), REQUIRED_COPY, label);

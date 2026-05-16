@@ -8,6 +8,10 @@ const {
   CONVERSATION_GOALS,
 } = require('../types/constants');
 const { FORCED_HANDOFF_REASONS } = require('../types/forcedHandoffReasons');
+const {
+  isBotIdentityQuestion,
+  isExplicitHumanRequest,
+} = require('../interpreter/objectionClassifier');
 
 const LOOP_RISK_THRESHOLD = 3;
 const UNKNOWN_STREAK_THRESHOLD = 3;
@@ -41,12 +45,11 @@ function isLegalEscalationSignal(text) {
  * @param {string} text
  */
 function isUserRequestsHumanSignal(text, decision) {
-  const t = normalizeText(String(text || ''));
   if (decision.detectedIntent === V3_INTENT.PROPERTY_HUMAN_HANDOFF_REQUEST) return true;
   if (decision.shouldEscalateHuman) return true;
-  return /\b(eres\s+un?\s*)?bot\b|persona\s+real|humano\b|hablar\s+con\s+(alguien|una\s+persona|un\s+asesor)/i.test(
-    t
-  );
+  if (isExplicitHumanRequest(text)) return true;
+  if (isBotIdentityQuestion(text)) return true;
+  return false;
 }
 
 /**
