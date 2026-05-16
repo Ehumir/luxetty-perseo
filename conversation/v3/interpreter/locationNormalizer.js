@@ -15,6 +15,17 @@ function normalizeLocationFromUserText(raw) {
   t = t.replace(/^(?:no|nop|nope)[,\s]+/i, '').trim();
 
   const lower = normalizeText(t);
+  /** Preguntas sin ancla de lugar no son colonia (evita contaminar `location_text` en flujos mixtos). */
+  if (
+    /\?/.test(t) &&
+    /^(¿|\s)*(donde|dónde)\s+(esta|está|estan|están|esta el|esta la)?\s*\??$/i.test(lower.replace(/\s+/g, ' ').trim())
+  ) {
+    return null;
+  }
+  if (/\?/.test(t) && /\b(cuanto|cuánto|cuesta|precio|me\s+puedes\s+dar)\b/i.test(lower) && !/\b(en|colonia|zona\s+de)\s+\w+/i.test(lower)) {
+    return null;
+  }
+
   if (lower.includes('cumbres')) return 'Cumbres';
 
   const queEn = t.match(/\bque\s+en\s+(.+)$/i);
