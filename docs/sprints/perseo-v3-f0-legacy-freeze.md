@@ -5,6 +5,8 @@
 
 **Referencias:** `docs/sprints/perseo-conversational-core-v3-roadmap.md`, política ATENA (no nueva funcionalidad hasta base estable).
 
+**ETAPA 0 (control activo):** diagnóstico git, flags, rollback y rama `refactor/perseo-conversational-core-control` → ver **`docs/sprints/perseo-etapa-0-congelamiento-control.md`**.
+
 ---
 
 ## 1. Estado actual del core (resumen)
