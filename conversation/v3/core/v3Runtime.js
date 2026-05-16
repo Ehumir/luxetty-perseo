@@ -17,7 +17,12 @@ const { runF3Pipeline } = require('./f3Pipeline');
  *   text: string,
  *   reset?: boolean,
  *   campaignHeadline?: string|null,
- *   legacyHydration?: { propertyListingCode?: string|null, locationText?: string|null, campaignHeadline?: string|null }|null,
+ *   legacyHydration?: {
+ *     propertyListingCode?: string|null,
+ *     locationText?: string|null,
+ *     campaignHeadline?: string|null,
+ *     activeProperty?: import('../types/conversationState').ConversationState['activeProperty'],
+ *   }|null,
  * }} input
  */
 function processV3Turn(input) {
@@ -35,18 +40,41 @@ function processV3Turn(input) {
     };
   }
 
+  const h = input.legacyHydration && typeof input.legacyHydration === 'object' ? input.legacyHydration : null;
+
+  /**
+   * Inventario resuelto en `index.js` antes de V3; debe mezclarse en cada turno
+   * para que PROPERTY_QA lea precio/zona/enlace reales (`activeProperty`).
+   */
+  function applyLegacyHydrationToSession(base) {
+    if (!h) return base;
+    const hyd = {};
+    if (h.propertyListingCode) hyd.propertyListingCode = String(h.propertyListingCode).trim();
+    if (h.locationText) hyd.locationText = String(h.locationText).trim();
+    if (h.campaignHeadline) hyd.campaignHeadline = String(h.campaignHeadline).slice(0, 400);
+    if (h.activeProperty && typeof h.activeProperty === 'object' && h.activeProperty.id) {
+      hyd.activeProperty = h.activeProperty;
+    }
+    if (!Object.keys(hyd).length) return base;
+    return mergeConversationState(base, hyd);
+  }
+
   let state = getSession(conversationId);
   if (!state) {
     state = createInitialConversationState({ conversationId, phone });
-    const h = input.legacyHydration && typeof input.legacyHydration === 'object' ? input.legacyHydration : null;
-    if (h) {
-      const hyd = {};
-      if (h.propertyListingCode) hyd.propertyListingCode = String(h.propertyListingCode).trim();
-      if (h.locationText) hyd.locationText = String(h.locationText).trim();
-      if (h.campaignHeadline) hyd.campaignHeadline = String(h.campaignHeadline).slice(0, 400);
-      state = mergeConversationState(state, hyd);
-    }
+    state = applyLegacyHydrationToSession(state);
     setSession(conversationId, state);
+  } else {
+    const merged = applyLegacyHydrationToSession(state);
+    if (merged !== state) {
+      state = merged;
+      setSession(conversationId, state);
+      v3Log('v3_inventory_hydration', {
+        conversation_id: conversationId,
+        has_active_property: !!(h && h.activeProperty && h.activeProperty.id),
+        property_code: state.propertyListingCode || null,
+      });
+    }
   }
 
   const fr = detectFrustration(text);

@@ -862,10 +862,34 @@ app.post('/webhook', async (req, res) => {
         (campaignContext && (campaignContext.headline || campaignContext.ad_name)) || null;
 
       const legacyHydration = {
-        propertyListingCode: previousAiState.property_code || previousAiState.direct_property_code || null,
+        propertyListingCode:
+          cleanSpaces(
+            String(
+              nextAiState.property_code ||
+                nextAiState.direct_property_code ||
+                previousAiState.property_code ||
+                previousAiState.direct_property_code ||
+                ''
+            )
+          ) || null,
         locationText: previousAiState.location_text || null,
         campaignHeadline: campaignHeadline || previousAiState.campaignHeadline || null,
       };
+      if (property?.id) {
+        try {
+          const rowForNorm = property.raw && property.raw.id ? property.raw : property;
+          const ap = propertyInventoryService.normalizeInventoryProperty(rowForNorm);
+          if (ap && ap.id) {
+            const { raw: _omitRaw, ...snapshot } = ap;
+            legacyHydration.activeProperty = snapshot;
+          }
+        } catch (e) {
+          logEvent('v3_active_property_normalize_fail', {
+            conversation_id: conversationId,
+            message: String(e && e.message ? e.message : e),
+          });
+        }
+      }
 
       const v3Try = v3InboundBridge.tryV3PrimaryReply({
         conversationId,

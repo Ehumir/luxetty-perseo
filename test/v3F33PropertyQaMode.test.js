@@ -65,6 +65,31 @@ describe('F3.3A PROPERTY_QA_MODE + anti-loop', () => {
     assert.doesNotMatch(String(r.reply || ''), /te\s+contactan/i);
   });
 
+  it('hidratación legacy: activeProperty por turno alimenta precio en PROPERTY_QA (como index.js + inventario)', () => {
+    const cid = 'f33-hydrate';
+    const fakeInv = {
+      id: 'p-inventory-1',
+      price_label: '$7,123,000 MXN',
+      public_url: 'https://luxetty.com/propiedad/casa-demo',
+      location_label: 'Centro',
+      code: 'LUX-A0462',
+    };
+    clearV3Session(cid);
+    processV3Turn({ conversationId: cid, phone: '521', text: 'Hola, me interesa la propiedad A0462' });
+    processV3Turn({ conversationId: cid, phone: '521', text: 'Jorge' });
+    const r = processV3Turn({
+      conversationId: cid,
+      phone: '521',
+      text: '¿Me puedes dar el precio?',
+      legacyHydration: {
+        propertyListingCode: 'LUX-A0462',
+        activeProperty: fakeInv,
+      },
+    });
+    assert.match(String(r.reply || ''), /7[, ]?123|7123000|precio listado/i);
+    assert.equal(r.state.activeProperty?.id, 'p-inventory-1');
+  });
+
   it('precio / ubicación no se interpretan como LOCATION_CAPTURE (regresión plantilla con "zona")', () => {
     const cid = 'f33-not-location';
     clearV3Session(cid);
