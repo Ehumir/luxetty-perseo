@@ -22,4 +22,5 @@ module.exports = {
   v3Log: require('./core/v3Logger').v3Log,
   V3_LOG_EVENTS: require('./core/v3Logger').V3_LOG_EVENTS,
   clearV3Session: require('./core/sessionStore').clearSession,
+  contracts: require('./contracts'),
 };

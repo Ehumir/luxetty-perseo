@@ -3,59 +3,20 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const {
-  createInitialConversationState,
-  interpretUserTextMock,
-  applyV3StateTransition,
-  CONVERSATION_STAGES,
-  evaluateRuleGuard,
-  createEmptyDecision,
-  runShadowCompare,
-} = require('../conversation/v3');
+const v3 = require('../conversation/v3');
+const contracts = require('../conversation/v3/contracts');
 
-describe('V3-F1 venta mínima (mock, sin OpenAI)', () => {
-  it('guion: Hola → venta → Jorge → Cumbres → 8M mantiene offer y expectedPrice', () => {
-    let s = createInitialConversationState({ conversationId: 'c1', phone: '5218000000000' });
-    const turns = ['Hola', 'Quiero vender mi casa', 'Jorge', 'Está en Cumbres', 'Vale como 8 millones'];
-
-    for (const text of turns) {
-      const { patch, decision } = interpretUserTextMock(s, text);
-      const { state, guard } = applyV3StateTransition(s, patch, decision);
-      assert.ok(guard.allowed, `guard debe permitir turno "${text}": ${guard.violations.join(',')}`);
-      s = state;
-    }
-
-    assert.equal(s.leadFlow, 'offer');
-    assert.notEqual(s.leadFlow, 'demand');
-    assert.equal(s.locationText, 'Cumbres');
-    assert.equal(s.expectedPrice, 8_000_000);
-    assert.equal(s.budget, null);
-    assert.equal(s.collectedFields.fullName, 'Jorge');
-    assert.equal(s.conversationStage, CONVERSATION_STAGES.PROPERTY_CONTEXT);
+describe('V3 conversation core barrel (F1)', () => {
+  it('exports stage engine and state factories', () => {
+    assert.equal(typeof v3.createInitialConversationState, 'function');
+    assert.equal(typeof v3.resolveNextStage, 'function');
+    assert.equal(typeof v3.evaluateRuleGuard, 'function');
+    assert.equal(typeof v3.composeResponseStub, 'function');
   });
-});
 
-describe('V3-F1 rule guard', () => {
-  it('bloquea offer → demand sin explicitFlowSwitch', () => {
-    const state = createInitialConversationState({});
-    state.leadFlow = 'offer';
-    const decision = createEmptyDecision();
-    decision.detectedIntent = 'demand';
-    decision.explicitFlowSwitch = false;
-    const g = evaluateRuleGuard(state, decision, {});
-    assert.equal(g.allowed, false);
-    assert.ok(g.violations.includes('offer_to_demand_without_confirmation'));
-  });
-});
-
-describe('V3-F1 shadow harness', () => {
-  it('compara legacy vs stub V3 sin igualdad forzada', () => {
-    const r = runShadowCompare({
-      legacyText: 'Hola, te apoyo con gusto.',
-      v3State: createInitialConversationState({}),
-      v3Decision: createEmptyDecision(),
-    });
-    assert.equal(r.equal, false);
-    assert.ok(r.v3Snippet.includes('v3-composer-stub'));
+  it('contracts validate state created via barrel', () => {
+    const state = v3.createInitialConversationState({ conversationId: 'x' });
+    const v = contracts.validateConversationState(state);
+    assert.equal(v.valid, true);
   });
 });

@@ -1,6 +1,9 @@
 # PERSEO V3-F1 — Núcleo conversacional paralelo (arquitectura y estrategia)
 
-**Estado:** F1 completado en código aislado. **Producción:** sigue 100 % legacy (`index.js` sin imports V3).
+**Estado:** F1 — **contratos ejecutables** + tests (`contracts/`, `test/v3F1Contracts.test.js`).  
+**Producción global:** legacy primary salvo `PERSEO_V3_ENABLED` + allowlist (F2+ ya cablea `v3InboundBridge` en `index.js`; F1 no añade wiring).
+
+**Rama:** `feat/perseo-v3-f1-conversational-core` (post Etapa 0 / `main` @ merge PR #66).
 
 ---
 

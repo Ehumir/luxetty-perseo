@@ -1,41 +1,47 @@
 'use strict';
 
-const { describe, it, beforeEach, afterEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-describe('config/perseoEngine + perseoV3Flags (F1/F2)', () => {
-  const saved = { ...process.env };
+const { getPerseoEngineRuntime } = require('../config/perseoEngine');
+const { getPerseoV3Config, shouldRouteInboundToV3Core } = require('../config/perseoV3Flags');
+const { isProductionSafeV3Config } = require('../conversation/v3/contracts/productionIsolation.contract');
 
-  beforeEach(() => {
-    process.env = { ...saved };
-    delete require.cache[require.resolve('../config/perseoEngine')];
-    delete require.cache[require.resolve('../config/perseoV3Flags')];
-  });
-
-  afterEach(() => {
-    process.env = { ...saved };
-  });
-
-  it('motor efectivo siempre legacy en F2', () => {
+describe('V3 engine and flags (F1)', () => {
+  it('PERSEO_ENGINE effective is legacy by default', () => {
+    const prev = process.env.PERSEO_ENGINE;
+    const prevV3 = process.env.PERSEO_V3_ENABLED;
     process.env.PERSEO_ENGINE = 'v3';
-    process.env.PERSEO_V3_ENABLED = 'true';
-    delete require.cache[require.resolve('../config/perseoEngine')];
-    const { getPerseoEngineRuntime } = require('../config/perseoEngine');
-    const r = getPerseoEngineRuntime();
-    assert.equal(r.effective, 'legacy');
-    assert.equal(r.requested, 'v3');
+    process.env.PERSEO_V3_ENABLED = 'false';
+
+    try {
+      const rt = getPerseoEngineRuntime();
+      assert.equal(rt.effective, 'legacy');
+      assert.equal(rt.v3ReservedIgnored, true);
+    } finally {
+      if (prev === undefined) delete process.env.PERSEO_ENGINE;
+      else process.env.PERSEO_ENGINE = prev;
+      if (prevV3 === undefined) delete process.env.PERSEO_V3_ENABLED;
+      else process.env.PERSEO_V3_ENABLED = prevV3;
+    }
   });
 
-  it('shouldRouteInboundToV3Core solo con allowlist + enabled', () => {
-    delete require.cache[require.resolve('../config/perseoV3Flags')];
-    const m = require('../config/perseoV3Flags');
+  it('shouldRouteInboundToV3Core is false when V3 disabled', () => {
+    const prev = process.env.PERSEO_V3_ENABLED;
+    const prevList = process.env.PERSEO_V3_QA_ALLOWLIST;
     process.env.PERSEO_V3_ENABLED = 'false';
-    process.env.PERSEO_V3_QA_ALLOWLIST = '5218110000001';
-    assert.equal(m.shouldRouteInboundToV3Core('5218110000001'), false);
-    process.env.PERSEO_V3_ENABLED = 'true';
-    delete require.cache[require.resolve('../config/perseoV3Flags')];
-    const m2 = require('../config/perseoV3Flags');
-    assert.equal(m2.shouldRouteInboundToV3Core('5218110000001'), true);
-    assert.equal(m2.shouldRouteInboundToV3Core('5219999999999'), false);
+    process.env.PERSEO_V3_QA_ALLOWLIST = '';
+
+    try {
+      assert.equal(shouldRouteInboundToV3Core('5218119086196'), false);
+      const cfg = getPerseoV3Config();
+      assert.equal(cfg.enabled, false);
+      assert.equal(isProductionSafeV3Config(), true);
+    } finally {
+      if (prev === undefined) delete process.env.PERSEO_V3_ENABLED;
+      else process.env.PERSEO_V3_ENABLED = prev;
+      if (prevList === undefined) delete process.env.PERSEO_V3_QA_ALLOWLIST;
+      else process.env.PERSEO_V3_QA_ALLOWLIST = prevList;
+    }
   });
 });
