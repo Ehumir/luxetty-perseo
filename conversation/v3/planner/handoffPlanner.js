@@ -6,10 +6,66 @@ const {
   V3_INTENT,
   CONVERSATION_GOALS,
 } = require('../types/constants');
+const { HUMAN_ESCALATION_REASONS } = require('../types/forcedHandoffReasons');
 
 /**
- * @typedef {'CONTINUE_QUALIFICATION'|'OFFER_HANDOFF'|'CONSENT_ACCEPTED'|'CONSENT_DECLINED'|'HANDOFF_COMPLETE'|'PROPERTY_QA_ENTRY'|'PROPERTY_QA_CONTINUE'} HandoffAction
+ * @typedef {'CONTINUE_QUALIFICATION'|'OFFER_HANDOFF'|'CONSENT_ACCEPTED'|'CONSENT_DECLINED'|'HANDOFF_COMPLETE'|'PROPERTY_QA_ENTRY'|'PROPERTY_QA_CONTINUE'|'FORCE_HANDOFF'|'FORCE_HANDOFF_READY'|'FORCE_HANDOFF_ESCALATION'} HandoffAction
  */
+
+/**
+ * F3.3B — canalización obligatoria cuando V3 no puede continuar de forma segura.
+ * @param {import('../types/conversationState').ConversationState} state
+ * @param {{ reason: string, decision?: import('../types/conversationDecision').ConversationDecision }} input
+ */
+function forceHandoff(state, input) {
+  const reason = String(input.reason || 'intent_unknown').trim();
+  const decision = input.decision || {};
+
+  /** @type {Partial<import('../types/conversationState').ConversationState>} */
+  const patch = {
+    unhandledReason: reason,
+    handoffReason: reason,
+    lastOfferType: 'HANDOFF_PROPERTY',
+  };
+
+  if (state.advisorContactConsent === ADVISOR_CONTACT_CONSENT.DECLINED) {
+    patch.awaitingField = null;
+    patch.handoffStage = CONVERSATION_STAGES.HUMAN_ESCALATION;
+    patch.conversationStage = CONVERSATION_STAGES.HUMAN_ESCALATION;
+    patch.frustrationState = state.frustrationState;
+    return { patch, action: /** @type {HandoffAction} */ ('FORCE_HANDOFF_ESCALATION') };
+  }
+
+  if (state.advisorContactConsent === ADVISOR_CONTACT_CONSENT.ACCEPTED) {
+    patch.awaitingField = null;
+    patch.handoffStage = CONVERSATION_STAGES.HANDOFF_READY;
+    patch.conversationStage = CONVERSATION_STAGES.HANDOFF_READY;
+    return { patch, action: /** @type {HandoffAction} */ ('FORCE_HANDOFF_READY') };
+  }
+
+  if (HUMAN_ESCALATION_REASONS.has(reason)) {
+    patch.awaitingField = null;
+    patch.handoffStage = CONVERSATION_STAGES.HUMAN_ESCALATION;
+    patch.conversationStage = CONVERSATION_STAGES.HUMAN_ESCALATION;
+    patch.advisorContactConsent = ADVISOR_CONTACT_CONSENT.REQUESTED;
+    return { patch, action: /** @type {HandoffAction} */ ('FORCE_HANDOFF_ESCALATION') };
+  }
+
+  patch.advisorContactConsent = ADVISOR_CONTACT_CONSENT.REQUESTED;
+  patch.handoffStage = CONVERSATION_STAGES.HANDOFF_PENDING;
+  patch.conversationStage = CONVERSATION_STAGES.HANDOFF_PENDING;
+  patch.awaitingField =
+    reason === 'user_requests_human' || reason === 'runtime_error'
+      ? null
+      : 'advisor_contact_consent';
+
+  if (decision.shouldEscalateHuman) {
+    patch.handoffStage = CONVERSATION_STAGES.HUMAN_ESCALATION;
+    patch.conversationStage = CONVERSATION_STAGES.HUMAN_ESCALATION;
+  }
+
+  return { patch, action: /** @type {HandoffAction} */ ('FORCE_HANDOFF') };
+}
 
 /**
  * @param {import('../types/conversationState').ConversationState} state
@@ -130,4 +186,5 @@ function processHandoff(state, _text, decision, plannerOut) {
 
 module.exports = {
   processHandoff,
+  forceHandoff,
 };

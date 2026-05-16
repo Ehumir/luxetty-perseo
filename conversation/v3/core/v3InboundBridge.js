@@ -6,6 +6,7 @@ const {
   resolveInboundRoutingMode,
 } = require('../../../config/perseoV3Flags');
 const { processV3Turn } = require('./v3Runtime');
+const { buildForcedHandoffFromSession } = require('./forcedHandoffTurn');
 const { runV3ShadowPass } = require('./shadowRuntime');
 const { clearSession } = require('./sessionStore');
 const { parseSprint1StrictCommand } = require('../../qaSprint1Commands');
@@ -68,23 +69,39 @@ function tryV3PrimaryReply(input) {
       legacyHydration: input.legacyHydration ?? null,
     });
     if (!result.ok && result.fallbackToLegacy) {
+      const forced = buildForcedHandoffFromSession({
+        conversationId: input.conversationId,
+        phone: input.phone,
+        reason: 'rule_guard_violation',
+        legacyHydration: input.legacyHydration ?? null,
+      });
       return {
-        handled: false,
+        handled: true,
         route: 'v3_primary',
         gate,
-        fallback: true,
-        reason: 'rule_blocked',
-        blockReason: 'v3_turn_rule_blocked',
+        reply: forced.replyText,
+        responseSource: forced.responseSource,
+        v3State: forced.state,
+        skipLegacyCrm: true,
+        forcedHandoffReason: 'rule_guard_violation',
       };
     }
     if (!result.ok || !result.reply) {
+      const forced = buildForcedHandoffFromSession({
+        conversationId: input.conversationId,
+        phone: input.phone,
+        reason: result.forcedHandoffReason || 'runtime_error',
+        legacyHydration: input.legacyHydration ?? null,
+      });
       return {
-        handled: false,
+        handled: true,
         route: 'v3_primary',
         gate,
-        fallback: true,
-        reason: 'empty_reply',
-        blockReason: 'v3_turn_empty_reply',
+        reply: forced.replyText,
+        responseSource: forced.responseSource,
+        v3State: forced.state,
+        skipLegacyCrm: true,
+        forcedHandoffReason: result.forcedHandoffReason || 'runtime_error',
       };
     }
     return {
@@ -98,14 +115,34 @@ function tryV3PrimaryReply(input) {
     };
   } catch (err) {
     console.error('v3_primary_fatal', err);
-    return {
-      handled: false,
-      route: 'v3_primary',
-      gate,
-      fallback: true,
-      reason: 'exception',
-      blockReason: 'v3_turn_exception',
-    };
+    try {
+      const forced = buildForcedHandoffFromSession({
+        conversationId: input.conversationId,
+        phone: input.phone,
+        reason: 'runtime_error',
+        legacyHydration: input.legacyHydration ?? null,
+      });
+      return {
+        handled: true,
+        route: 'v3_primary',
+        gate,
+        reply: forced.replyText,
+        responseSource: forced.responseSource,
+        v3State: forced.state,
+        skipLegacyCrm: true,
+        forcedHandoffReason: 'runtime_error',
+      };
+    } catch (forcedErr) {
+      console.error('v3_forced_handoff_fatal', forcedErr);
+      return {
+        handled: false,
+        route: 'v3_primary',
+        gate,
+        fallback: true,
+        reason: 'exception',
+        blockReason: 'v3_turn_exception',
+      };
+    }
   }
 }
 

@@ -23,4 +23,9 @@ module.exports = {
   V3_LOG_EVENTS: require('./core/v3Logger').V3_LOG_EVENTS,
   clearV3Session: require('./core/sessionStore').clearSession,
   contracts: require('./contracts'),
+  forceHandoff: require('./planner/handoffPlanner').forceHandoff,
+  detectForcedHandoffReason: require('./planner/forcedHandoffDetector').detectForcedHandoffReason,
+  composeForcedHandoffFallback: require('./composer/forcedHandoffComposer').composeForcedHandoffFallback,
+  FORCED_HANDOFF_REASONS: require('./types/forcedHandoffReasons').FORCED_HANDOFF_REASONS,
+  runForcedHandoffTurn: require('./core/forcedHandoffTurn').runForcedHandoffTurn,
 };

@@ -9,6 +9,9 @@ const { v3Log } = require('./v3Logger');
 const { detectFrustration } = require('../interpreter/frustrationDetector');
 const { isV3HandoffEnabled } = require('../../../config/perseoV3Flags');
 const { runF3Pipeline } = require('./f3Pipeline');
+const { detectForcedHandoffReason } = require('../planner/forcedHandoffDetector');
+const { runForcedHandoffTurn } = require('./forcedHandoffTurn');
+const { V3_INTENT } = require('../types/constants');
 
 /**
  * @param {{
@@ -95,15 +98,58 @@ function processV3Turn(input) {
     explicit_flow_switch: decision.explicitFlowSwitch,
   });
 
-  const { state: nextState, guard } = applyV3StateTransition(state, patch, decision);
-  if (!guard.allowed) {
+  const unknownStreak =
+    decision.detectedIntent === V3_INTENT.UNKNOWN
+      ? (Number(state.unknownIntentStreak) || 0) + 1
+      : 0;
+  const patchWithStreak = { ...patch, unknownIntentStreak: unknownStreak, lastUserText: text };
+
+  const { state: nextState, guard } = applyV3StateTransition(state, patchWithStreak, decision);
+
+  const forcedReason = detectForcedHandoffReason({
+    state: nextState,
+    decision,
+    text,
+    frustration: fr,
+    guard,
+  });
+
+  if (forcedReason) {
+    const forced = runForcedHandoffTurn({ state: nextState, decision, reason: forcedReason });
+    setSession(conversationId, forced.state);
+    v3Log('forced_handoff_applied', {
+      conversation_id: conversationId,
+      reason: forcedReason,
+      stage: forced.state.conversationStage,
+    });
     return {
-      ok: false,
-      reply: null,
-      state: nextState,
+      ok: true,
+      reply: forced.replyText,
+      state: forced.state,
+      decision,
       guard,
-      responseSource: 'v3_rule_blocked',
-      fallbackToLegacy: true,
+      responseSource: forced.responseSource,
+      fallbackToLegacy: false,
+      forcedHandoffReason: forcedReason,
+    };
+  }
+
+  if (!guard.allowed) {
+    const forced = runForcedHandoffTurn({
+      state: nextState,
+      decision,
+      reason: 'rule_guard_violation',
+    });
+    setSession(conversationId, forced.state);
+    return {
+      ok: true,
+      reply: forced.replyText,
+      state: forced.state,
+      decision,
+      guard,
+      responseSource: forced.responseSource,
+      fallbackToLegacy: false,
+      forcedHandoffReason: 'rule_guard_violation',
     };
   }
 
@@ -163,4 +209,5 @@ function processV3Turn(input) {
 
 module.exports = {
   processV3Turn,
+  runForcedHandoffTurn,
 };
