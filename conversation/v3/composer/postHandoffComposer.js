@@ -5,6 +5,7 @@ const {
   isShortPostCloseAck,
   isPostHandoffTerminalState,
   isHandoffPendingState,
+  isPositiveHandoffAck,
 } = require('../interpreter/objectionClassifier');
 
 function firstName(state) {
@@ -30,6 +31,17 @@ function composePostHandoffAck(state) {
 /**
  * @param {import('../types/conversationState').ConversationState} state
  */
+function composeHandoffPendingPositiveAck(state) {
+  const nm = firstName(state);
+  const head = nm ? `Perfecto, ${nm}.` : 'Perfecto.';
+  return {
+    responseText: `${head} Quedó anotado; en breve un asesor de Luxetty te escribe por aquí.`,
+    followUpQuestion: null,
+    awaitingField: null,
+    toneFlags: { consultive: true, handoffAck: true },
+  };
+}
+
 function composeHandoffPendingContinuity(state) {
   const nm = firstName(state);
   const head = nm ? `Lamento la confusión, ${nm}.` : 'Lamento la confusión.';
@@ -50,6 +62,9 @@ function tryComposePostHandoffTurn(state, text) {
     return composePostHandoffAck(state);
   }
   if (isHandoffPendingState(state) && !isPostHandoffTerminalState(state)) {
+    if (isPositiveHandoffAck(text)) {
+      return composeHandoffPendingPositiveAck(state);
+    }
     const t = String(text || '').toLowerCase();
     if (
       /no\s+me\s+est[aá]s?\s+entendiendo|no\s+entiendes|esto\s+no\s+sirve|no\s+sirve/i.test(t)
@@ -62,6 +77,7 @@ function tryComposePostHandoffTurn(state, text) {
 
 module.exports = {
   composePostHandoffAck,
+  composeHandoffPendingPositiveAck,
   composeHandoffPendingContinuity,
   tryComposePostHandoffTurn,
   firstName,

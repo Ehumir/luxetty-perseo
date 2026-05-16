@@ -13,6 +13,7 @@ const { detectForcedHandoffReason } = require('../planner/forcedHandoffDetector'
 const { runForcedHandoffTurn } = require('./forcedHandoffTurn');
 const { V3_INTENT } = require('../types/constants');
 const { tryComposeF4EarlyTurn, shouldSuppressForcedHandoff } = require('../composer/f4TurnComposer');
+const { isHandoffFlowActive } = require('../interpreter/objectionClassifier');
 
 /**
  * @param {{
@@ -99,16 +100,18 @@ function processV3Turn(input) {
     explicit_flow_switch: decision.explicitFlowSwitch,
   });
 
-  const unknownStreak =
-    decision.detectedIntent === V3_INTENT.UNKNOWN
-      ? (Number(state.unknownIntentStreak) || 0) + 1
-      : 0;
+  let unknownStreak = 0;
+  if (decision.detectedIntent === V3_INTENT.ADVISOR_CONSENT_CAPTURE || isHandoffFlowActive(state)) {
+    unknownStreak = 0;
+  } else if (decision.detectedIntent === V3_INTENT.UNKNOWN) {
+    unknownStreak = (Number(state.unknownIntentStreak) || 0) + 1;
+  }
   const patchWithStreak = { ...patch, unknownIntentStreak: unknownStreak, lastUserText: text };
 
   const { state: nextState, guard } = applyV3StateTransition(state, patchWithStreak, decision);
 
   const f4Early = tryComposeF4EarlyTurn({ state: nextState, decision, text });
-  if (f4Early) {
+  if (f4Early && decision.detectedIntent !== V3_INTENT.ADVISOR_CONSENT_CAPTURE) {
     setSession(conversationId, f4Early.state);
     return {
       ok: true,
@@ -129,7 +132,7 @@ function processV3Turn(input) {
     guard,
   });
 
-  if (shouldSuppressForcedHandoff(forcedReason, nextState, decision)) {
+  if (shouldSuppressForcedHandoff(forcedReason, nextState, decision, text)) {
     forcedReason = null;
   }
 

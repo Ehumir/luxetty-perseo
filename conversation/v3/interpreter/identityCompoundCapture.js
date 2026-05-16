@@ -61,5 +61,6 @@ function splitNameAndTail(raw) {
 module.exports = {
   parseChannelPreference,
   isLikelyFirstNameOnly,
+  isInvalidCompoundNameHead,
   splitNameAndTail,
 };

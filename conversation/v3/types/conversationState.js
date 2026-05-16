@@ -32,6 +32,9 @@ function createInitialConversationState(seed = {}) {
     propertyType: null,
     occupancyStatus: null,
     expectedPrice: null,
+    /** F4.1 — venta sin precio conocido; pide valuación */
+    priceUnknown: false,
+    valuationRequested: false,
     budget: null,
     bedrooms: null,
     /** @type {'credit'|'cash'|'unknown'|null} */

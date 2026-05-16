@@ -1,9 +1,10 @@
 'use strict';
 
 const { normalizeText } = require('../../../utils/text');
-const { CONVERSATION_STAGES, ADVISOR_CONTACT_CONSENT } = require('../types/constants');
+const { CONVERSATION_STAGES, ADVISOR_CONTACT_CONSENT, CONVERSATION_GOALS } = require('../types/constants');
+const { isSellValuationUnknownRequest } = require('./sellValuationSignals');
 
-/** @typedef {'post_close_ack'|'handoff_pending_frustration'|'bot_identity'|'frustration_not_understood'|'useless'|'human_request'|'commission'|'competitor_price'|'no_exclusivity'|'already_listed'} ObjectionKind */
+/** @typedef {'post_close_ack'|'handoff_pending_frustration'|'bot_identity'|'sell_valuation_unknown'|'frustration_not_understood'|'useless'|'human_request'|'commission'|'competitor_price'|'no_exclusivity'|'already_listed'} ObjectionKind */
 
 function isShortPostCloseAck(text) {
   const t = normalizeText(String(text || ''));
@@ -12,9 +13,41 @@ function isShortPostCloseAck(text) {
   );
 }
 
+function isPositiveHandoffAck(text) {
+  const t = normalizeText(String(text || ''));
+  if (isShortPostCloseAck(text)) return true;
+  return (
+    /^(?:si|sí|me parece muy bien|me parece bien|de acuerdo|perfecto|excelente|muy bien|va|ok|vale|claro)(?:\s+gracias)?$/i.test(
+      t,
+    ) || /\b(me parece\s+(?:muy\s+)?bien)\b/.test(t)
+  );
+}
+
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ */
+function isHandoffFlowActive(state) {
+  if (!state) return false;
+  if (state.advisorContactConsent === ADVISOR_CONTACT_CONSENT.ACCEPTED) return true;
+  const stage = state.conversationStage;
+  if (
+    stage === CONVERSATION_STAGES.HANDOFF_PENDING ||
+    stage === CONVERSATION_STAGES.HANDOFF_READY ||
+    stage === CONVERSATION_STAGES.CRM_READY
+  ) {
+    return true;
+  }
+  if (
+    state.handoffStage === CONVERSATION_STAGES.HANDOFF_PENDING ||
+    state.handoffStage === CONVERSATION_STAGES.HANDOFF_READY
+  ) {
+    return true;
+  }
+  return state.advisorContactConsent === ADVISOR_CONTACT_CONSENT.REQUESTED;
+}
+
 function isPostHandoffTerminalState(state) {
   if (!state || typeof state !== 'object') return false;
-  if (state.advisorContactConsent === ADVISOR_CONTACT_CONSENT.ACCEPTED) return true;
   const stage = state.conversationStage;
   return stage === CONVERSATION_STAGES.CRM_READY || stage === CONVERSATION_STAGES.HANDOFF_READY;
 }
@@ -70,6 +103,14 @@ function classifyObjection(text, state) {
     return 'bot_identity';
   }
 
+  if (
+    state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY &&
+    state.awaitingField === 'expected_price' &&
+    isSellValuationUnknownRequest(text)
+  ) {
+    return 'sell_valuation_unknown';
+  }
+
   if (isExplicitHumanRequest(text)) return 'human_request';
   if (/no\s+me\s+est[aá]s?\s+entendiendo|no\s+entiendes/i.test(t)) return 'frustration_not_understood';
   if (/esto\s+no\s+sirve|no\s+sirve/i.test(t)) return 'useless';
@@ -87,8 +128,10 @@ function classifyObjection(text, state) {
 module.exports = {
   classifyObjection,
   isShortPostCloseAck,
+  isPositiveHandoffAck,
   isPostHandoffTerminalState,
   isHandoffPendingState,
+  isHandoffFlowActive,
   isBotIdentityQuestion,
   isExplicitHumanRequest,
 };
