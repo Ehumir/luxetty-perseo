@@ -27,6 +27,9 @@ function normalizeLocationFromUserText(raw) {
   }
 
   if (lower.includes('cumbres')) return 'Cumbres';
+  if (/\bsan\s+pedro\b/.test(lower)) return 'San Pedro';
+  if (/\bgarcia\b/.test(lower) || /\bgarcía\b/.test(lower)) return 'García';
+  if (/\bcarretera\s+nacional\b/.test(lower)) return 'Carretera Nacional';
 
   const queEn = t.match(/\bque\s+en\s+(.+)$/i);
   if (queEn && queEn[1]) {

@@ -38,7 +38,12 @@ function resolveNextStage(currentStage, decision, state) {
     if (sell && state.locationText && state.expectedPrice != null) {
       return CONVERSATION_STAGES.PROPERTY_CONTEXT;
     }
-    if (buy && state.locationText && state.budget != null && state.bedrooms != null) {
+    if (
+      buy &&
+      state.locationText &&
+      state.budget != null &&
+      (state.bedrooms != null || state.propertyType)
+    ) {
       return CONVERSATION_STAGES.PROPERTY_CONTEXT;
     }
     if (buy && state.locationText && state.budget != null) {

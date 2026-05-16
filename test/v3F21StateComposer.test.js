@@ -34,7 +34,7 @@ function runSellScript(conversationId) {
 describe('V3-F2.1 location normalization', () => {
   it('Está en San Pedro → San Pedro', () => {
     assert.equal(normalizeLocationFromUserText('Está en San Pedro'), 'San Pedro');
-    assert.equal(normalizeLocationFromUserText('esta en san pedro'), 'san pedro');
+    assert.equal(normalizeLocationFromUserText('esta en san pedro'), 'San Pedro');
   });
 
   it('No, está en San Pedro → San Pedro', () => {

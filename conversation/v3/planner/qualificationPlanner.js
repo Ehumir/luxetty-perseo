@@ -6,10 +6,39 @@ const { resolveQualificationFlowKey } = require('./flowKeys');
 const REQUIRED_SLOTS_BY_FLOW = Object.freeze({
   sellOffer: ['full_name', 'location_text', 'expected_price', 'property_type', 'occupancy_status'],
   rentOffer: ['full_name', 'location_text', 'expected_price', 'property_type', 'occupancy_status'],
-  buyDemand: ['full_name', 'location_text', 'budget', 'property_type'],
+  buyDemand: ['full_name', 'location_text', 'budget', 'property_type_or_bedrooms'],
   rentDemand: ['full_name', 'location_text', 'budget'],
   propertyInquiryDemand: ['property_listing_code', 'full_name'],
 });
+
+const BUY_DEMAND_ORDER = ['full_name', 'location_text', 'budget', 'property_type_or_bedrooms'];
+
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ */
+function getBuyDemandMissingSlots(state) {
+  /** @type {string[]} */
+  const missing = [];
+  if (!state.collectedFields?.fullName) missing.push('full_name');
+  if (!state.locationText) missing.push('location_text');
+  if (state.budget == null) missing.push('budget');
+  if (!state.propertyType && state.bedrooms == null) missing.push('property_type_or_bedrooms');
+  return missing;
+}
+
+/**
+ * @param {string[]} missing
+ */
+function resolveBuyDemandNextSlot(missing) {
+  if (!missing.length) return null;
+  for (const slot of BUY_DEMAND_ORDER) {
+    if (missing.includes(slot)) {
+      if (slot === 'property_type_or_bedrooms') return 'property_type';
+      return slot;
+    }
+  }
+  return missing[0];
+}
 
 /**
  * @param {import('../types/conversationState').ConversationState} state
@@ -27,6 +56,10 @@ function getSlotValue(state, slotId) {
       return state.budget != null ? state.budget : null;
     case 'property_type':
       return state.propertyType || state.collectedFields?.propertyType || null;
+    case 'property_type_or_bedrooms':
+      return state.propertyType || state.bedrooms != null ? 'ok' : null;
+    case 'bedrooms':
+      return state.bedrooms != null ? state.bedrooms : null;
     case 'occupancy_status':
       return state.occupancyStatus || state.collectedFields?.occupancyStatus || null;
     case 'property_listing_code':
@@ -49,6 +82,20 @@ function evaluateQualification(state) {
       sufficientForHandoff: false,
       qualificationComplete: false,
       plannerReason: 'no_flow',
+    };
+  }
+
+  if (flowKey === 'buyDemand') {
+    const missingSlots = getBuyDemandMissingSlots(state);
+    const qualificationComplete = missingSlots.length === 0;
+    const nextSlot = qualificationComplete ? null : resolveBuyDemandNextSlot(missingSlots);
+    return {
+      flowKey,
+      nextSlot,
+      missingSlots,
+      sufficientForHandoff: qualificationComplete,
+      qualificationComplete,
+      plannerReason: qualificationComplete ? 'conversion_ready' : `missing_${missingSlots[0]}`,
     };
   }
 
@@ -83,6 +130,7 @@ function buildPlannerStatePatch(state, plannerOut) {
 module.exports = {
   REQUIRED_SLOTS_BY_FLOW,
   getSlotValue,
+  getBuyDemandMissingSlots,
   evaluateQualification,
   buildPlannerStatePatch,
 };

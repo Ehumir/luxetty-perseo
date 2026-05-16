@@ -24,17 +24,60 @@ const {
 } = require('./campaignIntake');
 const { splitNameAndTail, parseChannelPreference, isLikelyFirstNameOnly } = require('./identityCompoundCapture');
 const { classifyPropertyInquiryTurn } = require('./propertyInquiryQaClassifier');
+const { parsePaymentMethod } = require('./paymentMethodParser');
 
 function parseMoneyAmount(text) {
   const t = normalizeText(text);
+  const below = t.match(
+    /(?:por\s+)?(?:debajo|menos)\s+de\s+(\d+(?:[.,]\d+)?)\s*(millones|millon|millón|m\b|mdp)?/
+  );
+  if (below) {
+    const n = Number(below[1].replace(',', '.'));
+    const unit = below[2] || '';
+    if (unit === 'm' || !unit || /millon/.test(unit) || unit === 'mdp') {
+      return Math.round(n * 1_000_000);
+    }
+  }
   const mill = t.match(/(\d+(?:[.,]\d+)?)\s*(millones|millon|millón|mdp)/);
   if (mill) {
     const n = Number(mill[1].replace(',', '.'));
     return Math.round(n * 1_000_000);
   }
+  const mShort = t.match(/\b(\d+(?:[.,]\d+)?)\s*m\b/);
+  if (mShort) return Math.round(Number(mShort[1].replace(',', '.')) * 1_000_000);
   const mdp = t.match(/\b(\d+(?:[.,]\d+)?)\s*mdp\b/);
   if (mdp) return Math.round(Number(mdp[1].replace(',', '.')) * 1_000_000);
   return null;
+}
+
+function matchesBuyOpenSearchPattern(t, raw) {
+  if (isExplicitFlowSwitchToBuy(raw)) return true;
+  if (/\bbusco\b/.test(t) && /\bcasa\b/.test(t)) return true;
+  if (/\bbusco\b/.test(t) && /\bcomprar\b/.test(t)) return true;
+  if (/\b(?:quiero|necesito)\s+comprar\b/.test(t)) return true;
+  if (/\bbusco\b/.test(t) && /\ben\s+[a-záéíóúñ]/i.test(String(raw || ''))) return true;
+  if (/\bbusco\b/.test(t) && /\balgo\b/.test(t)) return true;
+  if (/\bbusco\b/.test(t) && parseMoneyAmount(raw) != null) return true;
+  if (/\b(?:presupuesto|credito|crédito)\b/.test(t) && /\b(?:comprar|casa|depa)\b/.test(t)) return true;
+  return false;
+}
+
+function applyBuyDemandPatch(patch, raw, decision) {
+  patch.conversationGoal = CONVERSATION_GOALS.BUY_PROPERTY;
+  patch.leadFlow = 'demand';
+  patch.operationType = 'sale';
+  const zoneBuy = extractLooseLocationPhrase(raw) || normalizeLocationFromUserText(raw);
+  if (zoneBuy) {
+    patch.locationText = zoneBuy;
+    decision.extractedEntities.locationText = zoneBuy;
+  }
+  const prop = parsePropertyType(raw);
+  if (prop) applyPropertyTypePatch(patch, prop);
+  const amount = parseMoneyAmount(raw);
+  if (amount != null) {
+    patch.budget = amount;
+    decision.extractedEntities.budget = amount;
+  }
 }
 
 function parseBedrooms(text) {
@@ -372,20 +415,13 @@ function interpretUserMessage(state, text, options = {}) {
   }
 
   if (
-    isExplicitFlowSwitchToBuy(text) &&
+    matchesBuyOpenSearchPattern(t, raw) &&
     (!state.conversationGoalLocked || isExplicitFlowSwitchToBuy(text))
   ) {
     decision.detectedIntent = V3_INTENT.BUY_PROPERTY;
     decision.confidence = 0.85;
     decision.explicitFlowSwitch = !state.conversationGoalLocked || isExplicitFlowSwitchToBuy(text);
-    patch.conversationGoal = CONVERSATION_GOALS.BUY_PROPERTY;
-    patch.leadFlow = 'demand';
-    patch.operationType = 'sale';
-    const zoneBuy = extractLooseLocationPhrase(raw);
-    if (zoneBuy) {
-      patch.locationText = zoneBuy;
-      decision.extractedEntities.locationText = zoneBuy;
-    }
+    applyBuyDemandPatch(patch, raw, decision);
     decision.shouldAskName = !state.collectedFields?.fullName;
     return { patch, decision };
   }
@@ -411,26 +447,6 @@ function interpretUserMessage(state, text, options = {}) {
     patch.conversationGoal = CONVERSATION_GOALS.RENT_PROPERTY;
     patch.leadFlow = 'demand';
     patch.operationType = 'rent';
-    decision.shouldAskName = !state.collectedFields?.fullName;
-    return { patch, decision };
-  }
-
-  if (
-    /\bbusco\b/.test(t) &&
-    t.includes('casa') &&
-    (!state.conversationGoalLocked || isExplicitFlowSwitchToBuy(text))
-  ) {
-    decision.detectedIntent = V3_INTENT.BUY_PROPERTY;
-    decision.confidence = 0.8;
-    decision.explicitFlowSwitch = !state.conversationGoalLocked;
-    patch.conversationGoal = CONVERSATION_GOALS.BUY_PROPERTY;
-    patch.leadFlow = 'demand';
-    patch.operationType = 'sale';
-    const zone = extractLooseLocationPhrase(raw);
-    if (zone) {
-      patch.locationText = zone;
-      decision.extractedEntities.locationText = zone;
-    }
     decision.shouldAskName = !state.collectedFields?.fullName;
     return { patch, decision };
   }
@@ -475,6 +491,15 @@ function interpretUserMessage(state, text, options = {}) {
     decision.detectedIntent = V3_INTENT.BEDROOMS_CAPTURE;
     decision.confidence = 0.85;
     patch.bedrooms = br;
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
+  const payMethod = parsePaymentMethod(text);
+  if (payMethod && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+    patch.paymentMethod = payMethod;
+    decision.detectedIntent = V3_INTENT.UNKNOWN;
+    decision.confidence = 0.8;
     decision.explicitFlowSwitch = false;
     return { patch, decision };
   }
