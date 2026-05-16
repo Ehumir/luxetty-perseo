@@ -24,6 +24,11 @@ function buildCrmDryRunPayload(state) {
     advisor_contact_consent: state.advisorContactConsent,
     lead_flow: state.leadFlow ?? null,
     operation_type: state.operationType ?? null,
+    conversation_goal: state.conversationGoal ?? null,
+    source: 'PERSEO_V3',
+    channel: 'whatsapp',
+    consent: 'ACCEPTED',
+    handoff_reason: state.handoffReason || state.unhandledReason || 'conversion_ready',
   };
 
   if (state.expectedPrice != null) payload.expected_price = state.expectedPrice;

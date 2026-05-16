@@ -44,6 +44,13 @@ function createInitialConversationState(seed = {}) {
     qualificationComplete: false,
     crmPayloadReady: false,
     crmPayloadPreview: null,
+    /** F6 — ejecución CRM real (allowlist + flag) */
+    crmExecutionCompleted: false,
+    crmExecutionStatus: null,
+    crmContactId: null,
+    crmLeadId: null,
+    crmExecutedAt: null,
+    crmExecutionError: null,
     qualificationMissingSlots: [],
     handoffStage: null,
     frustrationState: FRUSTRATION_STATES.NONE,

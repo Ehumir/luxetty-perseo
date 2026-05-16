@@ -133,6 +133,9 @@ function evaluateV3PrimaryGate(input) {
  * @returns {{
  *   enabled: boolean,
  *   shadowMode: boolean,
+ *   handoffEnabled: boolean,
+ *   crmDryRun: boolean,
+ *   crmExecute: boolean,
  *   qaAllowlist: string[],
  *   logStructured: boolean,
  * }}
@@ -143,6 +146,7 @@ function getPerseoV3Config() {
     shadowMode: process.env.PERSEO_V3_SHADOW_MODE === 'true',
     handoffEnabled: process.env.PERSEO_V3_HANDOFF_ENABLED === 'true',
     crmDryRun: process.env.PERSEO_V3_CRM_DRY_RUN !== 'false',
+    crmExecute: process.env.PERSEO_V3_CRM_EXECUTE === 'true',
     qaAllowlist: splitAllowlist(process.env.PERSEO_V3_QA_ALLOWLIST),
     logStructured: process.env.PERSEO_V3_LOG === 'true',
   };
