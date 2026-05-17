@@ -1,5 +1,7 @@
 const { nowIso, normalizePhoneNumber } = require('../utils/helpers');
 const { normalizeText } = require('../utils/text');
+const { preferredZonesFromAiState } = require('../utils/preferredZoneSanitizer');
+const { getPerseoV3Config, isPhoneOnV3Allowlist } = require('../config/perseoV3Flags');
 
 function log(logger, label, payload = {}) {
   const writer = logger && typeof logger.info === 'function' ? logger.info.bind(logger) : console.log;
@@ -23,6 +25,19 @@ async function saveConversationEvent(supabase, conversationId, type, payload = {
   if (error) {
     console.error('LEAD_AUTOMATION_EVENT_ERROR', { type, error: error.message });
   }
+}
+
+/**
+ * QA F6.1: tras !resetcrm, forzar INSERT de lead aunque exista compatible por teléfono/propiedad.
+ * Solo allowlist V3 + PERSEO_V3_CRM_EXECUTE=true (no afecta producción).
+ */
+function shouldForceNewLeadForQaCrm(aiState = {}, conversation = {}) {
+  if (aiState?.qa_crm_force_new_lead !== true) return false;
+  const cfg = getPerseoV3Config();
+  if (!cfg.crmExecute) return false;
+  const phone = normalizePhoneNumber(conversation?.phone) || conversation?.phone || null;
+  if (!phone || !isPhoneOnV3Allowlist(phone)) return false;
+  return true;
 }
 
 function resolveLeadType(aiState = {}) {
@@ -1806,7 +1821,20 @@ async function createOrReuseLeadFromConversation({
       }
     );
 
-    let lead = await findLeadByConversation(supabase, conversation?.lead_id || aiState?.lead_id || null);
+    const qaForceNewLead = shouldForceNewLeadForQaCrm(aiState, conversation);
+    if (qaForceNewLead) {
+      log(logger, 'LEAD_AUTOMATION_QA_FORCE_NEW_LEAD', {
+        conversation_id: conversationId,
+        source: 'qa_resetcrm',
+      });
+      await saveConversationEvent(supabase, conversationId, 'qa_crm_force_new_lead_active', {
+        source: 'qa_resetcrm',
+      });
+    }
+
+    let lead = qaForceNewLead
+      ? null
+      : await findLeadByConversation(supabase, conversation?.lead_id || aiState?.lead_id || null);
     let wasCreated = false;
     let intentChanged = false;
 
@@ -1912,7 +1940,7 @@ async function createOrReuseLeadFromConversation({
       }
     }
 
-    if (!lead && contactId) {
+    if (!lead && !qaForceNewLead && contactId) {
       const compatibleLeads = await findCompatibleLead(supabase, {
         contactId,
         leadType,
@@ -1928,7 +1956,7 @@ async function createOrReuseLeadFromConversation({
       }
     }
 
-    if (!lead) {
+    if (!lead && !qaForceNewLead) {
       const compatibleLeadsByPhone = await findCompatibleLeadByPhoneAndProperty(supabase, {
         normalizedPhone: normalizedConversationPhone,
         leadType,
@@ -1949,7 +1977,7 @@ async function createOrReuseLeadFromConversation({
       }
     }
 
-    if (!lead) {
+    if (!lead && !qaForceNewLead) {
       const compatibleLeadsByWhatsapp = await findCompatibleLeadByWhatsapp(supabase, {
         normalizedWhatsapp: normalizedConversationPhone,
         leadType,
@@ -1982,7 +2010,7 @@ async function createOrReuseLeadFromConversation({
         notes_summary: detailedNotesSummary || null,
         budget_min: aiState?.budget_min != null ? Number(aiState.budget_min) : null,
         budget_max: aiState?.budget_max != null ? Number(aiState.budget_max) : null,
-        preferred_zones: aiState?.location_text ? [String(aiState.location_text)] : null,
+        preferred_zones: preferredZonesFromAiState(aiState),
         lead_score: leadScoring.lead_score,
         lead_temperature: leadScoring.lead_temperature,
         pipeline_stage_id: pipelineStageId,
@@ -2266,6 +2294,20 @@ async function createOrReuseLeadFromConversation({
         lead_id: lead.id,
         property_id: propertyId || null,
       });
+    }
+
+    if (qaForceNewLead && wasCreated) {
+      log(logger, 'LEAD_AUTOMATION_QA_FORCE_NEW_LEAD_CONSUMED', {
+        conversation_id: conversationId,
+        lead_id: lead.id,
+      });
+      await saveConversationEvent(supabase, conversationId, 'qa_crm_force_new_lead_consumed', {
+        lead_id: lead.id,
+        source: 'qa_resetcrm',
+      });
+      if (nextAiState && typeof nextAiState === 'object') {
+        nextAiState.qa_crm_force_new_lead = false;
+      }
     }
 
     return {
