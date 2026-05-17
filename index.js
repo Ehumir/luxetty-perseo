@@ -920,8 +920,9 @@ app.post('/webhook', async (req, res) => {
         responseSource = v3Try.responseSource || 'v3_core_f2';
         if (v3Try.v3State) {
           let v3StateForCrm = v3Try.v3State;
+          let crmOut = null;
           if (skipLegacyCrm) {
-            const crmOut = await executeV3CrmIfEligible({
+            crmOut = await executeV3CrmIfEligible({
               v3State: v3Try.v3State,
               phone: from,
               rawPhone: rawFrom,
