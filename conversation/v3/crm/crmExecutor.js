@@ -160,6 +160,13 @@ async function executeV3CrmIfEligible(input) {
   );
 
   const aiState = mapV3StateToLeadAutomationAiState(state, executionPayload);
+  const persistedAi =
+    input.conversationRow?.ai_state && typeof input.conversationRow.ai_state === 'object'
+      ? input.conversationRow.ai_state
+      : null;
+  if (persistedAi?.qa_crm_force_new_lead === true) {
+    aiState.qa_crm_force_new_lead = true;
+  }
   const propertyId =
     input.propertyId ||
     (state.activeProperty && state.activeProperty.id) ||

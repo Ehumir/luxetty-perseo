@@ -1640,6 +1640,16 @@ async function createOrReuseLeadFromConversation({
 }) {
   const conversationId = conversation?.id || null;
 
+  if (
+    conversation?.ai_state &&
+    typeof conversation.ai_state === 'object' &&
+    conversation.ai_state.qa_crm_force_new_lead === true &&
+    aiState &&
+    typeof aiState === 'object'
+  ) {
+    aiState.qa_crm_force_new_lead = true;
+  }
+
   try {
     log(logger, 'LEAD_AUTOMATION_START', {
       conversation_id: conversationId,
