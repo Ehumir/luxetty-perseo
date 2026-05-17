@@ -84,7 +84,7 @@ function mapV3StateToLeadAutomationAiState(state, executionPayload) {
     advisor_contact_consent: 'ACCEPTED',
     shows_high_interest: true,
     wants_human: true,
-    confidence: 0.9,
+    confidence: 'high',
     v3_crm_source: executionPayload.source || 'PERSEO_V3',
     v3_channel: executionPayload.channel || 'whatsapp',
     handoff_reason: executionPayload.handoff_reason || null,

@@ -31,7 +31,12 @@ after(() => {
 
 const { evaluateV3CrmExecutionGate } = require('../conversation/v3/crm/executionGate');
 const { executeV3CrmIfEligible } = require('../conversation/v3/crm/crmExecutor');
-const { buildV3CrmExecutionPayload } = require('../conversation/v3/crm/executionPayload');
+const {
+  buildV3CrmExecutionPayload,
+  mapV3StateToLeadAutomationAiState,
+} = require('../conversation/v3/crm/executionPayload');
+const { calculateLeadScore } = require('../services/leadAutomation');
+const { normalizeText } = require('../utils/text');
 const {
   processV3Turn,
   clearV3Session,
@@ -185,6 +190,59 @@ describe('F6 CRM executor (mocked writes)', () => {
     assert.equal(payload.captured_slots.valuation_requested, true);
     assert.equal(payload.captured_slots.price_unknown, true);
     assert.equal(payload.captured_slots.expected_price, null);
+  });
+
+  it('Gemma LUX-A0462: confidence string — leadAutomation no lanza toLowerCase', () => {
+    const st = crmReadyState({
+      conversationGoal: CONVERSATION_GOALS.PROPERTY_INQUIRY,
+      leadFlow: 'demand',
+      operationType: 'sale',
+      propertyListingCode: 'LUX-A0462',
+      propertySpecificIntent: true,
+      activeProperty: { id: '332a2801-572d-4c59-94a8-2e453204d2e1', code: 'LUX-A0462' },
+      collectedFields: { fullName: 'Gemma Triay' },
+    });
+    const payload = buildV3CrmExecutionPayload(st, '5218119086196');
+    const aiState = mapV3StateToLeadAutomationAiState(st, payload);
+    assert.equal(typeof aiState.confidence, 'string');
+    assert.equal(aiState.confidence, 'high');
+    assert.doesNotThrow(() => normalizeText(aiState.confidence));
+    assert.doesNotThrow(() => calculateLeadScore({ aiState }));
+  });
+
+  it('PROPERTY_INQUIRY CRM execute pasa aiState válido a createOrReuseLead', async () => {
+    process.env.PERSEO_V3_CRM_EXECUTE = 'true';
+    const st = crmReadyState({
+      conversationGoal: CONVERSATION_GOALS.PROPERTY_INQUIRY,
+      leadFlow: 'demand',
+      operationType: 'sale',
+      propertyListingCode: 'LUX-A0462',
+      propertySpecificIntent: true,
+      activeProperty: { id: 'prop-uuid-0462' },
+      collectedFields: { fullName: 'Gemma Triay' },
+    });
+    let capturedAiState = null;
+    const out = await executeV3CrmIfEligible({
+      v3State: st,
+      phone: '5218119086196',
+      conversationRow: { id: 'conv-gemma', phone: '5218119086196' },
+      propertyId: 'prop-uuid-0462',
+      supabase: {},
+      ensureContactForConversation: async () => 'contact-mock-gemma',
+      createOrReuseLeadFromConversation: async ({ aiState }) => {
+        capturedAiState = aiState;
+        assert.doesNotThrow(() => calculateLeadScore({ aiState }));
+        return {
+          success: true,
+          leadId: 'lead-mock-gemma',
+          wasCreated: true,
+          lead: { id: 'lead-mock-gemma' },
+        };
+      },
+    });
+    assert.equal(out.executed, true);
+    assert.equal(capturedAiState?.confidence, 'high');
+    assert.equal(capturedAiState?.property_code, 'LUX-A0462');
   });
 });
 
