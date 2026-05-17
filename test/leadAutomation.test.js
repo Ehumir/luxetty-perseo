@@ -603,6 +603,59 @@ test('property owner agent assignment has priority and bypasses fallback engine'
   assert.equal(supabase._getRpcCalls(), 0);
 });
 
+test('demand: contacto existente con asesor gana sobre asesor de propiedad', async () => {
+  const db = {
+    leads: [],
+    contacts: [
+      {
+        id: 'contact-owned',
+        whatsapp: '5218111111111',
+        assigned_agent_profile_id: 'agent-contact-owner',
+      },
+    ],
+    conversations: [
+      {
+        id: 'conv-owned',
+        phone: '5218111111111',
+        channel: 'whatsapp',
+        lead_id: null,
+        contact_id: 'contact-owned',
+      },
+    ],
+    conversation_events: [],
+    lead_assignments: [],
+    assignment_logs: [],
+    pipeline_stages: [{ id: 'stage-new', code: 'new', lead_type: 'demand', is_active: true, stage_order: 1 }],
+  };
+
+  const supabase = buildMockSupabase(db);
+
+  const result = await createOrReuseLeadFromConversation({
+    supabase,
+    conversation: db.conversations[0],
+    aiState: {
+      lead_flow: 'demand',
+      operation_type: 'sale',
+      direct_property_reference: true,
+      property_code: 'LUX-A0453',
+      asks_property_details: true,
+      intent_type: 'property_interest',
+      wants_human: true,
+    },
+    contactId: 'contact-owned',
+    propertyId: 'prop-x',
+    property: { id: 'prop-x', listing_id: 'LUX-A0453', operation_type: 'sale', agent_profile_id: 'agent-property' },
+    contactWasCreated: false,
+    logger: console,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.assignedAgentProfileId, 'agent-contact-owner');
+  assert.equal(db.leads[0].assigned_agent_profile_id, 'agent-contact-owner');
+  assert.equal(db.leads[0].interested_property_id, 'prop-x');
+  assert.equal(supabase._getRpcCalls(), 0);
+});
+
 test('property without owner agent uses assignment rule before fallback', async () => {
   const db = {
     leads: [],

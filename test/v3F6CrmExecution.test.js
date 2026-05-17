@@ -75,7 +75,7 @@ function makeCrmMocks() {
     calls,
     ensureContact: async () => {
       calls.contact += 1;
-      return 'contact-mock-1';
+      return { contactId: 'contact-mock-1', wasCreated: false };
     },
     createLead: async () => {
       calls.lead += 1;
@@ -228,7 +228,10 @@ describe('F6 CRM executor (mocked writes)', () => {
       conversationRow: { id: 'conv-gemma', phone: '5218119086196' },
       propertyId: 'prop-uuid-0462',
       supabase: {},
-      ensureContactForConversation: async () => 'contact-mock-gemma',
+      ensureContactForConversation: async () => ({
+        contactId: 'contact-mock-gemma',
+        wasCreated: false,
+      }),
       createOrReuseLeadFromConversation: async ({ aiState }) => {
         capturedAiState = aiState;
         assert.doesNotThrow(() => calculateLeadScore({ aiState }));

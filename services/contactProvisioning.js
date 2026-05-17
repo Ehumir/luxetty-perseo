@@ -5,6 +5,17 @@ const {
   isInvalidContactName,
   splitContactName,
 } = require('../utils/helpers');
+const { normalizeText } = require('../utils/text');
+
+function resolvePropertyAgentId(property) {
+  if (!property || typeof property !== 'object') return null;
+  return property.agent_profile_id || property.assigned_agent_profile_id || null;
+}
+
+function logContactProvisioning(logger, label, payload = {}) {
+  const writer = logger && typeof logger.info === 'function' ? logger.info.bind(logger) : console.log;
+  writer(label, payload);
+}
 
 function normalizeCandidateNames(waName, state = {}) {
   const names = [waName, state?.full_name]
@@ -25,11 +36,15 @@ async function ensureContactForConversationCore({
   waName = null,
   source = 'whatsapp',
   rawPayload = null,
+  property = null,
+  logger = console,
   saveConversationEvent,
   updateConversationMeta,
 }) {
   try {
-    if (!conversationRow?.id || !phone) return null;
+    if (!conversationRow?.id || !phone) {
+      return { contactId: null, wasCreated: false };
+    }
 
     const normalizedPhone = normalizePhoneNumber(phone) || phone;
     const { usefulName, rejectedNames } = normalizeCandidateNames(waName, state);
@@ -100,6 +115,24 @@ async function ensureContactForConversationCore({
         payload.first_name = nameParts.firstName;
         payload.last_name = nameParts.lastName;
         payload.name_source = 'whatsapp_meta';
+      } else if (
+        usefulName &&
+        isUsefulContactName(existingDisplay) &&
+        normalizeText(existingDisplay) !== normalizeText(usefulName)
+      ) {
+        logContactProvisioning(logger, 'contact_name_mismatch_proposal', {
+          conversation_id: conversationRow.id,
+          contact_id: existingContact.id,
+          existing_contact_name: existingDisplay,
+          proposed_full_name: usefulName,
+          action: 'manual_review_no_auto_rename',
+        });
+        await saveConversationEvent(conversationRow.id, 'contact_name_mismatch_proposal', {
+          contact_id: existingContact.id,
+          existing_contact_name: existingDisplay,
+          proposed_full_name: usefulName,
+          source,
+        });
       }
       if (!existingContact.phone) payload.phone = normalizedPhone;
       if (!existingContact.whatsapp) payload.whatsapp = normalizedPhone;
@@ -131,11 +164,12 @@ async function ensureContactForConversationCore({
         normalized_phone: normalizedPhone,
       });
 
-      return existingContact.id;
+      return { contactId: existingContact.id, wasCreated: false };
     }
 
     const { firstName: newContactFirstName, lastName: newContactLastName } =
       splitContactName(usefulName || 'Cliente');
+    const propertyAgentId = resolvePropertyAgentId(property);
     const createPayload = {
       first_name: newContactFirstName,
       last_name: newContactLastName,
@@ -147,6 +181,20 @@ async function ensureContactForConversationCore({
       created_source: 'ai_agent',
       created_channel: 'whatsapp',
     };
+    if (propertyAgentId) {
+      createPayload.assigned_agent_profile_id = propertyAgentId;
+      logContactProvisioning(logger, 'assignment_property_owner_for_new_contact', {
+        conversation_id: conversationRow.id,
+        property_assigned_agent_profile_id: propertyAgentId,
+        property_id: property?.id || null,
+        property_code: property?.listing_id || property?.property_code || null,
+      });
+      await saveConversationEvent(conversationRow.id, 'contact_assigned_from_property', {
+        assigned_agent_profile_id: propertyAgentId,
+        property_id: property?.id || null,
+        source,
+      });
+    }
 
     const { data: created, error } = await supabase
       .from('contacts')
@@ -156,7 +204,7 @@ async function ensureContactForConversationCore({
 
     if (error) {
       console.error('Error creating contact:', error);
-      return null;
+      return { contactId: null, wasCreated: false };
     }
 
     await updateConversationMeta(conversationRow.id, {
@@ -171,10 +219,10 @@ async function ensureContactForConversationCore({
       raw_payload_meta_message_id: rawPayload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.id || null,
     });
 
-    return created.id;
+    return { contactId: created.id, wasCreated: true };
   } catch (err) {
     console.error('FATAL ensureContactForConversation:', err);
-    return null;
+    return { contactId: null, wasCreated: false };
   }
 }
 

@@ -40,6 +40,106 @@ function shouldForceNewLeadForQaCrm(aiState = {}, conversation = {}) {
   return true;
 }
 
+/** Demanda: compra, renta o consulta por propiedad específica. */
+function isDemandLeadContext(leadType, aiState = {}) {
+  if (leadType === 'demand') return true;
+  if (aiState?.lead_type === 'demand') return true;
+  if (aiState?.lead_flow === 'demand') return true;
+  const goal = normalizeText(aiState.conversation_goal || aiState.user_goal || '');
+  return goal === 'buy_property' || goal === 'rent_property' || goal === 'property_inquiry';
+}
+
+function resolvePropertyAgentId(property) {
+  if (!property || typeof property !== 'object') return null;
+  return property.agent_profile_id || property.assigned_agent_profile_id || null;
+}
+
+/**
+ * Prioridad oficial de asignación para demanda:
+ * - contacto existente con dueño → contacto (nunca asesor de propiedad).
+ * - contacto nuevo + propiedad → asesor de la propiedad.
+ * - resto → propiedad / campaña / contacto / conversación (supply u otros).
+ */
+function buildAssignmentPriorityCandidates(context = {}, logger) {
+  const propertyAgentId = resolvePropertyAgentId(context.property);
+  const campaignAgentId = context.campaignAgentProfileId || null;
+  const contactAgentId = context.contactAssignedAgentProfileId || null;
+  const conversationAgentId = context.conversationAssignedAgentProfileId || null;
+  const isDemand = isDemandLeadContext(context.leadType, context.aiState);
+  const contactIsNew = context.contactWasCreated === true;
+  const contactHasOwner = !!contactAgentId;
+
+  if (isDemand && contactHasOwner && !contactIsNew) {
+    log(logger, 'assignment_owner_contact_priority', {
+      lead_id: context.leadId || null,
+      conversation_id: context.conversationId || null,
+      contact_assigned_agent_profile_id: contactAgentId,
+      property_id: context.propertyId || null,
+    });
+    return [
+      {
+        agentId: contactAgentId,
+        strategy: 'contact_owner',
+        reason: 'assigned_by_contact_owner',
+      },
+      campaignAgentId
+        ? {
+            agentId: campaignAgentId,
+            strategy: 'campaign_agent',
+            reason: 'assigned_by_campaign_context',
+          }
+        : null,
+      conversationAgentId
+        ? {
+            agentId: conversationAgentId,
+            strategy: 'conversation_owner',
+            reason: 'assigned_by_conversation_owner',
+          }
+        : null,
+    ].filter(Boolean);
+  }
+
+  if (contactIsNew && propertyAgentId) {
+    log(logger, 'assignment_property_owner_for_new_contact', {
+      lead_id: context.leadId || null,
+      conversation_id: context.conversationId || null,
+      property_assigned_agent_profile_id: propertyAgentId,
+      property_id: context.propertyId || null,
+    });
+  }
+
+  return [
+    propertyAgentId
+      ? {
+          agentId: propertyAgentId,
+          strategy: 'property_owner_agent',
+          reason: 'assigned_by_property_owner_agent',
+        }
+      : null,
+    campaignAgentId
+      ? {
+          agentId: campaignAgentId,
+          strategy: 'campaign_agent',
+          reason: 'assigned_by_campaign_context',
+        }
+      : null,
+    contactAgentId
+      ? {
+          agentId: contactAgentId,
+          strategy: 'contact_owner',
+          reason: 'assigned_by_contact_owner',
+        }
+      : null,
+    conversationAgentId
+      ? {
+          agentId: conversationAgentId,
+          strategy: 'conversation_owner',
+          reason: 'assigned_by_conversation_owner',
+          }
+        : null,
+  ].filter(Boolean);
+}
+
 function resolveLeadType(aiState = {}) {
   if (aiState.lead_type === 'supply' || aiState.lead_type === 'demand') return aiState.lead_type;
   if (aiState.lead_flow === 'offer') return 'supply';
@@ -1281,44 +1381,14 @@ async function assignLead(supabase, leadId, conversationId, logger, context = {}
     source: 'ai_agent',
   });
 
-  const propertyAgentId =
-    context?.property?.agent_profile_id ||
-    context?.property?.assigned_agent_profile_id ||
-    null;
-  const campaignAgentId = context?.campaignAgentProfileId || null;
-  const contactAgentId = context?.contactAssignedAgentProfileId || null;
-  const conversationAgentId = context?.conversationAssignedAgentProfileId || null;
-
-  const priorityCandidates = [
-    propertyAgentId
-      ? {
-          agentId: propertyAgentId,
-          strategy: 'property_owner_agent',
-          reason: 'assigned_by_property_owner_agent',
-        }
-      : null,
-    campaignAgentId
-      ? {
-          agentId: campaignAgentId,
-          strategy: 'campaign_agent',
-          reason: 'assigned_by_campaign_context',
-        }
-      : null,
-    contactAgentId
-      ? {
-          agentId: contactAgentId,
-          strategy: 'contact_owner',
-          reason: 'assigned_by_contact_owner',
-        }
-      : null,
-    conversationAgentId
-      ? {
-          agentId: conversationAgentId,
-          strategy: 'conversation_owner',
-          reason: 'assigned_by_conversation_owner',
-        }
-      : null,
-  ].filter(Boolean);
+  const priorityCandidates = buildAssignmentPriorityCandidates(
+    {
+      ...context,
+      leadId,
+      conversationId,
+    },
+    logger,
+  );
 
   for (const candidate of priorityCandidates) {
     const attempt = await applyAgentAssignment({
@@ -1352,6 +1422,11 @@ async function assignLead(supabase, leadId, conversationId, logger, context = {}
 
   const godMode = Array.isArray(godModes) ? godModes[0] : null;
   if (godMode?.target_agent_profile_id) {
+    log(logger, 'assignment_engine_fallback_used', {
+      lead_id: leadId,
+      conversation_id: conversationId,
+      path: 'god_mode',
+    });
     return applyAgentAssignment({
       supabase,
       leadId,
@@ -1384,6 +1459,11 @@ async function assignLead(supabase, leadId, conversationId, logger, context = {}
 
       const selectedAgent = Array.isArray(ruleAgents) ? ruleAgents[0] : null;
       if (selectedAgent?.agent_profile_id) {
+        log(logger, 'assignment_engine_fallback_used', {
+          lead_id: leadId,
+          conversation_id: conversationId,
+          path: 'assignment_rule',
+        });
         return applyAgentAssignment({
           supabase,
           leadId,
@@ -1396,6 +1476,12 @@ async function assignLead(supabase, leadId, conversationId, logger, context = {}
       }
     }
   }
+
+  log(logger, 'assignment_engine_fallback_used', {
+    lead_id: leadId,
+    conversation_id: conversationId,
+    path: 'assign_lead_via_engine',
+  });
 
   const { data, error } = await supabase.rpc('assign_lead_via_engine', {
     p_lead_id: leadId,
@@ -1443,6 +1529,11 @@ async function assignLead(supabase, leadId, conversationId, logger, context = {}
     : null;
 
   if (fallbackAgentProfileId) {
+    log(logger, 'assignment_engine_fallback_used', {
+      lead_id: leadId,
+      conversation_id: conversationId,
+      path: 'assignment_settings_fallback',
+    });
     await saveConversationEvent(supabase, conversationId, 'assignment_fallback_used', {
       lead_id: leadId,
       fallback_agent_profile_id: fallbackAgentProfileId,
@@ -1636,6 +1727,7 @@ async function createOrReuseLeadFromConversation({
   contactId,
   propertyId,
   property = null,
+  contactWasCreated = false,
   logger,
 }) {
   const conversationId = conversation?.id || null;
@@ -2083,6 +2175,9 @@ async function createOrReuseLeadFromConversation({
         lead_temperature: leadScoring.lead_temperature,
         notes_summary: mergeLeadNotes(lead.notes_summary, detailedNotesSummary),
       };
+      if (propertyId) {
+        leadUpdatePayload.interested_property_id = propertyId;
+      }
 
       const { data: refreshedLead, error: leadUpdateError } = await supabase
         .from('leads')
@@ -2123,7 +2218,25 @@ async function createOrReuseLeadFromConversation({
     let assignmentResult = null;
     let handoffTriggered = false;
 
-    if (hasContactOwnerAssignedAgent && !propertyId) {
+    const demandContactOwnerPriority =
+      isDemandLeadContext(leadType, aiState) && hasContactOwnerAssignedAgent;
+
+    if (demandContactOwnerPriority) {
+      log(logger, 'assignment_owner_contact_priority', {
+        conversation_id: conversationId,
+        lead_id: lead.id,
+        contact_assigned_agent_profile_id: contactOwner.assignedAgentProfileId,
+        property_id: propertyId || null,
+      });
+      if (qaForceNewLead && wasCreated) {
+        log(logger, 'qa_crm_force_new_lead_owner_preserved', {
+          conversation_id: conversationId,
+          lead_id: lead.id,
+          assigned_agent_profile_id: contactOwner.assignedAgentProfileId,
+          contact_assignment_field: contactOwner.field,
+        });
+      }
+
       const ownerAssignment = await assignLeadToContactOwner({
         supabase,
         lead,
@@ -2145,7 +2258,8 @@ async function createOrReuseLeadFromConversation({
         lead_id: lead.id,
         assigned_agent_profile_id: assignedAgentProfileId,
         contact_assignment_field: contactOwner.field,
-        reason: 'contact_already_has_assigned_agent',
+        reason: 'demand_contact_owner_priority',
+        property_id: propertyId || null,
         source: 'ai_agent',
       });
     } else if (shouldHandoff && !aiState?.legal_sensitive) {
@@ -2158,6 +2272,9 @@ async function createOrReuseLeadFromConversation({
           property,
           propertyId,
           contactId,
+          leadType,
+          aiState,
+          contactWasCreated,
           intent: aiState?.intent_type || null,
           operationType: operation,
           propertyType: aiState?.property_type || null,
@@ -2536,6 +2653,8 @@ module.exports = {
   calculateLeadScore,
   chooseCanonicalCompatibleLead,
   shouldTriggerHandoff,
+  isDemandLeadContext,
+  buildAssignmentPriorityCandidates,
   detectLeadCreationOpportunity,
   extractCampaignReferralContext,
   buildLeadContextFromConversation,

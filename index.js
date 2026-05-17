@@ -592,8 +592,9 @@ async function runCleanOrchestratorCrmPhase({
     hasIntent && (hasValidHumanName(contact, nextAiState) || isUsefulWaProfileName(waProfileName));
 
   let contactId = null;
+  let contactWasCreated = false;
   if (canEnsureContact) {
-    contactId = await ensureContactForConversationCore({
+    const contactResult = await ensureContactForConversationCore({
       supabase: db,
       conversationRow,
       state: nextAiState,
@@ -601,10 +602,14 @@ async function runCleanOrchestratorCrmPhase({
       waName: waProfileName,
       source: 'whatsapp',
       rawPayload,
+      property,
+      logger: console,
       saveConversationEvent: (cid, type, payload, createdBy) =>
         saveConversationEventToClient(db, cid, type, payload, createdBy),
       updateConversationMeta: (cid, payload) => updateConversationMetaWithClient(db, cid, payload),
     });
+    contactId = contactResult?.contactId || null;
+    contactWasCreated = !!contactResult?.wasCreated;
   }
 
   const resolvedPropertyId = propertyId != null ? propertyId : property?.id || null;
@@ -619,6 +624,7 @@ async function runCleanOrchestratorCrmPhase({
       contactId,
       propertyId: resolvedPropertyId,
       property,
+      contactWasCreated,
       logger: console,
     });
 

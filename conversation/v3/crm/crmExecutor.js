@@ -63,6 +63,17 @@ async function logContactNameMismatchProposal({
     if (!existing || normalizeText(existing) === normalizeText(incoming)) return;
 
     emitCrmLog(
+      'contact_name_mismatch_proposal',
+      {
+        conversation_id: conversationId,
+        contact_id: contactId,
+        existing_contact_name: existing,
+        proposed_full_name: incoming,
+        action: 'manual_review_or_future_safe_update',
+      },
+      logEvent,
+    );
+    emitCrmLog(
       'v3_crm_contact_name_mismatch_proposal',
       {
         conversation_id: conversationId,
@@ -204,7 +215,7 @@ async function executeV3CrmIfEligible(input) {
     });
 
   try {
-    const contactId = await ensureContact({
+    const contactResult = await ensureContact({
       supabase: input.supabase,
       conversationRow: input.conversationRow,
       state: aiState,
@@ -212,9 +223,13 @@ async function executeV3CrmIfEligible(input) {
       waName: input.waProfileName || null,
       source: 'whatsapp',
       rawPayload: input.rawPayload || null,
+      property: input.property || null,
+      logger: console,
       saveConversationEvent,
       updateConversationMeta,
     });
+    const contactId = contactResult?.contactId || null;
+    const contactWasCreated = !!contactResult?.wasCreated;
 
     if (!contactId) {
       emitCrmLog(
@@ -260,6 +275,7 @@ async function executeV3CrmIfEligible(input) {
       contactId,
       propertyId: propertyId || null,
       property: input.property || null,
+      contactWasCreated,
       logger: console,
     });
 
