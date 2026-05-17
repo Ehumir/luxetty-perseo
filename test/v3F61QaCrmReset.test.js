@@ -455,6 +455,46 @@ describe('F6.1 stripCrmFieldsFromAiState', () => {
   });
 });
 
+describe('F6.1 executor propaga qa_crm_force_new_lead desde ai_state persistido', () => {
+  it('mapV3StateToLeadAutomation no pierde el flag de !resetcrm', async () => {
+    process.env.PERSEO_V3_CRM_EXECUTE = 'true';
+    const { executeV3CrmIfEligible } = require('../conversation/v3/crm/crmExecutor');
+    const st = mergeConversationState(
+      createInitialConversationState({ conversationId: 'conv-flag', phone: '5218119086196' }),
+      {
+        conversationStage: CONVERSATION_STAGES.CRM_READY,
+        advisorContactConsent: ADVISOR_CONTACT_CONSENT.ACCEPTED,
+        crmPayloadReady: true,
+        qualificationComplete: true,
+        conversationGoal: CONVERSATION_GOALS.PROPERTY_INQUIRY,
+        leadFlow: 'demand',
+        operationType: 'sale',
+        propertyListingCode: 'LUX-A0462',
+        collectedFields: { fullName: 'Gemma Triay' },
+        crmExecutionCompleted: false,
+      },
+    );
+    let captured = null;
+    await executeV3CrmIfEligible({
+      v3State: st,
+      phone: '5218119086196',
+      conversationRow: {
+        id: 'conv-flag',
+        phone: '5218119086196',
+        lead_id: null,
+        ai_state: { qa_crm_force_new_lead: true },
+      },
+      supabase: {},
+      ensureContactForConversation: async () => 'contact-1',
+      createOrReuseLeadFromConversation: async ({ aiState }) => {
+        captured = aiState;
+        return { success: true, leadId: 'new-lead', wasCreated: true, lead: { id: 'new-lead' } };
+      },
+    });
+    assert.equal(captured?.qa_crm_force_new_lead, true);
+  });
+});
+
 describe('F6.1 F6 gate tras reset CRM en V3', () => {
   it('permite nueva ejecución F6 si crmExecutionCompleted fue limpiado', async () => {
     process.env.PERSEO_V3_CRM_EXECUTE = 'true';
