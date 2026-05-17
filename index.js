@@ -938,6 +938,9 @@ app.post('/webhook', async (req, res) => {
           }
           Object.assign(nextAiState, mapV3StateToLegacyAiState(v3StateForCrm));
           sanitizeV3PrimaryLegacyAiState(nextAiState);
+          if (crmOut?.leadResult?.aiState?.qa_crm_force_new_lead === false) {
+            nextAiState.qa_crm_force_new_lead = false;
+          }
         }
         logEvent('v3_primary_reply', {
           conversation_id: conversationId,

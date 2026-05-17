@@ -135,10 +135,37 @@ function makeQuery(table, db, filters = []) {
   return api;
 }
 
-function buildMockSupabase(db) {
+function buildMockSupabase(db, opts = {}) {
   return {
     from(table) {
       if (!db[table]) db[table] = [];
+      if (opts.failLeadInsert && table === 'leads') {
+        return {
+          select() {
+            return this;
+          },
+          insert() {
+            return this;
+          },
+          single: async () => ({ data: null, error: { message: 'forced_lead_insert_failure' } }),
+          maybeSingle: async () => ({ data: null, error: null }),
+          eq() {
+            return this;
+          },
+          is() {
+            return this;
+          },
+          order() {
+            return this;
+          },
+          limit() {
+            return this;
+          },
+          then(resolve) {
+            return resolve({ data: [], error: null });
+          },
+        };
+      }
       if (table === 'conversation_events') {
         return {
           insert(payload) {
@@ -425,6 +452,144 @@ describe('F6.1 lead reuse vs new create', () => {
     const created = db.leads.find((l) => l.id === result.leadId);
     assert.ok(created);
     assert.equal(created.preferred_zones, null);
+  });
+
+  it('con qa_crm_force_new_lead crea lead nuevo aunque aiState no traiga el flag (persistido en conversation)', async () => {
+    const db = baseDb();
+    db.conversations[0].lead_id = null;
+    db.conversations[0].ai_state = { qa_crm_force_new_lead: true };
+    const supabase = buildMockSupabase(db);
+
+    const result = await createOrReuseLeadFromConversation({
+      supabase,
+      conversation: db.conversations[0],
+      aiState: {
+        lead_flow: 'demand',
+        operation_type: 'sale',
+        property_code: 'LUX-A0462',
+        direct_property_reference: true,
+        confidence: 'high',
+        full_name: 'Gemma Triay',
+        asks_property_details: true,
+      },
+      contactId: 'contact-carls',
+      propertyId: 'prop-0462',
+      property: { id: 'prop-0462', listing_id: 'LUX-A0462', operation_type: 'sale' },
+      logger: console,
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.wasCreated, true);
+    assert.notEqual(result.leadId, 'lead-old-083');
+    assert.equal(result.aiState?.qa_crm_force_new_lead, false);
+  });
+
+  it('consume qa_crm_force_new_lead solo tras LEAD_CREATED exitoso', async () => {
+    const db = baseDb();
+    db.conversations[0].lead_id = null;
+    const supabase = buildMockSupabase(db);
+    const logLabels = [];
+    const logger = {
+      info(label) {
+        logLabels.push(label);
+      },
+      warn() {},
+    };
+
+    const result = await createOrReuseLeadFromConversation({
+      supabase,
+      conversation: db.conversations[0],
+      aiState: {
+        lead_flow: 'demand',
+        operation_type: 'sale',
+        property_code: 'LUX-A0462',
+        direct_property_reference: true,
+        confidence: 'high',
+        full_name: 'Gemma Triay',
+        asks_property_details: true,
+        qa_crm_force_new_lead: true,
+      },
+      contactId: 'contact-carls',
+      propertyId: 'prop-0462',
+      property: { id: 'prop-0462', listing_id: 'LUX-A0462', operation_type: 'sale' },
+      logger,
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.wasCreated, true);
+    assert.equal(result.aiState?.qa_crm_force_new_lead, false);
+    assert.ok(logLabels.includes('LEAD_AUTOMATION_QA_FORCE_NEW_LEAD'));
+    assert.ok(logLabels.includes('LEAD_CREATED'));
+    assert.ok(logLabels.includes('LEAD_AUTOMATION_QA_FORCE_NEW_LEAD_CONSUMED'));
+    assert.ok(!logLabels.includes('LEAD_AUTOMATION_REUSE_BY_MATCH'));
+    assert.ok(!logLabels.includes('LEAD_AUTOMATION_REUSE_BY_CONVERSATION'));
+    assert.ok(
+      db.conversation_events.some((e) => e.type === 'qa_crm_force_new_lead_consumed'),
+    );
+  });
+
+  it('fallo de insert no consume qa_crm_force_new_lead', async () => {
+    const db = baseDb();
+    db.conversations[0].lead_id = null;
+    const supabase = buildMockSupabase(db, { failLeadInsert: true });
+    const aiState = {
+      lead_flow: 'demand',
+      operation_type: 'sale',
+      property_code: 'LUX-A0462',
+      direct_property_reference: true,
+      confidence: 'high',
+      full_name: 'Gemma Triay',
+      asks_property_details: true,
+      qa_crm_force_new_lead: true,
+    };
+
+    const result = await createOrReuseLeadFromConversation({
+      supabase,
+      conversation: db.conversations[0],
+      aiState,
+      contactId: 'contact-carls',
+      propertyId: 'prop-0462',
+      property: { id: 'prop-0462', listing_id: 'LUX-A0462', operation_type: 'sale' },
+      logger: console,
+    });
+
+    assert.equal(result.success, false);
+    assert.equal(aiState.qa_crm_force_new_lead, true);
+    assert.equal(db.leads.length, 1);
+    assert.ok(
+      !db.conversation_events.some((e) => e.type === 'qa_crm_force_new_lead_consumed'),
+    );
+  });
+
+  it('fuera de allowlist con flag no fuerza lead nuevo (idempotencia)', async () => {
+    process.env.PERSEO_V3_QA_ALLOWLIST = OTHER_PHONE;
+    const db = baseDb();
+    db.conversations[0].lead_id = null;
+    const supabase = buildMockSupabase(db);
+
+    const result = await createOrReuseLeadFromConversation({
+      supabase,
+      conversation: db.conversations[0],
+      aiState: {
+        lead_flow: 'demand',
+        operation_type: 'sale',
+        property_code: 'LUX-A0462',
+        direct_property_reference: true,
+        confidence: 'high',
+        asks_property_details: true,
+        qa_crm_force_new_lead: true,
+      },
+      contactId: 'contact-carls',
+      propertyId: 'prop-0462',
+      property: { id: 'prop-0462', listing_id: 'LUX-A0462', operation_type: 'sale' },
+      logger: console,
+    });
+
+    process.env.PERSEO_V3_QA_ALLOWLIST = QA_PHONE;
+    assert.equal(result.success, true);
+    assert.equal(result.wasCreated, false);
+    assert.equal(result.leadId, 'lead-old-083');
+    assert.equal(db.leads.length, 1);
   });
 });
 
