@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Sprint 1 — Comandos QA seguros (!reset, !state, !close, !leadcheck).
+ * Sprint 1 — Comandos QA seguros (!reset, !resetcrm, !state, !close, !leadcheck).
  * Sin OpenAI, sin CRM, sin búsqueda de propiedades en estos turnos.
  */
 
@@ -39,13 +39,14 @@ function isSprint1QaTesterPhone(from) {
 
 /**
  * Comandos exactos (tras normalizeQaInput), case-insensitive en el comando.
- * @returns {'reset'|'state'|'close'|'leadcheck'|null}
+ * @returns {'reset'|'resetcrm'|'state'|'close'|'leadcheck'|null}
  */
 function parseSprint1StrictCommand(text) {
   const raw = normalizeQaInput(text);
   if (raw.length > 32) return null;
   const t = raw.toLowerCase();
   if (t === '!reset') return 'reset';
+  if (t === '!resetcrm') return 'resetcrm';
   if (t === '!state') return 'state';
   if (t === '!close') return 'close';
   if (t === '!leadcheck') return 'leadcheck';
@@ -136,6 +137,8 @@ async function processSprint1QaInbound(deps) {
     conversations,
     isQaExecutionAllowed,
     getV3Session,
+    setV3Session,
+    logEvent,
   } = deps;
 
   const cmd = parseSprint1StrictCommand(text);
@@ -168,6 +171,31 @@ async function processSprint1QaInbound(deps) {
     conversation_id: conversationId,
     ts: nowIso(),
   };
+
+  if (cmd === 'resetcrm') {
+    const { executeQaCrmReset } = require('./v3/qa/qaCrmReset');
+    const crmReset = await executeQaCrmReset({
+      phone: from,
+      conversationId,
+      conversationRow,
+      qaCommandsAllowed: allowed,
+      saveStateFn,
+      updateConversationFn,
+      supabase,
+      normalizeAiState,
+      getV3Session,
+      setV3Session,
+      saveEventFn,
+      nowIso,
+      logEvent,
+    });
+    return {
+      handled: true,
+      messages: [crmReset.message],
+      nextAiState: crmReset.nextAiState,
+      conversationUpdate: crmReset.conversationUpdate,
+    };
+  }
 
   if (cmd === 'reset') {
     const fresh = getDefaultAiState();

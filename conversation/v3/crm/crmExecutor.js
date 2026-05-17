@@ -7,6 +7,8 @@ const {
 } = require('./executionPayload');
 const { mergeConversationState } = require('../types/conversationState');
 const { v3Log } = require('../core/v3Logger');
+const { normalizeText } = require('../../../utils/text');
+const { isInvalidContactName } = require('../../../utils/helpers');
 
 /**
  * @param {string} event
@@ -17,6 +19,62 @@ function emitCrmLog(event, payload, logEvent) {
   v3Log(event, payload);
   if (typeof logEvent === 'function') {
     logEvent(event, payload);
+  }
+}
+
+function contactDisplayName(contact) {
+  if (!contact || typeof contact !== 'object') return '';
+  const joined = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim();
+  return joined || String(contact.full_name || '').trim();
+}
+
+function isConfidentV3FullName(name) {
+  const n = String(name || '').trim();
+  if (!n || n.length < 2) return false;
+  if (isInvalidContactName(n)) return false;
+  return true;
+}
+
+/**
+ * Solo log — no actualiza contacto en F6.1.
+ * @param {object} params
+ */
+async function logContactNameMismatchProposal({
+  supabase,
+  contactId,
+  v3FullName,
+  conversationId,
+  contactReused,
+  logEvent,
+}) {
+  if (!contactReused || !contactId || !isConfidentV3FullName(v3FullName)) return;
+  if (!supabase?.from) return;
+
+  try {
+    const { data: contact } = await supabase
+      .from('contacts')
+      .select('id, first_name, last_name, full_name')
+      .eq('id', contactId)
+      .maybeSingle();
+    if (!contact) return;
+
+    const existing = contactDisplayName(contact);
+    const incoming = String(v3FullName).trim();
+    if (!existing || normalizeText(existing) === normalizeText(incoming)) return;
+
+    emitCrmLog(
+      'v3_crm_contact_name_mismatch_proposal',
+      {
+        conversation_id: conversationId,
+        contact_id: contactId,
+        existing_contact_name: existing,
+        proposed_full_name: incoming,
+        action: 'manual_review_or_future_safe_update',
+      },
+      logEvent,
+    );
+  } catch (_err) {
+    /* no bloquear CRM */
   }
 }
 
@@ -177,6 +235,16 @@ async function executeV3CrmIfEligible(input) {
       { conversation_id: conversationId, contact_id: contactId },
       input.logEvent,
     );
+
+    const v3FullName = state.collectedFields?.fullName || aiState?.full_name || null;
+    await logContactNameMismatchProposal({
+      supabase: input.supabase,
+      contactId,
+      v3FullName,
+      conversationId,
+      contactReused,
+      logEvent: input.logEvent,
+    });
 
     const leadResult = await createLead({
       supabase: input.supabase,

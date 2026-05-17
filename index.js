@@ -52,7 +52,7 @@ const v3InboundBridge = require('./conversation/v3/core/v3InboundBridge');
 const { getSession: getV3Session } = require('./conversation/v3/core/sessionStore');
 const { mapV3StateToLegacyAiState } = require('./conversation/v3/state/v3ToLegacyAiState');
 const { executeV3CrmIfEligible } = require('./conversation/v3/crm/crmExecutor');
-const { setSession } = require('./conversation/v3/core/sessionStore');
+const { setSession, getSession } = require('./conversation/v3/core/sessionStore');
 const { sanitizeV3PrimaryLegacyAiState } = require('./conversation/v3/state/sanitizeV3PrimaryLegacyAiState');
 
 const { normalizeText, cleanSpaces } = require('./utils/text');
@@ -686,7 +686,7 @@ app.post('/webhook', async (req, res) => {
       return;
     }
 
-    const conversationRow = await getOrCreateConversation(from);
+    let conversationRow = await getOrCreateConversation(from);
     const conversationId = conversationRow?.id || null;
     const previousAiState = normalizeAiState(conversationRow?.ai_state);
 
@@ -747,7 +747,9 @@ app.post('/webhook', async (req, res) => {
       updateConversationFn: updateConversationMetaWithClient,
       conversations: null,
       isQaExecutionAllowed: isSprint1QaTesterPhone,
-      getV3Session,
+      getV3Session: getSession,
+      setV3Session: setSession,
+      logEvent,
     });
 
     if (sprintQa?.unauthorized) {
@@ -759,6 +761,9 @@ app.post('/webhook', async (req, res) => {
       const cmd = parseSprint1StrictCommand(text);
       if (cmd === 'reset') {
         v3InboundBridge.clearSession(conversationId);
+      }
+      if (cmd === 'resetcrm' && sprintQa.conversationUpdate?.lead_id === null) {
+        conversationRow = { ...conversationRow, lead_id: null };
       }
       const reply = sprintQa.messages;
       await sendPerseoAutomatedWhatsApp({
