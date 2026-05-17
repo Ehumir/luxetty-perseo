@@ -218,6 +218,7 @@ function baseDb() {
         full_name: 'Carls JR',
         phone: QA_PHONE,
         whatsapp: QA_PHONE,
+        assigned_agent_profile_id: 'agent-contact-owner',
       },
     ],
     leads: [
@@ -650,7 +651,7 @@ describe('F6.1 executor propaga qa_crm_force_new_lead desde ai_state persistido'
         ai_state: { qa_crm_force_new_lead: true },
       },
       supabase: {},
-      ensureContactForConversation: async () => 'contact-1',
+      ensureContactForConversation: async () => ({ contactId: 'contact-1', wasCreated: false }),
       createOrReuseLeadFromConversation: async ({ aiState }) => {
         captured = aiState;
         return { success: true, leadId: 'new-lead', wasCreated: true, lead: { id: 'new-lead' } };
@@ -698,7 +699,7 @@ describe('F6.1 F6 gate tras reset CRM en V3', () => {
           return makeQuery(table, { [table]: [] });
         },
       },
-      ensureContactForConversation: async () => 'contact-carls',
+      ensureContactForConversation: async () => ({ contactId: 'contact-carls', wasCreated: false }),
       createOrReuseLeadFromConversation: async () => {
         leadCalls += 1;
         return {
