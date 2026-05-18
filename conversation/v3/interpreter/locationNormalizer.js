@@ -74,6 +74,16 @@ function normalizeLocationFromUserText(raw) {
   return t;
 }
 
+/**
+ * @param {string} raw
+ */
+function isBareKnownZoneToken(raw) {
+  const t = normalizeText(String(raw || ''));
+  if (!t || t.split(/\s+/).length > 3) return false;
+  return /^(cumbres|san pedro|garcia|garcía|carretera nacional)$/.test(t);
+}
+
 module.exports = {
   normalizeLocationFromUserText,
+  isBareKnownZoneToken,
 };

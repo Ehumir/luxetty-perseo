@@ -74,7 +74,7 @@ function shouldAcceptQualificationLocationTurn(state, raw) {
     return false;
   }
 
-  if (state.awaitingField === 'location_text') return true;
+  if (state.awaitingField === 'location_text' || state.lastAskedField === 'location_text') return true;
 
   if (isBuyFlow(state) && (/\bbusco\s+en\b/.test(t) || state.awaitingField === 'location_text')) {
     return true;

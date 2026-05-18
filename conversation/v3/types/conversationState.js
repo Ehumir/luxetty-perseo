@@ -40,6 +40,8 @@ function createInitialConversationState(seed = {}) {
     /** @type {'credit'|'cash'|'unknown'|null} */
     paymentMethod: null,
     awaitingField: null,
+    /** Último slot preguntado explícitamente (prioridad interpretación M1-PR-04). */
+    lastAskedField: null,
     advisorContactConsent: ADVISOR_CONTACT_CONSENT.UNKNOWN,
     qualificationComplete: false,
     crmPayloadReady: false,

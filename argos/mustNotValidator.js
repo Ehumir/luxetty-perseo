@@ -176,7 +176,73 @@ function validateMustNotReply(input) {
     }
   }
 
+  if (must_not.repeated_question && facts.previousQuestionSignature) {
+    const qSig = questionSignature(reply);
+    if (qSig && qSig === facts.previousQuestionSignature) {
+      violations.push({
+        constraint: 'must_not.repeated_question',
+        detail: 'Assistant repeated the same slot question',
+        severity: 'high',
+      });
+    }
+  }
+
+  if (must_not.slot_reask_when_filled) {
+    const lower = normalizeText(reply);
+    if (facts.known_zone && /\b(en qu[eé] zona|qu[eé] zona|zona te gustar[ií]a)\b/.test(lower)) {
+      violations.push({
+        constraint: 'must_not.slot_reask_when_filled',
+        detail: 'Re-asked location while zone already captured',
+        severity: 'high',
+      });
+    }
+    if (
+      facts.known_budget != null &&
+      /\?/.test(reply) &&
+      /\b(qu[eé]\s+presupuesto|presupuesto\s+aproximado|presupuesto\s+tienes|presupuesto\s+manejas)\b/.test(lower) &&
+      !/\btom[eé]\b/.test(lower)
+    ) {
+      violations.push({
+        constraint: 'must_not.slot_reask_when_filled',
+        detail: 'Re-asked budget while budget already captured',
+        severity: 'high',
+      });
+    }
+    if (facts.known_name && /\b(nombre|llamas|te llamas)\b/.test(lower) && /\?/.test(reply)) {
+      violations.push({
+        constraint: 'must_not.slot_reask_when_filled',
+        detail: 'Re-asked name while name already captured',
+        severity: 'high',
+      });
+    }
+  }
+
+  if (must_not.forced_handoff && facts.qualificationIncomplete === true) {
+    if (
+      /\b(un asesor|asesor de luxetty).{0,80}(contact|contacte|contacten|te contact)\b/i.test(reply) ||
+      /\bsi te parece.{0,40}asesor\b/i.test(reply)
+    ) {
+      violations.push({
+        constraint: 'must_not.forced_handoff',
+        detail: 'Offered advisor handoff before qualification complete',
+        severity: 'high',
+      });
+    }
+  }
+
   return violations;
+}
+
+/**
+ * @param {string} reply
+ */
+function questionSignature(reply) {
+  const t = normalizeText(String(reply || ''));
+  if (!/\?/.test(t)) return '';
+  if (/\b(zona|presupuesto|nombre|llamas)\b/.test(t)) {
+    return t.replace(/\s+/g, ' ').trim().slice(0, 120);
+  }
+  return '';
 }
 
 module.exports = {
@@ -185,4 +251,5 @@ module.exports = {
   extractMoneyMentions,
   extractUrls,
   replySignature,
+  questionSignature,
 };

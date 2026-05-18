@@ -1,0 +1,6 @@
+{
+  "suite": "reg-short-msg-p0",
+  "description": "Gate M1-PR-04 — mensajes cortos y awaiting_field.",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": ["REG_SHORT_MSG_001.v1.json"]
+}
