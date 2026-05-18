@@ -22,6 +22,11 @@
       "PROP_003.v1.json",
       "CHAOS_001.v1.json"
     ],
+    "release-p1": [
+      "DEMAND_003.v1.json",
+      "DEMAND_005.v1.json",
+      "DEMAND_006.v1.json"
+    ],
     "humanity-p0": ["HUMANITY_001.v1.json", "REG_GREETING_001.v1.json"],
     "P1": [
       "DEMAND_003.v1.json",

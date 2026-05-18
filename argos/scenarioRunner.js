@@ -139,6 +139,16 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
       });
     }
   }
+  if (expected.property_code != null) {
+    const actualCode = snapshot?.property_code || null;
+    if (String(actualCode || '').toUpperCase() !== String(expected.property_code).toUpperCase()) {
+      violations.push({
+        code: 'expected_property_code_mismatch',
+        expected: expected.property_code,
+        actual: actualCode,
+      });
+    }
+  }
   if (expected.crm_ready === true && crm?.skipped) {
     violations.push({
       code: 'expected_crm_dry_run_not_skipped',
@@ -192,8 +202,9 @@ async function runArgosScenario(input) {
   let lastSnapshot = null;
   let lastCrm = null;
   let lastTurnDiagnostics = [];
-    let previousReplySignature = null;
-    let previousQuestionSignature = null;
+  let previousReplySignature = null;
+  let previousQuestionSignature = null;
+  let anchorLeadFlow = null;
 
   for (let i = 0; i < messages.length; i += 1) {
     if (Date.now() - started > ARGOS_SCENARIO_TIMEOUT_MS) {
@@ -223,10 +234,17 @@ async function runArgosScenario(input) {
     lastCrm = result.crm_dry_run;
     lastTurnDiagnostics = pickTurnDiagnostics(result.debug_trace);
     const snap = result.conversation_snapshot || {};
+    if (i === 2 && snap.lead_flow) anchorLeadFlow = snap.lead_flow;
     const facts = buildScenarioFacts(messages[i], result);
     facts.previousReplySignature = previousReplySignature;
     facts.previousQuestionSignature = previousQuestionSignature;
     facts.suppressGlobalMenu = Boolean(snap.lead_flow) && i >= 2;
+    facts.stickyLeadFlow = anchorLeadFlow;
+    facts.leadFlow = snap.lead_flow || null;
+    facts.explicitFlowSwitch = !!(
+      result.debug_trace &&
+      result.debug_trace.find((row) => row.type === 'parser_winner')?.payload?.explicit_flow_switch
+    );
 
     const mustNotViolations = validateMustNotReply({
       replyText: result.reply,
@@ -326,8 +344,15 @@ function isCurtUserMessage(text) {
 function buildScenarioFacts(userText, turnResult) {
   const snap = turnResult?.conversation_snapshot || {};
   const codes = extractListingCodes(userText);
+  const histCodes = Array.isArray(snap.property_history) ? snap.property_history : [];
   const facts = {
-    knownListingCodes: codes.length ? codes : snap.property_code ? [snap.property_code] : [],
+    knownListingCodes: codes.length
+      ? codes
+      : snap.property_code
+        ? [snap.property_code, ...histCodes]
+        : histCodes,
+    activePropertyCode: snap.property_code || null,
+    userMentionedCodes: codes,
     knownPrices: snap.known_budget != null ? [Number(snap.known_budget)] : [],
     known_zone: snap.known_zone || null,
     known_name: snap.known_name || null,

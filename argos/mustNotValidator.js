@@ -73,21 +73,20 @@ function validateMustNotReply(input) {
 
   if (must_not.invent_property) {
     const mentioned = extractListingCodes(reply);
+    const allowedCodes = new Set(
+      [...knownCodes, ...(facts.userMentionedCodes || []), facts.activePropertyCode]
+        .filter(Boolean)
+        .map((c) => String(c).toUpperCase()),
+    );
     for (const code of mentioned) {
-      if (knownCodes.size > 0 && !knownCodes.has(code)) {
+      const norm = String(code).toUpperCase();
+      if (allowedCodes.size > 0 && !allowedCodes.has(norm)) {
         violations.push({
           constraint: 'must_not.invent_property',
           detail: `Mentioned listing code ${code} not in inventory facts`,
           severity: 'critical',
         });
       }
-    }
-    if (facts.propertyLookupAttempted && !facts.propertyFound && mentioned.length > 0) {
-      violations.push({
-        constraint: 'must_not.invent_property',
-        detail: 'Reply references property codes after failed inventory lookup',
-        severity: 'critical',
-      });
     }
   }
 
@@ -223,6 +222,45 @@ function validateMustNotReply(input) {
         constraint: 'must_not.verbose_response',
         detail: 'Reply too long after curt user message',
         severity: 'medium',
+      });
+    }
+  }
+
+  if (must_not.property_context_loss && facts.activePropertyCode) {
+    const active = String(facts.activePropertyCode).toUpperCase();
+    const mentioned = extractListingCodes(reply);
+    const userIntroduced = new Set(
+      (facts.userMentionedCodes || []).map((c) => String(c).toUpperCase()),
+    );
+    for (const code of mentioned) {
+      const norm = code.toUpperCase();
+      if (norm === active) continue;
+      if (userIntroduced.has(norm)) continue;
+      violations.push({
+        constraint: 'must_not.property_context_loss',
+        detail: `Reply referenced ${norm} while active context is ${active}`,
+        severity: 'critical',
+      });
+      break;
+    }
+  }
+
+  if (must_not.offer_to_demand && facts.stickyLeadFlow === 'offer') {
+    if (facts.leadFlow === 'demand' && !facts.explicitFlowSwitch) {
+      violations.push({
+        constraint: 'must_not.offer_to_demand',
+        detail: 'Lead flow flipped from offer to demand without explicit switch',
+        severity: 'critical',
+      });
+    }
+  }
+
+  if (must_not.demand_to_offer && facts.stickyLeadFlow === 'demand') {
+    if (facts.leadFlow === 'offer' && !facts.explicitFlowSwitch) {
+      violations.push({
+        constraint: 'must_not.demand_to_offer',
+        detail: 'Lead flow flipped from demand to offer without explicit switch',
+        severity: 'critical',
       });
     }
   }

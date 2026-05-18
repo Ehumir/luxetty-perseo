@@ -33,6 +33,9 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
     crm_ready: stage === CONVERSATION_STAGES.CRM_READY && v3State?.crmPayloadReady === true,
     advisor_contact_consent: consent,
     handoff_sent: !!(v3State?.handoffSent || legacy.handoff_sent),
+    property_history: Array.isArray(v3State?.propertyHistory)
+      ? v3State.propertyHistory.map((h) => h?.code).filter(Boolean)
+      : [],
   };
 }
 

@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "DEMAND_003",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "demand",
+  "category": "compra_refinamiento_criterios",
+  "title": "Compra — refinamiento de zona, tamaño y patio sin reinicio",
+  "description": "Usuario ajusta zona, tamaño y amenidad; PERSEO mantiene flujo demand sin menú global.",
+  "typology": { "corpus_ids": ["DEM-P1-003"], "rail": "demand", "block": "M1-D" },
+  "messages": [
+    "Hola",
+    "Busco casa",
+    "En Cumbres",
+    "5 millones",
+    "Soy Ana",
+    "Mejor en otra zona",
+    "San Pedro",
+    "Quiero algo más grande",
+    "Con patio"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "demand",
+    "operation_type": "sale",
+    "known_name": "Ana",
+    "known_zone": "San Pedro",
+    "crm_ready": false
+  },
+  "must_not": {
+    "flow_restart": true,
+    "offer_to_demand": true,
+    "demand_to_offer": true,
+    "robotic_response": true,
+    "slot_reask_when_filled": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "forced_handoff": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-19", "change": "M1-D DEMAND_003 refinement wave." }]
+}

@@ -63,6 +63,8 @@ const V3_INTENT = Object.freeze({
   FRUSTRATION: 'FRUSTRATION',
   /** M1 — rapport social sin reiniciar menú global. */
   SOCIAL_RAPPORT: 'SOCIAL_RAPPORT',
+  /** M1-D — ajuste de criterios en flujo compra sin reiniciar. */
+  DEMAND_REFINEMENT: 'DEMAND_REFINEMENT',
   UNKNOWN: 'UNKNOWN',
 });
 

@@ -468,6 +468,18 @@ function composePropertyFactReply(state, family) {
         toneFlags: { consultive: true },
       };
     }
+    case 'compare': {
+      const hist = Array.isArray(st.propertyHistory) ? st.propertyHistory : [];
+      const prev = hist.find((h) => h && h.code && h.code !== code);
+      const other = prev?.code || hist[0]?.code || null;
+      const otherRef = other ? ` (antes viste ${other})` : '';
+      return {
+        responseText: `${greet}Para comparar, tomo ${ref} como referencia actual${otherRef}. Dime si quieres precio, zona o recámaras de ${code || 'esta ficha'} y no mezclo datos de otra propiedad.`,
+        followUpQuestion: null,
+        awaitingField: null,
+        toneFlags: { consultive: true, propertyCompare: true },
+      };
+    }
     case 'location': {
       if (f.locationLabel) {
         return {
@@ -682,6 +694,83 @@ function applyPropertyReplyAntiLoop(input) {
  * @param {import('../types/conversationState').ConversationState} state
  * @param {import('../types/conversationDecision').ConversationDecision} decision
  */
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ * @param {import('../types/conversationDecision').ConversationDecision} decision
+ */
+function composeDemandRefinementTurn(state, decision) {
+  const kind = decision.refinementKind || null;
+  const zone = state.locationText;
+  const nm = firstName(state);
+
+  if (kind === 'zone' && !zone) {
+    return {
+      responseText: pickOpeningVariant(state, [
+        'Perfecto, ajustamos la búsqueda. ¿En qué zona prefieres enfocarte ahora?',
+        'Entendido, cambiamos de zona. ¿Qué colonia o sector te interesa?',
+      ]),
+      followUpQuestion: null,
+      awaitingField: 'location_text',
+      toneFlags: { consultive: true, refinement: true },
+    };
+  }
+
+  if (kind === 'budget_down' && state.budget == null) {
+    return {
+      responseText: pickOpeningVariant(state, [
+        'Entendido, buscamos opciones más económicas. ¿Hasta qué presupuesto te gustaría ajustar?',
+        'Tomé que quieres algo más accesible. ¿Qué presupuesto máximo manejas?',
+      ]),
+      followUpQuestion: null,
+      awaitingField: 'budget',
+      toneFlags: { consultive: true, refinement: true },
+    };
+  }
+
+  if (kind === 'size_up') {
+    const br = state.bedrooms != null ? state.bedrooms : null;
+    const brTxt = br != null ? `${br} recámaras` : 'más espacio';
+    const budgetNote = state.budget != null ? '' : ' y presupuesto';
+    return {
+      responseText: pickOpeningVariant(state, [
+        `Perfecto, priorizo algo más amplio (${brTxt}). ¿Mantengo la misma zona${zone ? ` (${zone})` : ''}${budgetNote}?`,
+        nm
+          ? `${nm}, tomé que buscas más espacio. ¿Seguimos en la misma zona o quieres mover la búsqueda?`
+          : 'Tomé que buscas algo más grande. ¿Seguimos en la misma zona o movemos algún detalle?',
+      ]),
+      followUpQuestion: null,
+      awaitingField: zone && state.budget == null ? 'budget' : null,
+      toneFlags: { consultive: true, refinement: true },
+    };
+  }
+
+  if (kind === 'feature_patio') {
+    const budgetQ =
+      state.budget == null
+        ? '¿Qué presupuesto manejas?'
+        : '¿Algún otro detalle que quieras sumar?';
+    return {
+      responseText: pickOpeningVariant(state, [
+        `Perfecto, priorizo opciones con patio${zone ? ` en ${zone}` : ''}. ${budgetQ}`,
+        `Tomé el detalle del patio${zone ? ` en ${zone}` : ''}. ${budgetQ}`,
+      ]),
+      followUpQuestion: null,
+      awaitingField: state.budget == null ? 'budget' : null,
+      toneFlags: { consultive: true, refinement: true },
+    };
+  }
+
+  return {
+    responseText: pickOpeningVariant(state, [
+      'Entendido, ajusto los criterios de tu búsqueda. ¿Qué quieres cambiar: zona, presupuesto o tamaño?',
+      'Perfecto, sigo con tu compra. ¿Afinamos zona, presupuesto o algún detalle como patio?',
+    ]),
+    followUpQuestion: null,
+    awaitingField: state.awaitingField,
+    toneFlags: { consultive: true, refinement: true },
+  };
+}
+
 function composeStickyQualificationTurn(state, decision) {
   const intent = decision.detectedIntent;
   const nm = firstName(state);
@@ -704,6 +793,20 @@ function composeStickyQualificationTurn(state, decision) {
       };
     }
     if (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+      const pres = formatMoneyMx(state.budget);
+      if (state.collectedFields?.fullName && state.budget != null) {
+        return {
+          responseText: pickOpeningVariant(state, [
+            `Perfecto, movimos la búsqueda a ${zone}. Mantengo tu presupuesto de ${pres}. ¿Quieres afinar tamaño o algún detalle?`,
+            nm
+              ? `Gracias, ${nm}. Tomé ${zone} con ${pres} como referencia. ¿Algún detalle más (recámaras, patio)?`
+              : `Tomé ${zone}. Con ${pres} como referencia, ¿afinamos tamaño o algún detalle?`,
+          ]),
+          followUpQuestion: null,
+          awaitingField: null,
+          toneFlags: { consultive: true, stickyAck: true, zoneRefinement: true },
+        };
+      }
       return {
         responseText: pickOpeningVariant(state, [
           `Perfecto, tomé ${zone}. ¿Qué presupuesto aproximado manejas?`,
@@ -730,6 +833,21 @@ function composeStickyQualificationTurn(state, decision) {
   }
 
   if (intent === V3_INTENT.BUYER_BUDGET && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+    if (state.collectedFields?.fullName) {
+      return {
+        responseText: pickOpeningVariant(state, [
+          budget
+            ? `Perfecto, ajusté el presupuesto a ${budget}. ¿Quieres afinar zona, recámaras o algún detalle?`
+            : 'Tomé tu presupuesto. ¿Quieres afinar zona o recámaras?',
+          budget
+            ? `Listo, con ${budget} como referencia. ¿Movemos zona o algún detalle como patio?`
+            : 'Gracias por el dato. ¿Seguimos afinando zona o tamaño?',
+        ]),
+        followUpQuestion: null,
+        awaitingField: null,
+        toneFlags: { consultive: true, stickyAck: true },
+      };
+    }
     return {
       responseText: pickOpeningVariant(state, [
         budget ? `Tomé un presupuesto de ${budget}. ¿Me compartes tu nombre?` : 'Tomé tu presupuesto. ¿Me compartes tu nombre?',
@@ -755,6 +873,10 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
 
   const stickyAck = composeStickyQualificationTurn(state, decision);
   if (stickyAck) return stickyAck;
+
+  if (intent === V3_INTENT.DEMAND_REFINEMENT && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+    return composeDemandRefinementTurn(state, decision);
+  }
 
   const buyPolicyHint = getBuyDemandPolicyHint(state, decision, plannerOut, handoffOut);
   if (buyPolicyHint) {

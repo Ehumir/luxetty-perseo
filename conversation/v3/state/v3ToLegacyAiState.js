@@ -87,6 +87,7 @@ function mapV3StateToLegacyAiState(v3State) {
     sticky_conversation_goal: v3State.stickyConversationGoal ?? null,
     interested_property_id:
       v3State.activeProperty && v3State.activeProperty.id != null ? String(v3State.activeProperty.id) : null,
+    property_history: Array.isArray(v3State.propertyHistory) ? v3State.propertyHistory : [],
   };
 }
 
