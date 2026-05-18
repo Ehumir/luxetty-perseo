@@ -4,7 +4,7 @@ const { normalizeText } = require('../../../utils/text');
 const { CONVERSATION_STAGES, ADVISOR_CONTACT_CONSENT, CONVERSATION_GOALS } = require('../types/constants');
 const { isSellValuationUnknownRequest } = require('./sellValuationSignals');
 
-/** @typedef {'post_close_ack'|'handoff_pending_frustration'|'bot_identity'|'sell_valuation_unknown'|'frustration_not_understood'|'useless'|'human_request'|'commission'|'competitor_price'|'no_exclusivity'|'already_listed'} ObjectionKind */
+/** @typedef {'post_close_ack'|'handoff_pending_frustration'|'bot_identity'|'sell_valuation_unknown'|'frustration_not_understood'|'useless'|'curt_direct_question'|'human_request'|'commission'|'competitor_price'|'no_exclusivity'|'already_listed'} ObjectionKind */
 
 function isShortPostCloseAck(text) {
   const t = normalizeText(String(text || ''));
@@ -112,7 +112,13 @@ function classifyObjection(text, state) {
   }
 
   if (isExplicitHumanRequest(text)) return 'human_request';
-  if (/no\s+me\s+est[aá]s?\s+entendiendo|no\s+entiendes/i.test(t)) return 'frustration_not_understood';
+  if (/\bsolo\s+dime\b/i.test(t) && /\b(precio|opciones|depas|casas|propiedades)\b/i.test(t)) {
+    return 'curt_direct_question';
+  }
+  if (/^solo\s+precio$/i.test(t)) return 'curt_direct_question';
+  if (/no\s+me\s+est[aá]s?\s+entendiendo|no\s+entiendes|no\s+entiendo/i.test(t)) {
+    return 'frustration_not_understood';
+  }
   if (/esto\s+no\s+sirve|no\s+sirve/i.test(t)) return 'useless';
 
   if (/\bcomisi[oó]n\b|\bcu[aá]nto\s+cobran\b|\bqu[eé]\s+%\s+cobran/i.test(t)) return 'commission';

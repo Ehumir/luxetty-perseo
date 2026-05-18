@@ -2,6 +2,10 @@
 
 const { cleanSpaces } = require('../../../utils/text');
 const { firstName } = require('./postHandoffComposer');
+const {
+  composeContextualConfusionReply,
+  composeCurtDirectReply,
+} = require('./humanityHandoffComposer');
 
 /**
  * @param {import('../interpreter/objectionClassifier').ObjectionKind} kind
@@ -40,6 +44,9 @@ function composeObjectionReply(kind, state) {
       ) {
         return null;
       }
+      if (state.conversationGoalLocked && state.conversationGoal) {
+        return composeContextualConfusionReply(state);
+      }
       return {
         responseText: nm
           ? `${nm}, te escucho. Para no darte vueltas: ¿buscas vender, comprar, rentar o consultar una propiedad por código?`
@@ -48,6 +55,8 @@ function composeObjectionReply(kind, state) {
         awaitingField: null,
         toneFlags: { consultive: true },
       };
+    case 'curt_direct_question':
+      return composeCurtDirectReply(state);
     case 'commission':
       return {
         responseText:

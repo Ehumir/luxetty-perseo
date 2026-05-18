@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "HUMANITY_002",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "humanity",
+  "category": "confused_user_reexplain",
+  "title": "HUMANITY — usuario confundido sin handoff prematuro",
+  "description": "Tras intención compra, 'no entiendo' debe re-explicar en contexto sin menú global ni asesor antes de tiempo.",
+  "typology": { "corpus_ids": ["HUMANITY-H-002"], "rail": "humanity", "block": "H" },
+  "messages": [
+    "Hola",
+    "Busco casa",
+    "No entiendo nada",
+    "Cumbres",
+    "5 millones",
+    "Jorge"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "demand",
+    "operation_type": "sale",
+    "known_zone": "Cumbres",
+    "known_budget": 5000000,
+    "known_name": "Jorge"
+  },
+  "must_not": {
+    "forced_handoff": true,
+    "flow_restart": true,
+    "robotic_response": true,
+    "repeated_phrase": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-19", "change": "M1-PR-05 confused user." }]
+}

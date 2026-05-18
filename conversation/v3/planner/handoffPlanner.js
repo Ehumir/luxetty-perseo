@@ -7,6 +7,8 @@ const {
   CONVERSATION_GOALS,
 } = require('../types/constants');
 const { HUMAN_ESCALATION_REASONS } = require('../types/forcedHandoffReasons');
+const { classifyObjection } = require('../interpreter/objectionClassifier');
+const { isHumanityDeferHandoffKind } = require('../composer/humanityHandoffComposer');
 
 /**
  * @typedef {'CONTINUE_QUALIFICATION'|'OFFER_HANDOFF'|'CONSENT_ACCEPTED'|'CONSENT_DECLINED'|'HANDOFF_COMPLETE'|'PROPERTY_QA_ENTRY'|'PROPERTY_QA_CONTINUE'|'FORCE_HANDOFF'|'FORCE_HANDOFF_READY'|'FORCE_HANDOFF_ESCALATION'} HandoffAction
@@ -73,10 +75,15 @@ function forceHandoff(state, input) {
  * @param {import('../types/conversationDecision').ConversationDecision} decision
  * @param {ReturnType<typeof import('./qualificationPlanner').evaluateQualification>} plannerOut
  */
-function processHandoff(state, _text, decision, plannerOut) {
+function processHandoff(state, text, decision, plannerOut) {
   /** @type {Partial<import('../types/conversationState').ConversationState>} */
   const patch = {};
   let action = /** @type {HandoffAction} */ ('CONTINUE_QUALIFICATION');
+
+  const humanityKind = classifyObjection(text, state);
+  if (isHumanityDeferHandoffKind(humanityKind)) {
+    return { patch, action };
+  }
 
   if (decision.detectedIntent === V3_INTENT.ADVISOR_CONSENT_CAPTURE) {
     const consent = state.advisorContactConsent;
