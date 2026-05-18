@@ -1,0 +1,14 @@
+{
+  "suite": "release-p0",
+  "description": "Gate bloqueante post-deploy QA Railway. Ver CORPUS-GOVERNANCE-v1.md.",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": [
+    "DEMAND_001.v1.json",
+    "DEMAND_002_FULL.v1.json",
+    "DEMAND_002_SLOTS.v1.json",
+    "DEMAND_004.v1.json",
+    "OFFER_001.v1.json",
+    "PROP_003.v1.json",
+    "CHAOS_001.v1.json"
+  ]
+}
