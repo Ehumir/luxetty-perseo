@@ -71,7 +71,7 @@ function applyBuyDemandPatch(patch, raw, decision) {
   patch.leadFlow = 'demand';
   patch.operationType = 'sale';
   const zoneBuy = extractLooseLocationPhrase(raw) || normalizeLocationFromUserText(raw);
-  if (zoneBuy) {
+  if (zoneBuy && !/^(busco|quiero|necesito)\b/i.test(normalizeText(zoneBuy))) {
     patch.locationText = zoneBuy;
     decision.extractedEntities.locationText = zoneBuy;
   }
@@ -97,7 +97,8 @@ function isExplicitFlowSwitchToBuy(text) {
   return (
     t.includes('ahora busco comprar') ||
     t.includes('en realidad busco') ||
-    t.includes('no quiero vender') ||
+    t.includes('mejor quiero comprar') ||
+    (/\bno\s+quiero\s+vender\b/.test(t) && /\b(?:comprar|busco)\b/.test(t)) ||
     (/\bbusco\b/.test(t) && (t.includes('comprar') || t.includes('casa'))) ||
     t.includes('quiero comprar')
   );
@@ -105,8 +106,9 @@ function isExplicitFlowSwitchToBuy(text) {
 
 function isExplicitFlowSwitchToSell(text) {
   const t = normalizeText(text);
+  if (/\bno\s+quiero\s+vender\b/.test(t) && /\b(?:comprar|busco)\b/.test(t)) return false;
   return (
-    t.includes('quiero vender') ||
+    (/\bquiero\s+vender\b/.test(t) && !/\bno\s+quiero\s+vender\b/.test(t)) ||
     t.includes('vender mi') ||
     t.includes('poner en venta') ||
     t.includes('mejor quiero vender') ||
@@ -185,6 +187,19 @@ function interpretUserMessage(state, text, options = {}) {
     state.conversationGoalLocked &&
     state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY &&
     isExplicitFlowSwitchToSellFromRent(text);
+
+  if (
+    state.conversationGoalLocked &&
+    isOfferFlow(state) &&
+    isExplicitFlowSwitchToBuy(text)
+  ) {
+    decision.detectedIntent = V3_INTENT.BUY_PROPERTY;
+    decision.confidence = 0.88;
+    decision.explicitFlowSwitch = true;
+    applyBuyDemandPatch(patch, raw, decision);
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    return { patch, decision };
+  }
 
   const strongSellEarly =
     isExplicitFlowSwitchToSell(text) || matchesSellerAcquisitionPattern(t) || sellFromRentLocked;

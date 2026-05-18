@@ -1,6 +1,7 @@
 'use strict';
 
 const { CONVERSATION_GOALS } = require('../types/constants');
+const { releaseStickyContext, stampStickyContext, enforceStickyContext } = require('./stickyContext');
 
 /**
  * @param {import('../types/conversationState').ConversationState} state
@@ -10,6 +11,10 @@ const { CONVERSATION_GOALS } = require('../types/constants');
  */
 function applyGoalOwnership(state, patch, decision) {
   const out = { ...patch };
+
+  if (decision.explicitFlowSwitch) {
+    releaseStickyContext(out);
+  }
 
   if (state.conversationGoalLocked && !decision.explicitFlowSwitch) {
     if (out.conversationGoal != null && out.conversationGoal !== state.conversationGoal) {
@@ -106,7 +111,8 @@ function applyGoalOwnership(state, patch, decision) {
     }
   }
 
-  return out;
+  stampStickyContext(out);
+  return enforceStickyContext(state, out, decision);
 }
 
 module.exports = {

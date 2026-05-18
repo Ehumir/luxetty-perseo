@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "REG_STICKY_SELL_001",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "humanity",
+  "category": "sticky_context_sell",
+  "title": "REG — venta con contexto sticky sin reinicio",
+  "description": "Flujo venta: zona y precio fuera de orden; no menú global ni flip a demanda.",
+  "typology": { "corpus_ids": ["M1-B-SELL-001"], "rail": "offer", "block": "M1" },
+  "messages": [
+    "Hola",
+    "Quiero vender mi casa",
+    "Está en Cumbres",
+    "Vale como 8 millones",
+    "Me llamo Jorge"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "offer",
+    "operation_type": "sale",
+    "crm_ready": false
+  },
+  "must_not": {
+    "flow_restart": true,
+    "repeated_phrase": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-19", "change": "M1-PR-03 sticky sell." }]
+}

@@ -15,6 +15,7 @@ function normalizeLocationFromUserText(raw) {
   t = t.replace(/^(?:no|nop|nope)[,\s]+/i, '').trim();
 
   const lower = normalizeText(t);
+  let explicitLocation = false;
   /** Preguntas sin ancla de lugar no son colonia (evita contaminar `location_text` en flujos mixtos). */
   if (
     /\?/.test(t) &&
@@ -26,10 +27,22 @@ function normalizeLocationFromUserText(raw) {
     return null;
   }
 
-  if (lower.includes('cumbres')) return 'Cumbres';
-  if (/\bsan\s+pedro\b/.test(lower)) return 'San Pedro';
-  if (/\bgarcia\b/.test(lower) || /\bgarcía\b/.test(lower)) return 'García';
-  if (/\bcarretera\s+nacional\b/.test(lower)) return 'Carretera Nacional';
+  if (lower.includes('cumbres')) {
+    explicitLocation = true;
+    return 'Cumbres';
+  }
+  if (/\bsan\s+pedro\b/.test(lower)) {
+    explicitLocation = true;
+    return 'San Pedro';
+  }
+  if (/\bgarcia\b/.test(lower) || /\bgarcía\b/.test(lower)) {
+    explicitLocation = true;
+    return 'García';
+  }
+  if (/\bcarretera\s+nacional\b/.test(lower)) {
+    explicitLocation = true;
+    return 'Carretera Nacional';
+  }
 
   const queEn = t.match(/\bque\s+en\s+(.+)$/i);
   if (queEn && queEn[1]) {
@@ -46,13 +59,17 @@ function normalizeLocationFromUserText(raw) {
     const m = t.match(pattern);
     if (m && m[1]) {
       t = cleanSpaces(m[1]);
+      explicitLocation = true;
       break;
     }
   }
 
+  if (!explicitLocation) return null;
+
   t = t.replace(/^(?:la|el|los|las)\s+/i, '').trim();
   if (!t) return null;
   if (t.length > 120) t = t.slice(0, 120);
+  if (/^(busco|quiero|necesito)\b/i.test(t)) return null;
 
   return t;
 }

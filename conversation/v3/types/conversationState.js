@@ -84,6 +84,10 @@ function createInitialConversationState(seed = {}) {
     lastAssistantReplySignature: null,
     /** Saludos consecutivos sin goal (familia CHAOS vs REG). */
     consecutiveGreetingTurns: 0,
+    /** Ancla sticky — no degradar por mensajes ambiguos posteriores. */
+    stickyConversationGoal: null,
+    stickyLeadFlow: null,
+    stickyOperationType: null,
   };
 }
 
