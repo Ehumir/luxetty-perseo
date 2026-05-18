@@ -85,6 +85,33 @@ function pickOpeningVariant(state, candidates) {
 /**
  * @param {import('../types/conversationState').ConversationState} state
  */
+function getBuyDemandContinuityVariants(state) {
+  const zone = state.locationText ? ` en ${state.locationText}` : '';
+  const budget = state.budget != null ? ' con tu presupuesto' : '';
+  const variants = [
+    `Seguimos con tu búsqueda de compra${zone}${budget}. ¿Quieres afinar zona, presupuesto, recámaras o algún detalle (patio, etc.)?`,
+    'Perfecto, sigo contigo en la compra. Cuéntame qué criterio quieres ajustar sin reiniciar.',
+    'Tomé el contexto de tu búsqueda. ¿Afinamos zona, presupuesto o tamaño de la propiedad?',
+    'De acuerdo, continuamos con opciones de compra. ¿Qué dato quieres precisar ahora?',
+    'Gracias por el mensaje. Sigo con tu compra: dime si movemos zona, presupuesto o algún detalle.',
+    'Entendido. Mantengo tu búsqueda activa; ¿qué quieres afinar ahora?',
+    'Listo, aquí sigo. ¿Ajustamos presupuesto, zona o recámaras?',
+    'Perfecto. Cuando quieras, dime el siguiente criterio y lo incorporo a la búsqueda.',
+    'De acuerdo. ¿Seguimos con el mismo presupuesto o quieres cambiar algo más?',
+    'Gracias. Para no repetirte, dime el dato que quieres mover (zona, precio o tamaño).',
+  ];
+  if (!state.collectedFields?.fullName) {
+    variants.unshift('Para seguir con opciones de compra, ¿me compartes tu nombre?');
+  }
+  if (state.locationText && state.budget == null) {
+    variants.unshift(`Gracias. Para ${state.locationText}, ¿qué presupuesto aproximado manejas?`);
+  }
+  if (state.budget != null && !state.locationText) {
+    variants.unshift('¿En qué zona te gustaría enfocar la búsqueda con ese presupuesto?');
+  }
+  return variants;
+}
+
 function getRentDemandContinuityVariants(state) {
   const zone = state.locationText ? ` en ${state.locationText}` : '';
   const variants = [
@@ -111,7 +138,11 @@ function getRentDemandContinuityVariants(state) {
  */
 function composeGenericUnderstandingPrompt(state) {
   if (shouldSuppressGlobalIntentMenu(state)) {
-    const text = pickOpeningVariant(state, getRentDemandContinuityVariants(state));
+    const continuityVariants =
+      state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY
+        ? getBuyDemandContinuityVariants(state)
+        : getRentDemandContinuityVariants(state);
+    const text = pickOpeningVariant(state, continuityVariants);
     return {
       responseText: text,
       followUpQuestion: null,
@@ -187,7 +218,10 @@ function applyGeneralReplyAntiRepetition(input) {
 
   let candidates = [];
   if (shouldSuppressGlobalIntentMenu(state)) {
-    candidates = getRentDemandContinuityVariants(state);
+    candidates =
+      state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY
+        ? getBuyDemandContinuityVariants(state)
+        : getRentDemandContinuityVariants(state);
   } else if (isGlobalIntentMenu(replyText)) {
     candidates = [...GLOBAL_OPENING_VARIANTS];
   } else {
@@ -223,6 +257,8 @@ module.exports = {
   shouldApplyAntiRepetition,
   pickOpeningVariant,
   composeGenericUnderstandingPrompt,
+  getBuyDemandContinuityVariants,
+  getRentDemandContinuityVariants,
   composeSocialRapportReply,
   composeRentDemandKickoff,
   applyGeneralReplyAntiRepetition,

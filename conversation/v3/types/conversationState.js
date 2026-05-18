@@ -90,6 +90,8 @@ function createInitialConversationState(seed = {}) {
     stickyConversationGoal: null,
     stickyLeadFlow: null,
     stickyOperationType: null,
+    /** M1-D — historial de códigos consultados (más reciente primero). */
+    propertyHistory: [],
   };
 }
 

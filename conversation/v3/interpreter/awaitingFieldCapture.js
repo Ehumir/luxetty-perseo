@@ -53,7 +53,7 @@ function tryResolveAwaitingFieldCapture(state, raw, text, patch, decision) {
     }
   }
 
-  if (field === 'location_text' && !state.locationText) {
+  if (field === 'location_text') {
     const loc =
       tryParseQualificationLocation(state, raw) ||
       normalizeLocationFromUserText(raw) ||

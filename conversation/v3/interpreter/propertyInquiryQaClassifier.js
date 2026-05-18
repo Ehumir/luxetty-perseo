@@ -67,6 +67,7 @@ function classifyFactFamily(t) {
   if (/\b(link|url|enlace|mandame|m[aá]ndame|pasame|p[aá]same|p[aá]gina)\b/.test(t)) return 'link';
   if (/\b(fotos?|imagenes|im[aá]genes|galer[ií]a)\b/.test(t)) return 'photos';
   if (/\b(pisos|planta|niveles|patio|terreno|m2|m²|metros|rec[aá]maras?|habitaciones?|baños?|bath)\b/.test(t)) return 'layout';
+  if (/\b(diferencia|diferencias|comparar|comparaci[oó]n|versus|vs|entre\s+las\s+dos)\b/.test(t)) return 'compare';
   if (/\b(info|informaci[oó]n|detalles|m[aá]s\s+detalles|saber\s+m[aá]s|cu[eé]ntame)\b/.test(t)) return 'info';
   if (/\b(me\s+interesa|interesa|me\s+gusta)\b/.test(t)) return 'interest';
   if (/\?/.test(t) && t.length < 120) return 'generic';

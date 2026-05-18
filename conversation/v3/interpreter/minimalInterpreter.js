@@ -29,6 +29,8 @@ const { isSellValuationUnknownRequest } = require('./sellValuationSignals');
 const { classifyPropertyInquiryTurn } = require('./propertyInquiryQaClassifier');
 const { parsePaymentMethod } = require('./paymentMethodParser');
 const { isSocialRapportMessage } = require('../composer/openingVariantPicker');
+const { tryParseDemandRefinement } = require('./demandRefinement');
+const { appendPropertyHistory, resolvePropertyReferenceCode } = require('../property/propertyHistory');
 
 const { parseMoneyAmount } = require('./moneyParser');
 
@@ -36,6 +38,7 @@ function matchesBuyOpenSearchPattern(t, raw) {
   if (mentionsRentDemand(t) && !isRentOutIntent(raw)) return false;
   if (isExplicitFlowSwitchToBuy(raw)) return true;
   if (/\bbusco\b/.test(t) && /\bcasa\b/.test(t) && !/\brenta\b/.test(t)) return true;
+  if (/\bbusco\b/.test(t) && /\b(depa|depto|departamento)\b/.test(t) && !/\brenta\b/.test(t)) return true;
   if (/\bbusco\b/.test(t) && /\bcomprar\b/.test(t)) return true;
   if (/\b(?:quiero|necesito)\s+comprar\b/.test(t)) return true;
   if (/\bbusco\b/.test(t) && /\ben\s+[a-záéíóúñ]/i.test(String(raw || ''))) return true;
@@ -189,6 +192,9 @@ function interpretUserMessage(state, text, options = {}) {
     }
   }
 
+  const demandRefinement = tryParseDemandRefinement(state, raw, text, patch, decision);
+  if (demandRefinement) return demandRefinement;
+
   if (
     state.conversationGoalLocked &&
     isOfferFlow(state) &&
@@ -229,8 +235,15 @@ function interpretUserMessage(state, text, options = {}) {
     return { patch, decision };
   }
 
-  const codeHit = extractPropertyListingCode(raw);
+  let codeHit = extractPropertyListingCode(raw);
+  const refCode = !codeHit ? resolvePropertyReferenceCode(state, raw) : null;
+  if (refCode) {
+    codeHit = { raw: refCode, normalized: refCode };
+  }
   const persistedCode = state.propertyListingCode || null;
+  if (codeHit && persistedCode && codeHit.normalized !== persistedCode) {
+    patch.propertyHistory = appendPropertyHistory(state.propertyHistory, persistedCode);
+  }
   const effectiveCode = (codeHit && codeHit.normalized) || persistedCode;
 
   const lockedSellBlocksPropertyCode =
@@ -588,7 +601,10 @@ function interpretUserMessage(state, text, options = {}) {
     return { patch, decision };
   }
 
-  if (isSocialRapportMessage(raw) && !state.conversationGoalLocked) {
+  if (
+    isSocialRapportMessage(raw) ||
+    (state.conversationGoalLocked && /\b(gracias|muchas gracias)\b/.test(t))
+  ) {
     decision.detectedIntent = V3_INTENT.SOCIAL_RAPPORT;
     decision.confidence = 0.78;
     decision.explicitFlowSwitch = false;

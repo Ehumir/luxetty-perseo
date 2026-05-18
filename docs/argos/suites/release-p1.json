@@ -1,0 +1,10 @@
+{
+  "suite": "release-p1",
+  "description": "Ola P1 demanda — refinamiento, multi-propiedad y continuidad larga (M1-D).",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": [
+    "DEMAND_003.v1.json",
+    "DEMAND_005.v1.json",
+    "DEMAND_006.v1.json"
+  ]
+}

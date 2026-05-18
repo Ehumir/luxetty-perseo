@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "DEMAND_006",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "demand",
+  "category": "compra_conversacion_larga",
+  "title": "Compra — conversación larga con mensajes cortos",
+  "description": "12+ turnos con acks y ajustes menores; mantiene continuidad demand sin degradar a menú.",
+  "typology": { "corpus_ids": ["DEM-P1-006"], "rail": "demand", "block": "M1-D" },
+  "messages": [
+    "Hola",
+    "Busco depa",
+    "Cumbres",
+    "4 millones",
+    "Luis",
+    "enterado",
+    "3 recámaras",
+    "mmm",
+    "más barato",
+    "3.2 millones",
+    "entendido",
+    "¿y con patio?",
+    "muchas gracias"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "demand",
+    "operation_type": "sale",
+    "known_name": "Luis",
+    "known_zone": "Cumbres",
+    "known_budget": 3200000,
+    "crm_ready": false
+  },
+  "must_not": {
+    "flow_restart": true,
+    "repeated_phrase": true,
+    "repeated_question": true,
+    "offer_to_demand": true,
+    "demand_to_offer": true,
+    "robotic_response": true,
+    "slot_reask_when_filled": true,
+    "verbose_response": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "forced_handoff": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-19", "change": "M1-D DEMAND_006 long-turn continuity." }]
+}
