@@ -54,6 +54,7 @@ function evaluateV3PrimaryGate(input) {
   const phoneArg = String(input?.phone || '');
   const cfg = getPerseoV3Config();
   const engineRequested = String(process.env.PERSEO_ENGINE || 'legacy').trim().toLowerCase() || 'legacy';
+  const argosMode = input?.argosMode === true && process.env.PERSEO_ARGOS_ENABLED === 'true';
 
   const normalizedInbound = normalizeInboundPhoneForV3(phoneArg);
   const normalizedRaw = normalizeInboundPhoneForV3(rawPhone);
@@ -63,12 +64,32 @@ function evaluateV3PrimaryGate(input) {
     v3_shadow_mode: cfg.shadowMode,
     v3_engine_requested: engineRequested,
     v3_requires_perseo_engine_v3: false,
+    argos_mode: argosMode,
     inbound_raw: rawPhone || null,
     inbound_normalized: normalizedInbound,
     inbound_normalized_from_raw: normalizedRaw,
     allowlist_entries_raw: cfg.qaAllowlist,
     allowlist_entries_normalized: cfg.qaAllowlist.map((e) => normalizeAllowlistEntry(e)),
   };
+
+  if (argosMode) {
+    if (!cfg.enabled) {
+      return {
+        ...base,
+        allowlist_match: false,
+        v3_primary_allowed: false,
+        v3_primary_block_reason: 'v3_disabled',
+        route: 'legacy_primary',
+      };
+    }
+    return {
+      ...base,
+      allowlist_match: true,
+      v3_primary_allowed: true,
+      v3_primary_block_reason: null,
+      route: 'v3_primary',
+    };
+  }
 
   if (!cfg.enabled) {
     return {

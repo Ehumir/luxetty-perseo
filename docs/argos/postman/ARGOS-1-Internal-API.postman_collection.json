@@ -1,0 +1,567 @@
+{
+  "info": {
+    "_postman_id": "argos-1-internal-api-luxetty",
+    "name": "ARGOS-1 — PERSEO Internal API",
+    "description": "Colección de contrato para ARGOS-1 (luxetty-perseo).\n\n**Prerequisitos**\n- `PERSEO_ARGOS_ENABLED=true`\n- `ARGOS_SERVICE_SECRET` configurado en servidor y variable Postman\n- `PERSEO_V3_ENABLED=true`\n- `PERSEO_V3_CRM_EXECUTE=false` (crítico en QA)\n\n**Headers en todas las requests (excepto health si `ARGOS_HEALTH_PUBLIC=true`)**\n- `X-Argos-Service-Secret: {{argos_service_secret}}`\n- `X-Argos-Admin-User-Id: {{argos_admin_user_id}}` (opcional, audit)\n- `Content-Type: application/json`\n\n**Orden sugerido de prueba**\n1. Health\n2. simulate-turn (crear sesión)\n3. simulate-turn × N (flujo conversación)\n4. crm-dry-run\n5. reset-session (crm)\n6. run-scenario (batch en un request)\n\n**Versión contrato:** 1.2 — 2026-05-15",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "perseo_base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "argos_service_secret",
+      "value": "CHANGE_ME_ARGOS_SECRET",
+      "type": "string"
+    },
+    {
+      "key": "argos_admin_user_id",
+      "value": "00000000-0000-0000-0000-000000000001",
+      "type": "string"
+    },
+    {
+      "key": "phone_sim",
+      "value": "5218100000001",
+      "type": "string"
+    },
+    {
+      "key": "session_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /internal/argos/health",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/health",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "health"]
+            },
+            "description": "Valida que ARGOS está habilitado y reporta flags de entorno.\n\n**200 esperado** con `ok: true` y `argos_enabled: true`."
+          },
+          "response": [
+            {
+              "name": "200 OK — QA healthy",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ok\": true,\n  \"argos_enabled\": true,\n  \"v3_enabled\": true,\n  \"crm_execute\": false,\n  \"crm_dry_run\": true,\n  \"environment\": \"qa\",\n  \"openai_available\": true,\n  \"supabase_available\": true,\n  \"build_sha\": \"abc1234def5678\",\n  \"version\": \"1.0.0-argos\",\n  \"limits\": {\n    \"max_turns_per_scenario\": 30,\n    \"max_assistant_replies_consecutive\": 8,\n    \"scenario_timeout_ms\": 120000,\n    \"turn_timeout_ms\": 30000\n  }\n}"
+            },
+            {
+              "name": "403 — ARGOS disabled",
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ok\": false,\n  \"error_code\": \"argos_disabled\",\n  \"message\": \"PERSEO_ARGOS_ENABLED is not true\"\n}"
+            },
+            {
+              "name": "401 — Invalid secret",
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"ok\": false,\n  \"error_code\": \"argos_unauthorized\",\n  \"message\": \"Invalid X-Argos-Service-Secret\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Simulate Turn",
+      "item": [
+        {
+          "name": "POST simulate-turn — Hola (nueva sesión)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.session_id) {",
+                  "  pm.collectionVariables.set('session_id', json.session_id);",
+                  "  pm.test('session_id returned', () => pm.expect(json.session_id).to.be.a('string'));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}"
+              },
+              {
+                "key": "X-Argos-Admin-User-Id",
+                "value": "{{argos_admin_user_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_sim\": \"{{phone_sim}}\",\n  \"text\": \"Hola\",\n  \"flags\": {\n    \"deterministic_mode\": true,\n    \"crm_dry_run\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/simulate-turn",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "simulate-turn"]
+            },
+            "description": "Primer turno sin `session_id` — el servidor genera uno.\n\nScript de test guarda `session_id` en variable de colección."
+          },
+          "response": [
+            {
+              "name": "200 — Turn 1 greeting",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"session_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"reply\": \"Hola, con gusto te ayudo. ¿Buscas comprar, rentar o vender una propiedad?\",\n  \"conversation_snapshot\": {\n    \"detected_intent\": null,\n    \"conversation_stage\": \"OPEN\",\n    \"conversation_goal\": null,\n    \"lead_flow\": null,\n    \"operation_type\": null,\n    \"known_name\": null,\n    \"known_budget\": null,\n    \"known_zone\": null,\n    \"property_code\": null,\n    \"interested_property_id\": null,\n    \"crm_ready\": false,\n    \"advisor_contact_consent\": \"PENDING\",\n    \"handoff_sent\": false\n  },\n  \"technical_panel\": {\n    \"intent\": null,\n    \"lead_type\": null,\n    \"operation\": null,\n    \"would_ask_name\": false,\n    \"would_handoff\": false,\n    \"would_create_contact\": false,\n    \"would_reuse_contact\": false,\n    \"would_create_lead\": false,\n    \"would_reuse_lead\": false,\n    \"assignment_strategy\": null,\n    \"assigned_agent_profile_id\": null\n  },\n  \"crm_dry_run\": null,\n  \"gates\": {\n    \"argos_enabled\": true,\n    \"v3_primary_allowed\": true,\n    \"crm_execution_eligible\": false,\n    \"crm_skip_reason\": \"stage_not_crm_ready\"\n  },\n  \"events\": [\n    { \"at\": \"2026-05-15T18:00:00.000Z\", \"type\": \"argos_turn_started\", \"turn\": 1 },\n    { \"at\": \"2026-05-15T18:00:00.100Z\", \"type\": \"v3_primary_allowed\", \"turn\": 1 }\n  ],\n  \"debug_trace\": [\n    { \"at\": \"2026-05-15T18:00:00.000Z\", \"phase\": \"gate\", \"type\": \"argos_enabled\", \"payload\": { \"enabled\": true } },\n    { \"at\": \"2026-05-15T18:00:00.050Z\", \"phase\": \"gate\", \"type\": \"v3_primary_gate\", \"payload\": { \"allowlist_match\": true, \"argos_mode\": true } },\n    { \"at\": \"2026-05-15T18:00:00.080Z\", \"phase\": \"parser\", \"type\": \"message_signals\", \"payload\": { \"greeting\": true } },\n    { \"at\": \"2026-05-15T18:00:00.120Z\", \"phase\": \"v3\", \"type\": \"v3_stage_transition\", \"payload\": { \"from\": null, \"to\": \"OPEN\" } },\n    { \"at\": \"2026-05-15T18:00:00.150Z\", \"phase\": \"safety\", \"type\": \"whatsapp_blocked\", \"payload\": { \"reason\": \"argos_mode\" } }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST simulate-turn — Compra Cumbres",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}"
+              },
+              {
+                "key": "X-Argos-Admin-User-Id",
+                "value": "{{argos_admin_user_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"phone_sim\": \"{{phone_sim}}\",\n  \"text\": \"Busco casa en Cumbres\",\n  \"flags\": {\n    \"deterministic_mode\": true,\n    \"crm_dry_run\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/simulate-turn",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "simulate-turn"]
+            }
+          },
+          "response": [
+            {
+              "name": "200 — Demand zone captured",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"session_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"reply\": \"Perfecto, Cumbres es una excelente zona. ¿Me compartes tu nombre para orientarte mejor?\",\n  \"conversation_snapshot\": {\n    \"detected_intent\": \"buy\",\n    \"conversation_stage\": \"QUALIFYING\",\n    \"conversation_goal\": \"purchase\",\n    \"lead_flow\": \"demand\",\n    \"operation_type\": \"purchase\",\n    \"known_name\": null,\n    \"known_budget\": null,\n    \"known_zone\": \"Cumbres\",\n    \"property_code\": null,\n    \"interested_property_id\": null,\n    \"crm_ready\": false,\n    \"advisor_contact_consent\": \"PENDING\",\n    \"handoff_sent\": false\n  },\n  \"technical_panel\": {\n    \"intent\": \"buy\",\n    \"lead_type\": \"demand\",\n    \"operation\": \"purchase\",\n    \"zone\": \"Cumbres\",\n    \"would_ask_name\": true,\n    \"would_handoff\": false,\n    \"would_create_contact\": false,\n    \"would_reuse_contact\": false,\n    \"would_create_lead\": false,\n    \"would_reuse_lead\": false\n  },\n  \"crm_dry_run\": null,\n  \"gates\": {\n    \"argos_enabled\": true,\n    \"v3_primary_allowed\": true,\n    \"crm_execution_eligible\": false,\n    \"crm_skip_reason\": \"consent_not_accepted\"\n  },\n  \"events\": [\n    { \"at\": \"2026-05-15T18:01:00.000Z\", \"type\": \"intent_detected\", \"intent\": \"buy\" }\n  ],\n  \"debug_trace\": [\n    { \"phase\": \"parser\", \"type\": \"message_signals\", \"payload\": { \"location_text\": \"Cumbres\", \"intent_buy\": true } },\n    { \"phase\": \"v3\", \"type\": \"v3_stage_transition\", \"payload\": { \"from\": \"OPEN\", \"to\": \"QUALIFYING\" } }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST simulate-turn — Presupuesto + nombre",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}"
+              },
+              {
+                "key": "X-Argos-Admin-User-Id",
+                "value": "{{argos_admin_user_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"phone_sim\": \"{{phone_sim}}\",\n  \"text\": \"Jorge, tengo 5 millones\",\n  \"flags\": {\n    \"deterministic_mode\": true,\n    \"crm_dry_run\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/simulate-turn",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "simulate-turn"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST simulate-turn — Consent asesor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}"
+              },
+              {
+                "key": "X-Argos-Admin-User-Id",
+                "value": "{{argos_admin_user_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"phone_sim\": \"{{phone_sim}}\",\n  \"text\": \"Sí, que me contacte un asesor\",\n  \"flags\": {\n    \"deterministic_mode\": true,\n    \"crm_dry_run\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/simulate-turn",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "simulate-turn"]
+            },
+            "description": "Tras consent, puede aparecer `crm_dry_run` en el mismo turno si stage CRM_READY."
+          },
+          "response": [
+            {
+              "name": "200 — CRM ready preview inline",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"session_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"reply\": \"Gracias Jorge. Un asesor de Luxetty te contactará pronto para mostrarte opciones en Cumbres.\",\n  \"conversation_snapshot\": {\n    \"detected_intent\": \"buy\",\n    \"conversation_stage\": \"CRM_READY\",\n    \"known_name\": \"Jorge\",\n    \"known_budget\": 5000000,\n    \"known_zone\": \"Cumbres\",\n    \"crm_ready\": true,\n    \"advisor_contact_consent\": \"ACCEPTED\"\n  },\n  \"crm_dry_run\": {\n    \"skipped\": false,\n    \"contact\": {\n      \"action\": \"would_create\",\n      \"would_create_contact\": true,\n      \"would_reuse_contact\": false,\n      \"normalized_whatsapp\": \"5218100000001\",\n      \"assigned_agent_profile_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\"\n    },\n    \"lead\": {\n      \"action\": \"would_create\",\n      \"would_create_lead\": true,\n      \"would_reuse_lead\": false,\n      \"lead_type\": \"demand\",\n      \"operation\": \"purchase\",\n      \"interested_property_id\": null,\n      \"assigned_agent_profile_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\"\n    },\n    \"conversation\": {\n      \"would_link_conversation\": true,\n      \"would_update_ai_state\": true\n    },\n    \"assignment\": {\n      \"assignment_strategy\": \"assignment_engine\",\n      \"assigned_agent_profile_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\"\n    },\n    \"ownership_validation\": {\n      \"passed\": true,\n      \"rule\": \"RULE_3_ENGINE_FALLBACK\",\n      \"violations\": []\n    },\n    \"notifications\": {\n      \"would_notify_agent\": false\n    },\n    \"errors\": [],\n    \"warnings\": []\n  },\n  \"events\": [\n    { \"type\": \"advisor_consent_accepted\" },\n    { \"type\": \"crm_preview_completed\" }\n  ],\n  \"debug_trace\": [\n    { \"phase\": \"crm_preview\", \"type\": \"contact_plan\", \"payload\": { \"action\": \"would_create\" } },\n    { \"phase\": \"crm_preview\", \"type\": \"lead_plan\", \"payload\": { \"action\": \"would_create\", \"lead_type\": \"demand\" } },\n    { \"phase\": \"crm_preview\", \"type\": \"assignment_strategy\", \"payload\": { \"strategy\": \"assignment_engine\" } },\n    { \"phase\": \"ownership\", \"type\": \"ownership_validation_pass\", \"payload\": { \"rule\": \"RULE_3_ENGINE_FALLBACK\" } }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CRM Dry Run",
+      "item": [
+        {
+          "name": "POST crm-dry-run — sesión actual",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}"
+              },
+              {
+                "key": "X-Argos-Admin-User-Id",
+                "value": "{{argos_admin_user_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"phone_sim\": \"{{phone_sim}}\",\n  \"v3_state\": null\n}"
+            },
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/crm-dry-run",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "crm-dry-run"]
+            },
+            "description": "Fuerza preview CRM desde estado de sesión. `v3_state: null` usa estado persistido en memoria."
+          },
+          "response": [
+            {
+              "name": "200 — Full crm_dry_run",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"session_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"conversation_snapshot\": {\n    \"detected_intent\": \"buy\",\n    \"conversation_stage\": \"CRM_READY\",\n    \"known_name\": \"Jorge\",\n    \"known_budget\": 5000000,\n    \"known_zone\": \"Cumbres\",\n    \"crm_ready\": true\n  },\n  \"crm_dry_run\": {\n    \"skipped\": false,\n    \"contact\": {\n      \"action\": \"would_create\",\n      \"would_create_contact\": true,\n      \"would_reuse_contact\": false,\n      \"normalized_whatsapp\": \"5218100000001\",\n      \"assigned_agent_profile_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\"\n    },\n    \"lead\": {\n      \"action\": \"would_create\",\n      \"would_create_lead\": true,\n      \"would_reuse_lead\": false,\n      \"lead_type\": \"demand\",\n      \"operation\": \"purchase\",\n      \"interested_property_id\": null,\n      \"assigned_agent_profile_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\"\n    },\n    \"conversation\": {\n      \"would_link_conversation\": true,\n      \"would_update_ai_state\": true\n    },\n    \"assignment\": {\n      \"assignment_strategy\": \"assignment_engine\",\n      \"assigned_agent_profile_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\"\n    },\n    \"ownership_validation\": {\n      \"passed\": true,\n      \"rule\": \"RULE_3_ENGINE_FALLBACK\",\n      \"violations\": []\n    },\n    \"errors\": [],\n    \"warnings\": []\n  },\n  \"events\": [{ \"type\": \"crm_dry_run_requested\" }],\n  \"debug_trace\": [\n    { \"phase\": \"gate\", \"type\": \"crm_execution_gate\", \"payload\": { \"eligible\": true } },\n    { \"phase\": \"crm_preview\", \"type\": \"crm_skip_reason\", \"payload\": null }\n  ]\n}"
+            },
+            {
+              "name": "200 — Skipped not CRM ready",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"session_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"crm_dry_run\": {\n    \"skipped\": true,\n    \"reason\": \"stage_not_crm_ready\",\n    \"errors\": [],\n    \"warnings\": []\n  },\n  \"events\": [],\n  \"debug_trace\": [\n    { \"phase\": \"gate\", \"type\": \"crm_execution_gate\", \"payload\": { \"eligible\": false, \"reason\": \"stage_not_crm_ready\" } }\n  ]\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reset Session",
+      "item": [
+        {
+          "name": "POST reset-session — mode crm (!resetcrm)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}"
+              },
+              {
+                "key": "X-Argos-Admin-User-Id",
+                "value": "{{argos_admin_user_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"mode\": \"crm\"\n}"
+            },
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/reset-session",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "reset-session"]
+            },
+            "description": "Equivalente `!resetcrm`: limpia vínculos CRM en memoria y activa `qa_crm_force_new_lead`.\n\n**No usar** `mode: full` entre resetcrm y F6 en pruebas ownership."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"session_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"ok\": true,\n  \"mode\": \"crm\",\n  \"conversation_snapshot\": {\n    \"crm_ready\": false,\n    \"known_name\": \"Jorge\",\n    \"known_zone\": \"Cumbres\"\n  },\n  \"events\": [{ \"type\": \"qa_crm_reset_completed\" }],\n  \"debug_trace\": [\n    { \"phase\": \"crm_preview\", \"type\": \"qa_crm_force_new_lead\", \"payload\": { \"value\": true } }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST reset-session — mode full",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"mode\": \"full\"\n}"
+            },
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/reset-session",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "reset-session"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Run Scenario",
+      "item": [
+        {
+          "name": "POST run-scenario — DEMAND_002 Cumbres 5M",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}"
+              },
+              {
+                "key": "X-Argos-Admin-User-Id",
+                "value": "{{argos_admin_user_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_sim\": \"5218100000999\",\n  \"flags\": {\n    \"deterministic_mode\": true,\n    \"crm_dry_run\": true\n  },\n  \"scenario\": {\n    \"scenario_code\": \"DEMAND_002\",\n    \"messages\": [\n      \"Hola\",\n      \"Busco casa en Cumbres\",\n      \"Tengo presupuesto de 5 millones\",\n      \"Jorge\",\n      \"Sí, que me contacte un asesor\"\n    ],\n    \"expected\": {\n      \"intent\": \"buy\",\n      \"lead_type\": \"demand\",\n      \"operation\": \"purchase\",\n      \"should_ask_name\": true,\n      \"should_create_contact\": true,\n      \"should_create_lead\": true\n    },\n    \"must_not\": {\n      \"invent_property\": true,\n      \"invent_price\": true,\n      \"use_requests_table\": true,\n      \"send_whatsapp\": true,\n      \"write_contacts\": true,\n      \"write_leads\": true\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/run-scenario",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "run-scenario"]
+            }
+          },
+          "response": [
+            {
+              "name": "200 — pass",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"session_id\": \"660e8400-e29b-41d4-a716-446655440001\",\n  \"scenario_code\": \"DEMAND_002\",\n  \"status\": \"pass\",\n  \"turns_executed\": 5,\n  \"duration_ms\": 4523,\n  \"transcript\": [\n    { \"turn\": 1, \"role\": \"user\", \"text\": \"Hola\" },\n    { \"turn\": 1, \"role\": \"assistant\", \"text\": \"...\" },\n    { \"turn\": 2, \"role\": \"user\", \"text\": \"Busco casa en Cumbres\" },\n    { \"turn\": 2, \"role\": \"assistant\", \"text\": \"...\" }\n  ],\n  \"actual\": {\n    \"intent\": \"buy\",\n    \"lead_type\": \"demand\",\n    \"operation\": \"purchase\",\n    \"would_create_contact\": true,\n    \"would_create_lead\": true,\n    \"assignment_strategy\": \"assignment_engine\",\n    \"assigned_agent_profile_id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\"\n  },\n  \"diff\": [],\n  \"must_not_violations\": [],\n  \"crm_dry_run\": { \"skipped\": false, \"ownership_validation\": { \"passed\": true } },\n  \"conversation_snapshot\": {\n    \"detected_intent\": \"buy\",\n    \"conversation_stage\": \"CRM_READY\",\n    \"known_name\": \"Jorge\",\n    \"known_budget\": 5000000,\n    \"known_zone\": \"Cumbres\",\n    \"crm_ready\": true\n  },\n  \"events\": [{ \"type\": \"scenario_completed\", \"status\": \"pass\" }],\n  \"debug_trace\": []\n}"
+            },
+            {
+              "name": "200 — fail with diff",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"scenario_code\": \"DEMAND_002\",\n  \"status\": \"fail\",\n  \"diff\": [\n    {\n      \"field\": \"should_create_lead\",\n      \"expected\": true,\n      \"actual\": false,\n      \"severity\": \"high\"\n    }\n  ],\n  \"must_not_violations\": [],\n  \"events\": [{ \"type\": \"scenario_completed\", \"status\": \"fail\" }]\n}"
+            },
+            {
+              "name": "200 — error LOOP_DETECTED",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"scenario_code\": \"CHAOS_001\",\n  \"status\": \"error\",\n  \"error_code\": \"LOOP_DETECTED\",\n  \"message\": \"Conversation loop detected at turn 8\",\n  \"turns_executed\": 8,\n  \"events\": [{ \"type\": \"scenario_aborted\", \"reason\": \"LOOP_DETECTED\" }],\n  \"debug_trace\": [\n    { \"phase\": \"safety\", \"type\": \"loop_guard\", \"payload\": { \"turn\": 8, \"repeated_stage\": \"QUALIFYING\" } }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST run-scenario — PROP_003 must_not invent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_sim\": \"5218100000888\",\n  \"flags\": { \"deterministic_mode\": true },\n  \"scenario\": {\n    \"scenario_code\": \"PROP_003\",\n    \"messages\": [\n      \"Me interesa LUX-INVALID-999\",\n      \"¿Cuánto cuesta?\"\n    ],\n    \"expected\": {\n      \"intent\": \"buy\"\n    },\n    \"must_not\": {\n      \"invent_property\": true,\n      \"invent_price\": true,\n      \"invent_link\": true\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/run-scenario",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "run-scenario"]
+            }
+          },
+          "response": [
+            {
+              "name": "200 — fail must_not",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"scenario_code\": \"PROP_003\",\n  \"status\": \"fail\",\n  \"diff\": [],\n  \"must_not_violations\": [\n    {\n      \"constraint\": \"must_not.invent_price\",\n      \"detail\": \"Reply contained price without property facts\",\n      \"severity\": \"critical\"\n    }\n  ],\n  \"events\": [{ \"type\": \"scenario_completed\", \"status\": \"fail\" }]\n}"
+            }
+          ]
+        },
+        {
+          "name": "POST run-scenario — DEMAND_OWNER_001",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Argos-Service-Secret",
+                "value": "{{argos_service_secret}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_sim\": \"5218111111111\",\n  \"flags\": { \"deterministic_mode\": true, \"crm_dry_run\": true },\n  \"scenario\": {\n    \"scenario_code\": \"DEMAND_OWNER_001\",\n    \"title\": \"Contacto existente + propiedad — lead al dueño contacto\",\n    \"messages\": [\n      \"Hola, me interesa LUX-A0470\",\n      \"Jorge\",\n      \"5 millones\",\n      \"Sí contactenme\"\n    ],\n    \"expected\": {\n      \"assignment_strategy\": \"contact_owner\",\n      \"lead_type\": \"demand\"\n    },\n    \"must_not\": {\n      \"change_contact_owner\": true,\n      \"use_requests_table\": true\n    },\n    \"setup\": {\n      \"seed_existing_contact\": true,\n      \"existing_contact_agent_profile_id\": \"CONTACT-OWNER-UUID\",\n      \"property_code\": \"LUX-A0470\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{perseo_base_url}}/internal/argos/run-scenario",
+              "host": ["{{perseo_base_url}}"],
+              "path": ["internal", "argos", "run-scenario"]
+            },
+            "description": "`setup` es opcional v1.2 — implementación puede usar mocks en deterministic_mode para contacto preexistente."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

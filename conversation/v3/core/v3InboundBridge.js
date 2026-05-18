@@ -27,6 +27,7 @@ function tryV3PrimaryReply(input) {
   const gate = evaluateV3PrimaryGate({
     phone: input.phone,
     rawPhone: input.rawPhone,
+    argosMode: input.argosMode === true,
   });
 
   v3Log('v3_primary_gate', {
@@ -111,6 +112,8 @@ function tryV3PrimaryReply(input) {
       reply: result.reply,
       responseSource: result.responseSource || 'v3_core_f2',
       v3State: result.state,
+      decision: result.decision || null,
+      guard: result.guard || null,
       skipLegacyCrm: true,
     };
   } catch (err) {

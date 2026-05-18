@@ -15,20 +15,22 @@ const { evaluateV3PrimaryGate, getPerseoV3Config } = require('../../../config/pe
 function evaluateV3CrmExecutionGate(input) {
   const state = input.state || {};
   const cfg = input.config || getPerseoV3Config();
+  const argosPreview = input.argosPreview === true || input.previewOnly === true;
   const gate =
     input.primaryGate ||
     evaluateV3PrimaryGate({
       phone: input.phone || state.phone || '',
       rawPhone: input.rawPhone || null,
+      argosMode: input.argosMode === true,
     });
 
   if (!cfg.enabled) {
     return { eligible: false, reason: 'v3_disabled', gate };
   }
-  if (!gate.allowlist_match) {
+  if (!gate.allowlist_match && !(argosPreview && gate.argos_mode)) {
     return { eligible: false, reason: 'allowlist_no_match', gate };
   }
-  if (!cfg.crmExecute) {
+  if (!cfg.crmExecute && !argosPreview) {
     return { eligible: false, reason: 'crm_execute_disabled', gate };
   }
   if (state.conversationStage !== CONVERSATION_STAGES.CRM_READY) {

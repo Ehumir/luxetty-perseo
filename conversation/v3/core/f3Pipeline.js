@@ -62,11 +62,31 @@ function runF3Pipeline(input) {
         crmPayloadPreview: payload,
         conversationStage: CONVERSATION_STAGES.CRM_READY,
         handoffStage: CONVERSATION_STAGES.CRM_READY,
+        awaitingField: null,
       });
       v3Log('crm_dry_run_payload', {
         conversation_id: next.conversationId,
         intent: payload.intent,
         advisor_contact_consent: payload.advisor_contact_consent,
+      });
+    } else if (!plannerOut.qualificationComplete && plannerOut.missingSlots?.length) {
+      const nextSlot = plannerOut.nextSlot || plannerOut.missingSlots[0];
+      const awaitingField =
+        nextSlot === 'full_name'
+          ? 'full_name'
+          : nextSlot === 'property_type_or_bedrooms' || nextSlot === 'property_type'
+            ? 'property_type'
+            : nextSlot;
+      next = mergeConversationState(next, {
+        conversationStage: CONVERSATION_STAGES.QUALIFYING,
+        handoffStage: CONVERSATION_STAGES.QUALIFYING,
+        qualificationMissingSlots: [...plannerOut.missingSlots],
+        awaitingField,
+      });
+      v3Log('crm_accepted_resume_qualification', {
+        conversation_id: next.conversationId,
+        missing_slots: plannerOut.missingSlots,
+        next_slot: nextSlot,
       });
     }
   }

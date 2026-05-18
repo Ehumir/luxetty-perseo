@@ -1194,6 +1194,10 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
+const { argosAuthMiddleware } = require('./argos/middleware/argosAuth');
+const internalArgosRouter = require('./argos/routes/internalArgosRouter');
+app.use('/internal/argos', argosAuthMiddleware, internalArgosRouter);
+
 if (require.main === module) {
   app.listen(PORT, () => {
     const engineRt = getPerseoEngineRuntime();
@@ -1208,9 +1212,12 @@ if (require.main === module) {
   });
 }
 
+const { processInboundForArgos } = require('./argos/processInboundForArgos');
+
 module.exports = {
   app,
   _private: {
+    processInboundForArgos,
     requiresName,
     replyAlreadyAsksName,
     enforceNameCapture,
