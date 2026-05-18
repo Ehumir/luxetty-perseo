@@ -27,6 +27,7 @@ const { extractAffirmationName } = require('./identityNameParser');
 const { isSellValuationUnknownRequest } = require('./sellValuationSignals');
 const { classifyPropertyInquiryTurn } = require('./propertyInquiryQaClassifier');
 const { parsePaymentMethod } = require('./paymentMethodParser');
+const { isSocialRapportMessage } = require('../composer/openingVariantPicker');
 
 function parseMoneyAmount(text) {
   const t = normalizeText(text);
@@ -53,8 +54,9 @@ function parseMoneyAmount(text) {
 }
 
 function matchesBuyOpenSearchPattern(t, raw) {
+  if (mentionsRentDemand(t) && !isRentOutIntent(raw)) return false;
   if (isExplicitFlowSwitchToBuy(raw)) return true;
-  if (/\bbusco\b/.test(t) && /\bcasa\b/.test(t)) return true;
+  if (/\bbusco\b/.test(t) && /\bcasa\b/.test(t) && !/\brenta\b/.test(t)) return true;
   if (/\bbusco\b/.test(t) && /\bcomprar\b/.test(t)) return true;
   if (/\b(?:quiero|necesito)\s+comprar\b/.test(t)) return true;
   if (/\bbusco\b/.test(t) && /\ben\s+[a-záéíóúñ]/i.test(String(raw || ''))) return true;
@@ -442,6 +444,21 @@ function interpretUserMessage(state, text, options = {}) {
     return { patch, decision };
   }
 
+  const wantsRentPhrase =
+    t.includes('rentar') || t.includes('arrendar') || (t.includes('renta') && t.includes('busco'));
+  if (wantsRentPhrase && (!state.conversationGoalLocked || isExplicitFlowSwitchToRentDemand(text))) {
+    decision.detectedIntent = V3_INTENT.RENT_PROPERTY;
+    decision.confidence = 0.8;
+    decision.explicitFlowSwitch = state.conversationGoalLocked ? isExplicitFlowSwitchToRentDemand(text) : true;
+    patch.conversationGoal = CONVERSATION_GOALS.RENT_PROPERTY;
+    patch.leadFlow = 'demand';
+    patch.operationType = 'rent';
+    const rentType = parsePropertyType(text);
+    if (rentType) applyPropertyTypePatch(patch, rentType);
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    return { patch, decision };
+  }
+
   if (
     matchesBuyOpenSearchPattern(t, raw) &&
     (!state.conversationGoalLocked || isExplicitFlowSwitchToBuy(text))
@@ -462,19 +479,6 @@ function interpretUserMessage(state, text, options = {}) {
     patch.leadFlow = 'offer';
     patch.operationType = 'rent';
     applyPropertyTypePatch(patch, parsePropertyType(text) || null);
-    decision.shouldAskName = !state.collectedFields?.fullName;
-    return { patch, decision };
-  }
-
-  const wantsRentPhrase =
-    t.includes('rentar') || t.includes('arrendar') || (t.includes('renta') && t.includes('busco'));
-  if (wantsRentPhrase && (!state.conversationGoalLocked || isExplicitFlowSwitchToRentDemand(text))) {
-    decision.detectedIntent = V3_INTENT.RENT_PROPERTY;
-    decision.confidence = 0.8;
-    decision.explicitFlowSwitch = state.conversationGoalLocked ? isExplicitFlowSwitchToRentDemand(text) : true;
-    patch.conversationGoal = CONVERSATION_GOALS.RENT_PROPERTY;
-    patch.leadFlow = 'demand';
-    patch.operationType = 'rent';
     decision.shouldAskName = !state.collectedFields?.fullName;
     return { patch, decision };
   }
@@ -563,6 +567,14 @@ function interpretUserMessage(state, text, options = {}) {
     }
     decision.confidence = 0.88;
     decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
+  if (isSocialRapportMessage(raw) && !state.conversationGoalLocked) {
+    decision.detectedIntent = V3_INTENT.SOCIAL_RAPPORT;
+    decision.confidence = 0.78;
+    decision.explicitFlowSwitch = false;
+    decision.nextSuggestedStage = CONVERSATION_STAGES.UNDERSTANDING;
     return { patch, decision };
   }
 

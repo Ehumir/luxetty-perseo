@@ -22,6 +22,7 @@
       "PROP_003.v1.json",
       "CHAOS_001.v1.json"
     ],
+    "humanity-p0": ["HUMANITY_001.v1.json", "REG_GREETING_001.v1.json"],
     "P1": [
       "DEMAND_003.v1.json",
       "DEMAND_005.v1.json",
@@ -37,6 +38,7 @@
     "P2": [],
     "HUMANITY": [
       "HUMANITY_001.v1.json",
+      "REG_GREETING_001.v1.json",
       "HUMANITY_002.v1.json",
       "HUMANITY_003.v1.json",
       "HUMANITY_004.v1.json",
@@ -47,7 +49,7 @@
   "planned_not_yet_committed": {
     "P1": "Archivos listados; crear en olas S3",
     "P2": "Ver matriz en ARGOS-CONVERSATIONAL-TRAINING-STRATEGY-v1.md §7.3",
-    "HUMANITY_001": "Manual review v1; escenario JSON opcional P0"
+    "HUMANITY_002": "M1-B+ escenarios confundido/cortante"
   },
   "corpus_governance": "docs/argos/datasets/corpus-index.yaml"
 }

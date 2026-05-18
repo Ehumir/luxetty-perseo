@@ -61,6 +61,8 @@ const V3_INTENT = Object.freeze({
   PROPERTY_QA_SOFT_CLOSE: 'PROPERTY_QA_SOFT_CLOSE',
   RENT_OUT_PROPERTY: 'RENT_OUT_PROPERTY',
   FRUSTRATION: 'FRUSTRATION',
+  /** M1 — rapport social sin reiniciar menú global. */
+  SOCIAL_RAPPORT: 'SOCIAL_RAPPORT',
   UNKNOWN: 'UNKNOWN',
 });
 

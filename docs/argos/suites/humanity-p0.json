@@ -1,0 +1,6 @@
+{
+  "suite": "humanity-p0",
+  "description": "Gate M1 percepción humana — anti-repetición y continuidad básica.",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": ["HUMANITY_001.v1.json", "REG_GREETING_001.v1.json"]
+}

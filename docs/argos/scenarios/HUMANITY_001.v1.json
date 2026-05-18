@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "HUMANITY_001",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "humanity",
+  "category": "natural_flow_rent",
+  "title": "HUMANITY — rapport y renta sin menú repetido",
+  "description": "Saludo social, renta abierta, zona y presupuesto sin reiniciar menú global en turnos 3–6.",
+  "typology": { "corpus_ids": ["HUMANITY-H-001"], "rail": "humanity", "block": "H" },
+  "messages": [
+    "Hola",
+    "Todo bien gracias, ¿y tú?",
+    "Busco depa en renta",
+    "En San Pedro",
+    "Como 25 mil",
+    "Sí, Jorge"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "demand",
+    "operation_type": "rent",
+    "crm_ready": false
+  },
+  "must_not": {
+    "repeated_phrase": true,
+    "flow_restart": true,
+    "robotic_response": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-19", "change": "M1-PR-01 seed." }]
+}

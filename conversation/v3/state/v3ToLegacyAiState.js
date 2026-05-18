@@ -80,6 +80,7 @@ function mapV3StateToLegacyAiState(v3State) {
     property_qa_sub_mode: v3State.propertySubMode ?? null,
     v3_loop_risk_score: v3State.loopRiskScore ?? null,
     v3_last_composer_intent: v3State.lastComposerIntent ?? null,
+    v3_last_assistant_reply_signature: v3State.lastAssistantReplySignature ?? null,
     interested_property_id:
       v3State.activeProperty && v3State.activeProperty.id != null ? String(v3State.activeProperty.id) : null,
   };

@@ -7,8 +7,11 @@ const {
   ARGOS_ERROR_CODES,
 } = require('./constants');
 const { createArgosTrace, traceEvent, flushTrace } = require('./argosTrace');
-const { validateMustNotReply } = require('./mustNotValidator');
-const { extractListingCodes } = require('./mustNotValidator');
+const {
+  validateMustNotReply,
+  extractListingCodes,
+  replySignature,
+} = require('./mustNotValidator');
 
 function resolveSupabaseRaw(input) {
   if (input.supabaseRaw) return input.supabaseRaw;
@@ -62,6 +65,23 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
         actual: actualLead,
       });
     }
+  }
+  if (expected.lead_flow) {
+    const actualLeadFlow = snapshot?.lead_flow || panel?.lead_type || null;
+    if (actualLeadFlow !== expected.lead_flow) {
+      violations.push({
+        code: 'expected_lead_flow_mismatch',
+        expected: expected.lead_flow,
+        actual: actualLeadFlow,
+      });
+    }
+  }
+  if (expected.operation_type && snapshot?.operation_type !== expected.operation_type) {
+    violations.push({
+      code: 'expected_operation_type_mismatch',
+      expected: expected.operation_type,
+      actual: snapshot?.operation_type ?? null,
+    });
   }
   if (expected.conversation_stage && snapshot?.conversation_stage !== expected.conversation_stage) {
     violations.push({
@@ -171,6 +191,7 @@ async function runArgosScenario(input) {
   let lastSnapshot = null;
   let lastCrm = null;
   let lastTurnDiagnostics = [];
+  let previousReplySignature = null;
 
   for (let i = 0; i < messages.length; i += 1) {
     if (Date.now() - started > ARGOS_SCENARIO_TIMEOUT_MS) {
@@ -199,11 +220,18 @@ async function runArgosScenario(input) {
     lastSnapshot = result.conversation_snapshot;
     lastCrm = result.crm_dry_run;
     lastTurnDiagnostics = pickTurnDiagnostics(result.debug_trace);
+    const snap = result.conversation_snapshot || {};
+    const facts = buildScenarioFacts(messages[i], result);
+    facts.previousReplySignature = previousReplySignature;
+    facts.suppressGlobalMenu =
+      snap.lead_flow === 'demand' && snap.operation_type === 'rent' && i >= 2;
+
     const mustNotViolations = validateMustNotReply({
       replyText: result.reply,
       must_not,
-      facts: buildScenarioFacts(messages[i], result),
+      facts,
     });
+    previousReplySignature = replySignature(result.reply);
     if (mustNotViolations.length) {
       for (const v of mustNotViolations) {
         violations.push({ code: v.constraint, detail: v.detail, turn: i + 1 });
@@ -281,7 +309,7 @@ async function runArgosScenario(input) {
 }
 
 function buildScenarioFacts(userText, turnResult) {
-  const snap = turnResult.conversation_snapshot || {};
+  const snap = turnResult?.conversation_snapshot || {};
   const codes = extractListingCodes(userText);
   const facts = {
     knownListingCodes: codes.length ? codes : snap.property_code ? [snap.property_code] : [],

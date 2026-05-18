@@ -13,6 +13,7 @@ const { detectForcedHandoffReason } = require('../planner/forcedHandoffDetector'
 const { runForcedHandoffTurn } = require('./forcedHandoffTurn');
 const { V3_INTENT } = require('../types/constants');
 const { tryComposeF4EarlyTurn, shouldSuppressForcedHandoff } = require('../composer/f4TurnComposer');
+const { replySignature } = require('../composer/openingVariantPicker');
 const { isHandoffFlowActive } = require('../interpreter/objectionClassifier');
 
 /**
@@ -202,6 +203,7 @@ function processV3Turn(input) {
     finalState = {
       ...nextState,
       lastAssistantReply: replyText,
+      lastAssistantReplySignature: replySignature(replyText),
       lastAssistantQuestion: composed.followUpQuestion || questionFromReply,
       awaitingField:
         composed.awaitingField !== undefined ? composed.awaitingField : nextState.awaitingField,
