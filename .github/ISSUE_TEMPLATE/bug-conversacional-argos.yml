@@ -1,0 +1,301 @@
+name: Bug conversacional PERSEO (ARGOS-TDD)
+description: Reportar un fallo de conversación V3/F3/CRM detectado vía ARGOS o WhatsApp QA, con escenario reproducible y regresión esperada.
+title: "[ARGOS] "
+labels:
+  - argos
+  - conversational
+  - perseo-v3
+  - qa
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Regla de cierre (obligatoria)
+
+        Todo bug conversacional corregido debe terminar con:
+
+        1. **Escenario ARGOS reproducible** (`run-scenario` / JSON en `docs/argos/scenarios/`)
+        2. **`expected` definido**
+        3. **`must_not` definido**
+        4. **Regresión automatizable** (`npm run test:argos`, test V3, o assert en escenario)
+
+        Referencias: [Training Strategy v1](https://github.com/Ehumir/luxetty-perseo/blob/main/docs/argos/ARGOS-CONVERSATIONAL-TRAINING-STRATEGY-v1.md) · [Versionado escenarios](https://github.com/Ehumir/luxetty-perseo/blob/main/docs/argos/ARGOS-SCENARIO-VERSIONING-v1.md) · [Postman ARGOS-1](https://github.com/Ehumir/luxetty-perseo/blob/main/docs/argos/postman/README.md)
+
+        > No acortar mensajes del escenario para forzar `CRM_READY` (p. ej. exigir nombre si el flujo no lo pidió).
+
+  - type: dropdown
+    id: priority_suite
+    attributes:
+      label: Prioridad / suite
+      description: Según matriz en Training Strategy v1 §7
+      options:
+        - P0 — Bloqueante (release QA)
+        - P1 — Alta
+        - P2 — Cobertura ampliada
+        - HUMANITY — Tono / naturalidad / anti-robótico
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected_module
+    attributes:
+      label: Módulo afectado
+      description: Área principal del comportamiento incorrecto
+      options:
+        - PERSEO V3
+        - CRM / Lead Automation
+        - Assignment / Ownership
+        - Property Matching
+        - Composer / Wording
+        - Handoff
+        - HUMANITY / Naturalidad
+        - ARGOS Infra
+        - Otro
+    validations:
+      required: true
+
+  - type: dropdown
+    id: detection_source
+    attributes:
+      label: ¿Dónde se detectó?
+      options:
+        - ARGOS run-scenario (Railway QA)
+        - ARGOS simulate-turn (manual)
+        - WhatsApp QA allowlist (producción/QA real)
+        - npm test / CI
+        - Otro
+    validations:
+      required: true
+
+  - type: input
+    id: build_sha
+    attributes:
+      label: build_sha (health ARGOS o deploy)
+      description: "GET /internal/argos/health → build_sha"
+      placeholder: "ej. a1b2c3d o commit SHA"
+    validations:
+      required: true
+
+  - type: input
+    id: scenario_code
+    attributes:
+      label: scenario_code
+      description: Código estable. Nuevo escenario → proponer nombre (ej. DEMAND_003_FULL). Existente → bump versión en JSON.
+      placeholder: "DEMAND_002_FULL"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem_summary
+    attributes:
+      label: Resumen del problema
+      description: Qué hizo PERSEO vs qué debió hacer (1–3 oraciones, sin opinión vaga).
+      placeholder: |
+        Tras dar presupuesto sin nombre, PERSEO ofreció handoff pero nunca pidió identidad; stage quedó en HANDOFF_PENDING sin full_name.
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Escenario reproducible
+
+        Lista **un mensaje de usuario por línea**, en orden. Debe ser el mínimo que reproduce el bug.
+
+  - type: textarea
+    id: scenario_messages
+    attributes:
+      label: Mensajes del escenario (user, uno por línea)
+      render: text
+      placeholder: |
+        Hola
+        Busco casa en Cumbres
+        Tengo presupuesto de 5 millones
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_json
+    attributes:
+      label: expected (JSON)
+      description: Estado final o por turno crítico. Alineado a `run-scenario` → `scenario.expected`.
+      render: json
+      value: |
+        {
+          "intent": "buy",
+          "lead_type": "demand",
+          "conversation_stage": "CRM_READY",
+          "crm_ready": true,
+          "advisor_contact_consent": "ACCEPTED",
+          "known_name": "Jorge"
+        }
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: must_not
+    attributes:
+      label: must_not (marcar todo lo que debe cumplirse siempre)
+      options:
+        - label: invent_property — No inventar ficha/código inexistente
+          required: false
+        - label: invent_price — No inventar precio
+          required: false
+        - label: invent_link — No inventar URL
+          required: false
+        - label: send_whatsapp — No enviar WhatsApp real (ARGOS)
+          required: false
+        - label: write_contacts / write_leads — Cero writes CRM en ARGOS
+          required: false
+        - label: use_requests_table — No usar public.requests
+          required: false
+        - label: robotic_response — No sonar robótico (HUMANITY)
+          required: false
+        - label: repeated_phrase — No repetir apertura/cierre
+          required: false
+        - label: forced_handoff — No canalizar sin señal válida
+          required: false
+
+  - type: textarea
+    id: must_not_other
+    attributes:
+      label: must_not adicional (opcional)
+      description: Otros must_not o detalle semántico
+      render: text
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Evidencia ARGOS
+
+        Pegar salida de `run-scenario` o último `simulate-turn`. Si es WhatsApp real, anonimizar teléfono.
+
+  - type: textarea
+    id: run_scenario_result
+    attributes:
+      label: Resultado run-scenario (ok / violations)
+      render: json
+      placeholder: |
+        { "ok": false, "violations": [...], "final": { "conversation_snapshot": {...} } }
+    validations:
+      required: true
+
+  - type: textarea
+    id: conversation_snapshot
+    attributes:
+      label: conversation_snapshot (actual)
+      description: Estado final observado (o del turno donde falla)
+      render: json
+      placeholder: |
+        {
+          "conversation_stage": "IDENTITY_PENDING",
+          "crm_ready": false,
+          "known_name": null,
+          "known_zone": "Cumbres",
+          "advisor_contact_consent": "UNKNOWN"
+        }
+    validations:
+      required: true
+
+  - type: textarea
+    id: conversation_snapshot_expected
+    attributes:
+      label: conversation_snapshot (esperado, si difiere del bloque expected)
+      render: json
+      placeholder: "Opcional si ya está cubierto en expected JSON"
+
+  - type: textarea
+    id: debug_trace
+    attributes:
+      label: debug_trace (fragmento relevante)
+      description: Incluir `parser_winner`, `state_transition`, `rule_guard_result`, `crm_gate_blockers`, `assignment_decision`
+      render: json
+      placeholder: |
+        [
+          { "type": "parser_winner", "payload": { "detected_intent": "BUYER_BUDGET" } },
+          { "type": "crm_gate_blockers", "payload": { "blockers": ["missing full_name"] } }
+        ]
+    validations:
+      required: true
+
+  - type: textarea
+    id: assistant_replies
+    attributes:
+      label: Respuestas assistant (transcript opcional)
+      description: User/Bot por turno — útil para HUMANITY y copy
+      render: text
+      placeholder: |
+        Turn 1 BOT: Hola, ¿buscas vender o comprar?
+        Turn 2 USER: Busco casa en Cumbres
+        Turn 2 BOT: ...
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Regresión esperada (al cerrar el bug)
+
+        El PR que corrige este issue debe incluir:
+
+  - type: checkboxes
+    id: regression_expected
+    attributes:
+      label: Regresión esperada
+      options:
+        - label: "Nuevo/actualizado JSON en docs/argos/scenarios/{CODE}.v{N}.json"
+          required: true
+        - label: Entrada en docs/argos/scenarios/manifest.json (suite correcta)
+          required: true
+        - label: npm run test:argos — green
+          required: true
+        - label: npm test — green (si toca V3/CRM)
+          required: false
+        - label: Test V3 unitario adicional (archivo test/* específico)
+          required: false
+        - label: Evidencia run-scenario ok:true pegada en PR (no commitear docs/argos/evidence/)
+          required: false
+
+  - type: input
+    id: scenario_file_path
+    attributes:
+      label: Ruta escenario propuesta (al cerrar)
+      description: Rellenar en PR o al cerrar issue
+      placeholder: "docs/argos/scenarios/DEMAND_002_FULL.v1.json"
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ## Checklist — quien reporta
+
+  - type: checkboxes
+    id: reporter_checklist
+    attributes:
+      label: Checklist reportero
+      options:
+        - label: Reproduje en Railway QA con PERSEO_ARGOS_ENABLED=true
+          required: true
+        - label: Confirmé que no es solo falla de infra (health OK, secret OK)
+          required: true
+        - label: No omití turnos necesarios (ej. nombre antes de CRM_READY)
+          required: true
+        - label: Adjunté snapshot + trace del turno fallido
+          required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## Checklist — quien cierra (dev + QA)
+
+  - type: checkboxes
+    id: closer_checklist
+    attributes:
+      label: Checklist cierre (marcar en PR o al resolver)
+      options:
+        - label: Escenario ARGOS pasa (ok:true) en QA Railway
+          required: false
+        - label: PR cumple regla de 4 puntos (escenario + expected + must_not + tests)
+          required: false
+        - label: Sin hacks específicos por teléfono/conversación (fix genérico V3)
+          required: false
+        - label: QA revisó tono si suite HUMANITY
+          required: false
