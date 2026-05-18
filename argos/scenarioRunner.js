@@ -223,8 +223,7 @@ async function runArgosScenario(input) {
     const snap = result.conversation_snapshot || {};
     const facts = buildScenarioFacts(messages[i], result);
     facts.previousReplySignature = previousReplySignature;
-    facts.suppressGlobalMenu =
-      snap.lead_flow === 'demand' && snap.operation_type === 'rent' && i >= 2;
+    facts.suppressGlobalMenu = Boolean(snap.lead_flow) && i >= 2;
 
     const mustNotViolations = validateMustNotReply({
       replyText: result.reply,

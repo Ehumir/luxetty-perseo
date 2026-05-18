@@ -2,6 +2,7 @@
 
 const { normalizeText } = require('../../../utils/text');
 const { CONVERSATION_GOALS, CONVERSATION_STAGES } = require('../types/constants');
+const { isStickyContextActive } = require('../ownership/stickyContext');
 
 /** Menú global vender / comprar / rentar (reinicio de flujo). */
 const GLOBAL_INTENT_MENU_RE =
@@ -54,9 +55,10 @@ function hasStickyRentDemand(state) {
  * @param {import('../types/conversationState').ConversationState} state
  */
 function shouldSuppressGlobalIntentMenu(state) {
-  if (!hasStickyRentDemand(state)) return false;
-  if (state.conversationGoalLocked === true) return true;
-  return state.conversationStage !== CONVERSATION_STAGES.NEW;
+  if (hasStickyRentDemand(state)) return true;
+  if (isStickyContextActive(state)) return true;
+  if (state.conversationGoalLocked === true && state.leadFlow) return true;
+  return false;
 }
 
 /**
@@ -164,6 +166,7 @@ function composeRentDemandKickoff(state) {
  * @param {{ state: import('../types/conversationState').ConversationState, replyText: string }} input
  */
 function shouldApplyAntiRepetition(state) {
+  if (isStickyContextActive(state)) return true;
   if (state.conversationGoalLocked === true) return true;
   if (state.leadFlow) return true;
   return false;

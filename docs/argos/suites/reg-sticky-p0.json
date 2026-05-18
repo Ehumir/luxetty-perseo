@@ -1,0 +1,6 @@
+{
+  "suite": "reg-sticky-p0",
+  "description": "Gate M1-B — contexto sticky venta y compra.",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": ["REG_STICKY_SELL_001.v1.json", "REG_STICKY_BUY_001.v1.json"]
+}

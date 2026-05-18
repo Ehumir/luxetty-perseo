@@ -162,7 +162,11 @@ function composeSlotQuestion(state, slotId) {
     case 'full_name':
       if (state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
         return {
-          responseText: 'Claro, te apoyo con la venta. Para orientarte mejor, ¿me compartes tu nombre?',
+          responseText: pickOpeningVariant(state, [
+            'Claro, te apoyo con la venta. Para orientarte mejor, ¿me compartes tu nombre?',
+            'Perfecto, te acompaño con la venta de tu propiedad. ¿Me dices tu nombre?',
+            'Con gusto, seguimos con la venta. ¿Cómo te llamas?',
+          ]),
           followUpQuestion: null,
           awaitingField: 'full_name',
           toneFlags: { consultive: true },
@@ -658,6 +662,73 @@ function applyPropertyReplyAntiLoop(input) {
 }
 
 /**
+ * Reconoce slots capturados fuera de orden (sticky M1-B).
+ * @param {import('../types/conversationState').ConversationState} state
+ * @param {import('../types/conversationDecision').ConversationDecision} decision
+ */
+function composeStickyQualificationTurn(state, decision) {
+  const intent = decision.detectedIntent;
+  const nm = firstName(state);
+  const zone = state.locationText;
+  const pres = formatMoneyMx(state.expectedPrice);
+  const budget = formatMoneyMx(state.budget);
+
+  if (intent === V3_INTENT.LOCATION_CAPTURE && zone) {
+    if (state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
+      const variants = [
+        `Tomé la zona (${zone}). ¿Qué precio esperado manejas para la venta?`,
+        `Perfecto, registré ${zone}. ¿Tienes un precio en mente?`,
+        nm ? `Gracias, ${nm}. Tomé ${zone}. ¿Qué precio esperado manejas?` : `Tomé ${zone}. Para seguir con la venta, ¿qué precio esperado manejas?`,
+      ];
+      return {
+        responseText: pickOpeningVariant(state, variants),
+        followUpQuestion: null,
+        awaitingField: state.expectedPrice == null ? 'expected_price' : 'full_name',
+        toneFlags: { consultive: true, stickyAck: true },
+      };
+    }
+    if (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+      return {
+        responseText: pickOpeningVariant(state, [
+          `Perfecto, tomé ${zone}. ¿Qué presupuesto aproximado manejas?`,
+          `Gracias. Para buscar en ${zone}, ¿qué presupuesto tienes en mente?`,
+          nm ? `Gracias, ${nm}. En ${zone}, ¿qué presupuesto aproximado manejas?` : `En ${zone}, ¿qué presupuesto aproximado manejas?`,
+        ]),
+        followUpQuestion: null,
+        awaitingField: state.budget == null ? 'budget' : 'full_name',
+        toneFlags: { consultive: true, stickyAck: true },
+      };
+    }
+  }
+
+  if (intent === V3_INTENT.SELLER_PRICE && state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
+    return {
+      responseText: pickOpeningVariant(state, [
+        pres ? `Tomé un precio esperado de ${pres}. ¿Me compartes tu nombre?` : 'Tomé el precio. ¿Me compartes tu nombre?',
+        pres ? `Perfecto, ${pres} como referencia. Para seguir, ¿cómo te llamas?` : 'Gracias por el dato. ¿Me dices tu nombre?',
+      ]),
+      followUpQuestion: null,
+      awaitingField: 'full_name',
+      toneFlags: { consultive: true, stickyAck: true },
+    };
+  }
+
+  if (intent === V3_INTENT.BUYER_BUDGET && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+    return {
+      responseText: pickOpeningVariant(state, [
+        budget ? `Tomé un presupuesto de ${budget}. ¿Me compartes tu nombre?` : 'Tomé tu presupuesto. ¿Me compartes tu nombre?',
+        budget ? `Perfecto, con ${budget} podemos afinar opciones. ¿Cómo te llamas?` : 'Gracias. ¿Me dices tu nombre?',
+      ]),
+      followUpQuestion: null,
+      awaitingField: 'full_name',
+      toneFlags: { consultive: true, stickyAck: true },
+    };
+  }
+
+  return null;
+}
+
+/**
  * @param {import('../types/conversationState').ConversationState} state
  * @param {import('../types/conversationDecision').ConversationDecision} decision
  * @param {ReturnType<import('../planner/qualificationPlanner').evaluateQualification>} plannerOut
@@ -665,6 +736,9 @@ function applyPropertyReplyAntiLoop(input) {
  */
 function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   const intent = decision.detectedIntent;
+
+  const stickyAck = composeStickyQualificationTurn(state, decision);
+  if (stickyAck) return stickyAck;
 
   const buyPolicyHint = getBuyDemandPolicyHint(state, decision, plannerOut, handoffOut);
   if (buyPolicyHint) {
