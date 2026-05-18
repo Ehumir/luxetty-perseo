@@ -1,6 +1,8 @@
 'use strict';
 
 const { normalizeText } = require('../utils/text');
+const { isGlobalIntentMenu, replySignature } = require('../conversation/v3/composer/openingVariantPicker');
+const { FORBIDDEN_COMPOSER_PATTERNS } = require('../conversation/v3/types/constants');
 
 const DEFAULT_ALLOWED_URL_HOSTS = [
   'luxetty.com',
@@ -141,6 +143,39 @@ function validateMustNotReply(input) {
     }
   }
 
+  if (must_not.robotic_response) {
+    for (const p of FORBIDDEN_COMPOSER_PATTERNS) {
+      if (p.test(reply)) {
+        violations.push({
+          constraint: 'must_not.robotic_response',
+          detail: 'Forbidden composer pattern matched',
+          severity: 'medium',
+        });
+        break;
+      }
+    }
+  }
+
+  if (must_not.flow_restart && facts.suppressGlobalMenu === true && isGlobalIntentMenu(reply)) {
+    violations.push({
+      constraint: 'must_not.flow_restart',
+      detail: 'Global intent menu after sticky flow established',
+      severity: 'high',
+    });
+  }
+
+  if (must_not.repeated_phrase && facts.previousReplySignature) {
+    const prev = String(facts.previousReplySignature || '');
+    const cur = replySignature(reply);
+    if (prev && cur === prev) {
+      violations.push({
+        constraint: 'must_not.repeated_phrase',
+        detail: 'Assistant reply identical to previous turn',
+        severity: 'high',
+      });
+    }
+  }
+
   return violations;
 }
 
@@ -149,4 +184,5 @@ module.exports = {
   extractListingCodes,
   extractMoneyMentions,
   extractUrls,
+  replySignature,
 };

@@ -21,7 +21,7 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
     conversation_stage: stage,
     conversation_goal: v3State?.conversationGoal || legacy.conversation_goal || legacy.user_goal || null,
     lead_flow: legacy.lead_flow || legacy.lead_type || null,
-    operation_type: legacy.interested_in_operation || v3State?.operationType || null,
+    operation_type: v3State?.operationType || legacy.operation_type || legacy.interested_in_operation || null,
     known_name: v3State?.collectedFields?.fullName || legacy.full_name || null,
     known_budget: v3State?.budget ?? legacy.budget_max ?? legacy.budget_min ?? null,
     known_zone: v3State?.locationText || legacy.location_text || null,

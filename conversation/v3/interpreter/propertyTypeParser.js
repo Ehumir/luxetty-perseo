@@ -9,7 +9,7 @@ const { normalizeText } = require('../../../utils/text');
 function parsePropertyType(text) {
   const t = normalizeText(String(text || ''));
   if (!t) return null;
-  if (t.includes('departamento') || t.includes('depto')) return 'apartment';
+  if (t.includes('departamento') || t.includes('depto') || /\bdepa\b/.test(t)) return 'apartment';
   if (t.includes('terreno')) return 'land';
   if (/\bcasa\b/.test(t) || t.includes('es casa') || t.includes('que es casa')) return 'house';
   return null;

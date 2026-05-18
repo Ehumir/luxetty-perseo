@@ -6,6 +6,14 @@ const { getBuyDemandPolicyHint } = require('./buyDemandComposer');
 const { isPostHandoffTerminalState } = require('../interpreter/objectionClassifier');
 const { composePostHandoffAck, composeHandoffPendingContinuity } = require('./postHandoffComposer');
 const { occupancyStatusLabel } = require('../interpreter/occupancyParser');
+const {
+  pickOpeningVariant,
+  shouldSuppressGlobalIntentMenu,
+  composeGenericUnderstandingPrompt,
+  composeSocialRapportReply,
+  composeRentDemandKickoff,
+  GLOBAL_OPENING_VARIANTS,
+} = require('./openingVariantPicker');
 
 function formatMoneyMx(amount) {
   const n = Number(amount);
@@ -78,9 +86,28 @@ function composeAdvisorGreeting(state = {}) {
     };
   }
 
+  if (shouldSuppressGlobalIntentMenu(st)) {
+    const continuity = composeGenericUnderstandingPrompt(st);
+    return continuity;
+  }
+
+  const staticOpening = GLOBAL_OPENING_VARIANTS[0];
+  const repeatGreetingOnly =
+    !st.conversationGoalLocked &&
+    !st.leadFlow &&
+    String(st.lastComposerIntent || '').includes('GREETING');
+  const userHolaOnly = normalizeText(String(st.lastUserText || '')) === 'hola';
+  if (!st.conversationGoalLocked && !st.leadFlow && userHolaOnly) {
+    return {
+      responseText: staticOpening,
+      followUpQuestion: null,
+      awaitingField: null,
+      toneFlags: { consultive: true, advisorPersona: true },
+    };
+  }
+
   return {
-    responseText:
-      'Hola, soy el asesor IA de Luxetty. Con gusto te ayudo. ¿Buscas vender, poner en renta, comprar o rentar una propiedad?',
+    responseText: pickOpeningVariant(st, [...GLOBAL_OPENING_VARIANTS]),
     followUpQuestion: null,
     awaitingField: null,
     toneFlags: { consultive: true, advisorPersona: true },
@@ -156,8 +183,24 @@ function composeSlotQuestion(state, slotId) {
           toneFlags: { consultive: true },
         };
       }
+      if (state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY) {
+        return {
+          responseText: pickOpeningVariant(state, [
+            'Perfecto, te ayudo con la renta. ¿Me compartes tu nombre?',
+            'Claro, seguimos con la renta. ¿Cómo te llamas?',
+            'De acuerdo. Para continuar con la búsqueda en renta, ¿me dices tu nombre?',
+          ]),
+          followUpQuestion: null,
+          awaitingField: 'full_name',
+          toneFlags: { consultive: true },
+        };
+      }
       return {
-        responseText: 'Con gusto. Para continuar, ¿me compartes tu nombre?',
+        responseText: pickOpeningVariant(state, [
+          'Con gusto. Para continuar, ¿me compartes tu nombre?',
+          'Perfecto. ¿Me dices tu nombre para seguir?',
+          'Claro. ¿Cómo te llamas?',
+        ]),
         followUpQuestion: null,
         awaitingField: 'full_name',
         toneFlags: { consultive: true },
@@ -191,9 +234,29 @@ function composeSlotQuestion(state, slotId) {
     case 'budget':
       if (isBuy) {
         return {
-          responseText: zone && zone !== 'esa zona'
-            ? `¿Qué presupuesto aproximado manejas para buscar en ${zone}?`
-            : '¿Qué presupuesto aproximado manejas?',
+          responseText: pickOpeningVariant(state, [
+            zone && zone !== 'esa zona'
+              ? `¿Qué presupuesto aproximado manejas para buscar en ${zone}?`
+              : '¿Qué presupuesto aproximado manejas?',
+            zone && zone !== 'esa zona'
+              ? `Para ${zone}, ¿qué rango de presupuesto tienes en mente?`
+              : '¿Qué rango de presupuesto manejas?',
+          ]),
+          followUpQuestion: null,
+          awaitingField: 'budget',
+          toneFlags: { consultive: true },
+        };
+      }
+      if (state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY) {
+        return {
+          responseText: pickOpeningVariant(state, [
+            nm
+              ? `Perfecto, ${nm}. En ${zone}, ¿qué presupuesto mensual manejas?`
+              : `En ${zone}, ¿qué presupuesto mensual manejas?`,
+            nm
+              ? `Gracias, ${nm}. Para ${zone}, ¿qué renta mensual te queda cómoda?`
+              : `Para ${zone}, ¿qué renta mensual te queda cómoda?`,
+          ]),
           followUpQuestion: null,
           awaitingField: 'budget',
           toneFlags: { consultive: true },
@@ -675,6 +738,23 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
 
   if (intent === V3_INTENT.GREETING) return composeAdvisorGreeting(state);
 
+  if (intent === V3_INTENT.SOCIAL_RAPPORT) return composeSocialRapportReply(state);
+
+  if (intent === V3_INTENT.RENT_PROPERTY) {
+    if (!state.collectedFields?.fullName && !state.locationText) {
+      return composeRentDemandKickoff(state);
+    }
+    if (!state.collectedFields?.fullName) {
+      return composeSlotQuestion(state, 'full_name');
+    }
+    if (!state.locationText) {
+      return composeSlotQuestion(state, 'location_text');
+    }
+    if (state.budget == null) {
+      return composeSlotQuestion(state, 'budget');
+    }
+  }
+
   if (intent === V3_INTENT.SELL_PROPERTY) {
     if (!state.collectedFields?.fullName) return composeSlotQuestion(state, 'full_name');
     return composeSlotQuestion(state, 'location_text');
@@ -737,12 +817,11 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
     return composeSlotQuestion(state, plannerOut.nextSlot);
   }
 
-  return {
-    responseText: 'Te escucho. ¿Me cuentas si buscas vender, poner en renta, comprar o rentar?',
-    followUpQuestion: null,
-    awaitingField: null,
-    toneFlags: { consultive: true },
-  };
+  if (intent === V3_INTENT.UNKNOWN && shouldSuppressGlobalIntentMenu(state)) {
+    return composeGenericUnderstandingPrompt(state);
+  }
+
+  return composeGenericUnderstandingPrompt(state);
 }
 
 module.exports = {

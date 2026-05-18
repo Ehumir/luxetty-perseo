@@ -80,6 +80,10 @@ function createInitialConversationState(seed = {}) {
     unhandledReason: null,
     handoffReason: null,
     unknownIntentStreak: 0,
+    /** M1 — firma normalizada del último reply (anti-repetición). */
+    lastAssistantReplySignature: null,
+    /** Saludos consecutivos sin goal (familia CHAOS vs REG). */
+    consecutiveGreetingTurns: 0,
   };
 }
 

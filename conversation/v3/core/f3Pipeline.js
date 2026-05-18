@@ -15,6 +15,10 @@ const { processHandoff } = require('../planner/handoffPlanner');
 const { buildCrmDryRunPayload } = require('../crm/payloadBuilder');
 const { composePlannerResponse, composePlannerReplyText } = require('../composer/plannerComposer');
 const { applyPropertyReplyAntiLoop } = require('../composer/slotTemplates');
+const {
+  applyGeneralReplyAntiRepetition,
+  replySignature,
+} = require('../composer/openingVariantPicker');
 const { tryComposeF4PlannerTurn } = require('../composer/f4TurnComposer');
 const { getPerseoV3Config } = require('../../../config/perseoV3Flags');
 const { v3Log } = require('./v3Logger');
@@ -117,7 +121,11 @@ function runF3Pipeline(input) {
     replyText: rawReply,
     handoffOut,
   });
-  const replyText = anti.text;
+  const antiRepeat = applyGeneralReplyAntiRepetition({
+    state: next,
+    replyText: anti.text,
+  });
+  const replyText = antiRepeat.text;
 
   const questionFromReply = (() => {
     const matches = String(replyText || '').match(/¿[^?]+\?/g);
@@ -131,7 +139,7 @@ function runF3Pipeline(input) {
   const composerIntent = `${decision.detectedIntent || 'null'}|${handoffOut.action}`;
 
   let nextLoopRisk = Number(next.loopRiskScore) || 0;
-  if (anti.replaced) nextLoopRisk += 1;
+  if (anti.replaced || antiRepeat.replaced) nextLoopRisk += 1;
 
   let nextAnswerCount = Number(next.propertyQaAnswerCount) || 0;
   if (isFactHelpfulTurn) nextAnswerCount += 1;
@@ -146,6 +154,11 @@ function runF3Pipeline(input) {
 
   const finalState = mergeConversationState(next, {
     lastAssistantReply: replyText,
+    lastAssistantReplySignature: replySignature(replyText),
+    consecutiveGreetingTurns:
+      decision.detectedIntent === V3_INTENT.GREETING
+        ? (Number(next.consecutiveGreetingTurns) || 0) + 1
+        : 0,
     lastAssistantQuestion: composed.followUpQuestion || questionFromReply,
     awaitingField:
       composed.awaitingField !== undefined && composed.awaitingField !== null

@@ -3,6 +3,7 @@
 const { cleanSpaces, normalizeText } = require('../../../utils/text');
 const { FORBIDDEN_COMPOSER_PATTERNS } = require('../types/constants');
 const { composeFromPlannerContext } = require('./slotTemplates');
+const { pickOpeningVariant, GLOBAL_OPENING_VARIANTS } = require('./openingVariantPicker');
 
 function assertComposerQuality(text) {
   const s = String(text || '');
@@ -47,7 +48,7 @@ function composePlannerReplyText(input) {
   }
   merged = merged.replace(/\s+/g, ' ').trim();
   if (!assertComposerQuality(merged)) {
-    return 'Hola, soy el asesor IA de Luxetty. Con gusto te ayudo. ¿Buscas vender, poner en renta, comprar o rentar una propiedad?';
+    return pickOpeningVariant(input.state || {}, [...GLOBAL_OPENING_VARIANTS]);
   }
   return merged;
 }
