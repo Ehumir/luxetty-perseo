@@ -46,6 +46,7 @@ function mapV3StateToLegacyAiState(v3State) {
     operation_type: v3State.operationType ?? null,
     full_name: v3State.collectedFields?.fullName ?? null,
     awaiting_field: v3State.awaitingField ?? null,
+    last_asked_field: v3State.lastAskedField ?? null,
     location_text: v3State.locationText ?? null,
     property_type: v3State.propertyType ?? v3State.collectedFields?.propertyType ?? null,
     occupancy_status: v3State.occupancyStatus ?? v3State.collectedFields?.occupancyStatus ?? null,

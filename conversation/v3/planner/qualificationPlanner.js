@@ -189,6 +189,8 @@ module.exports = {
   sellOfferPriceSatisfied,
   getSellOfferMissingSlots,
   getBuyDemandMissingSlots,
+  resolveBuyDemandNextSlot,
+  resolveSellOfferNextSlot,
   evaluateQualification,
   buildPlannerStatePatch,
 };

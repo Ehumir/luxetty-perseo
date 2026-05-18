@@ -4,11 +4,12 @@ const { normalizeText, cleanSpaces } = require('../../../utils/text');
 const { createEmptyDecision } = require('../types/conversationDecision');
 const { CONVERSATION_STAGES, V3_INTENT, CONVERSATION_GOALS } = require('../types/constants');
 const { detectFrustration } = require('./frustrationDetector');
-const { normalizeLocationFromUserText } = require('./locationNormalizer');
+const { normalizeLocationFromUserText, isBareKnownZoneToken } = require('./locationNormalizer');
 const { shouldAcceptAsIdentityName, isAwaitingIdentityName } = require('./nameHeuristics');
 const { parsePropertyType } = require('./propertyTypeParser');
 const { parseOccupancyStatus } = require('./occupancyParser');
 const { tryParseSellLocation, tryParseQualificationLocation } = require('./sellLocationCapture');
+const { tryResolveAwaitingFieldCapture } = require('./awaitingFieldCapture');
 const { parseAdvisorContactConsent, shouldParseConsentTurn } = require('../planner/consentParser');
 const { isV3HandoffEnabled } = require('../../../config/perseoV3Flags');
 const { extractPropertyListingCode } = require('./propertyListingCode');
@@ -29,29 +30,7 @@ const { classifyPropertyInquiryTurn } = require('./propertyInquiryQaClassifier')
 const { parsePaymentMethod } = require('./paymentMethodParser');
 const { isSocialRapportMessage } = require('../composer/openingVariantPicker');
 
-function parseMoneyAmount(text) {
-  const t = normalizeText(text);
-  const below = t.match(
-    /(?:por\s+)?(?:debajo|menos)\s+de\s+(\d+(?:[.,]\d+)?)\s*(millones|millon|millón|m\b|mdp)?/
-  );
-  if (below) {
-    const n = Number(below[1].replace(',', '.'));
-    const unit = below[2] || '';
-    if (unit === 'm' || !unit || /millon/.test(unit) || unit === 'mdp') {
-      return Math.round(n * 1_000_000);
-    }
-  }
-  const mill = t.match(/(\d+(?:[.,]\d+)?)\s*(millones|millon|millón|mdp)/);
-  if (mill) {
-    const n = Number(mill[1].replace(',', '.'));
-    return Math.round(n * 1_000_000);
-  }
-  const mShort = t.match(/\b(\d+(?:[.,]\d+)?)\s*m\b/);
-  if (mShort) return Math.round(Number(mShort[1].replace(',', '.')) * 1_000_000);
-  const mdp = t.match(/\b(\d+(?:[.,]\d+)?)\s*mdp\b/);
-  if (mdp) return Math.round(Number(mdp[1].replace(',', '.')) * 1_000_000);
-  return null;
-}
+const { parseMoneyAmount } = require('./moneyParser');
 
 function matchesBuyOpenSearchPattern(t, raw) {
   if (mentionsRentDemand(t) && !isRentOutIntent(raw)) return false;
@@ -187,6 +166,28 @@ function interpretUserMessage(state, text, options = {}) {
     state.conversationGoalLocked &&
     state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY &&
     isExplicitFlowSwitchToSellFromRent(text);
+
+  const awaitingCapture = tryResolveAwaitingFieldCapture(state, raw, text, patch, decision);
+  if (awaitingCapture) return awaitingCapture;
+
+  if (
+    state.conversationGoalLocked &&
+    !state.locationText &&
+    isBareKnownZoneToken(raw) &&
+    (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY ||
+      state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY)
+  ) {
+    const loc = normalizeLocationFromUserText(raw) || cleanSpaces(raw).slice(0, 120);
+    if (loc) {
+      decision.detectedIntent = V3_INTENT.LOCATION_CAPTURE;
+      decision.confidence = 0.9;
+      patch.locationText = loc;
+      patch.awaitingField = null;
+      decision.extractedEntities.locationText = loc;
+      decision.explicitFlowSwitch = false;
+      return { patch, decision };
+    }
+  }
 
   if (
     state.conversationGoalLocked &&
@@ -446,6 +447,8 @@ function interpretUserMessage(state, text, options = {}) {
   }
 
   if (isShortAck(t) && state.conversationGoalLocked) {
+    const ackAwaiting = tryResolveAwaitingFieldCapture(state, raw, text, patch, decision);
+    if (ackAwaiting) return ackAwaiting;
     decision.detectedIntent = V3_INTENT.UNKNOWN;
     decision.confidence = 0.5;
     decision.explicitFlowSwitch = false;

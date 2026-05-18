@@ -11,6 +11,7 @@ const {
   validateMustNotReply,
   extractListingCodes,
   replySignature,
+  questionSignature,
 } = require('./mustNotValidator');
 
 function resolveSupabaseRaw(input) {
@@ -191,7 +192,8 @@ async function runArgosScenario(input) {
   let lastSnapshot = null;
   let lastCrm = null;
   let lastTurnDiagnostics = [];
-  let previousReplySignature = null;
+    let previousReplySignature = null;
+    let previousQuestionSignature = null;
 
   for (let i = 0; i < messages.length; i += 1) {
     if (Date.now() - started > ARGOS_SCENARIO_TIMEOUT_MS) {
@@ -223,6 +225,7 @@ async function runArgosScenario(input) {
     const snap = result.conversation_snapshot || {};
     const facts = buildScenarioFacts(messages[i], result);
     facts.previousReplySignature = previousReplySignature;
+    facts.previousQuestionSignature = previousQuestionSignature;
     facts.suppressGlobalMenu = Boolean(snap.lead_flow) && i >= 2;
 
     const mustNotViolations = validateMustNotReply({
@@ -231,6 +234,7 @@ async function runArgosScenario(input) {
       facts,
     });
     previousReplySignature = replySignature(result.reply);
+    previousQuestionSignature = questionSignature(result.reply);
     if (mustNotViolations.length) {
       for (const v of mustNotViolations) {
         violations.push({ code: v.constraint, detail: v.detail, turn: i + 1 });
@@ -292,6 +296,7 @@ async function runArgosScenario(input) {
     ok: violations.length === 0,
     session_id,
     scenario_code: scenario.scenario_code || null,
+    conversation_snapshot: lastSnapshot,
     turns,
     final: {
       conversation_snapshot: lastSnapshot,
@@ -313,11 +318,18 @@ function buildScenarioFacts(userText, turnResult) {
   const facts = {
     knownListingCodes: codes.length ? codes : snap.property_code ? [snap.property_code] : [],
     knownPrices: snap.known_budget != null ? [Number(snap.known_budget)] : [],
+    known_zone: snap.known_zone || null,
+    known_name: snap.known_name || null,
+    known_budget: snap.known_budget != null ? Number(snap.known_budget) : null,
     propertyLookupAttempted: codes.length > 0,
     propertyFound: !!snap.interested_property_id,
     available: null,
     knownUrls: [],
     allowedUrlHosts: null,
+    qualificationIncomplete:
+      snap.lead_flow === 'demand' &&
+      snap.operation_type === 'sale' &&
+      (!snap.known_name || !snap.known_zone || snap.known_budget == null),
   };
   return facts;
 }

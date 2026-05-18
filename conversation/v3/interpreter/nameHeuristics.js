@@ -3,6 +3,7 @@
 const { normalizeText } = require('../../../utils/text');
 const { CONVERSATION_STAGES } = require('../types/constants');
 const { isLikelyFirstNameOnly } = require('./identityCompoundCapture');
+const { normalizeLocationFromUserText, isBareKnownZoneToken } = require('./locationNormalizer');
 
 const NON_NAME_EXACT = new Set([
   'nada',
@@ -73,6 +74,7 @@ function shouldAcceptAsIdentityName(state, text, opts = {}) {
   if (!isAwaitingIdentityName(state) && !isHandoffPendingMissingName(state)) return false;
   if (isNonNameUtterance(text)) return false;
   const raw = String(text || '').trim();
+  if (isBareKnownZoneToken(raw) || normalizeLocationFromUserText(raw)) return false;
   if (!raw) return false;
   if (/\bwhatsapp\b|por\s+whatsapp|por\s+wa\b/i.test(raw)) return false;
   if (!isLikelyFirstNameOnly(raw)) return false;

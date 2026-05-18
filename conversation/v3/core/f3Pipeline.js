@@ -164,6 +164,10 @@ function runF3Pipeline(input) {
       composed.awaitingField !== undefined && composed.awaitingField !== null
         ? composed.awaitingField
         : next.awaitingField,
+    lastAskedField:
+      composed.awaitingField !== undefined && composed.awaitingField !== null
+        ? composed.awaitingField
+        : next.lastAskedField,
     lastComposerIntent: composerIntent,
     lastOfferType: lastOfferTypeNext,
     propertyQaAnswerCount: nextAnswerCount,

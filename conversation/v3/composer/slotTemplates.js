@@ -14,6 +14,27 @@ const {
   composeRentDemandKickoff,
   GLOBAL_OPENING_VARIANTS,
 } = require('./openingVariantPicker');
+const { isSlotFilled } = require('../state/slotFillState');
+const { evaluateQualification } = require('../planner/qualificationPlanner');
+
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ * @param {string|null|undefined} preferredSlot
+ */
+function resolveNextUnfilledSlot(state, preferredSlot) {
+  if (preferredSlot && !isSlotFilled(state, preferredSlot)) return preferredSlot;
+  return evaluateQualification(state).nextSlot;
+}
+
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ * @param {string|null|undefined} preferredSlot
+ */
+function composePlannerSlotQuestion(state, preferredSlot) {
+  const slot = resolveNextUnfilledSlot(state, preferredSlot);
+  if (!slot) return null;
+  return composeSlotQuestion(state, slot);
+}
 
 function formatMoneyMx(amount) {
   const n = Number(amount);
@@ -152,6 +173,7 @@ function composeHandoffPropertyOrCode(state) {
  * @param {string} slotId
  */
 function composeSlotQuestion(state, slotId) {
+  if (isSlotFilled(state, slotId)) return null;
   const nm = firstName(state);
   const zone = state.locationText || 'esa zona';
   const isBuy = state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY;
@@ -836,7 +858,7 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
 
   if (intent === V3_INTENT.PROPERTY_INQUIRY) {
     if (!state.collectedFields?.fullName) return composeSlotQuestion(state, 'full_name');
-    if (plannerOut.nextSlot) return composeSlotQuestion(state, plannerOut.nextSlot);
+    if (plannerOut.nextSlot) return composePlannerSlotQuestion(state, plannerOut.nextSlot);
   }
 
   if (intent === V3_INTENT.RENT_OUT_PROPERTY) {
@@ -845,26 +867,26 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   }
 
   if (intent === V3_INTENT.IDENTITY_CAPTURE && plannerOut.nextSlot) {
-    return composeSlotQuestion(state, plannerOut.nextSlot);
+    return composePlannerSlotQuestion(state, plannerOut.nextSlot);
   }
 
   if (intent === V3_INTENT.LOCATION_CAPTURE && plannerOut.nextSlot) {
-    return composeSlotQuestion(state, plannerOut.nextSlot);
+    return composePlannerSlotQuestion(state, plannerOut.nextSlot);
   }
 
   if (intent === V3_INTENT.SELLER_PRICE && plannerOut.nextSlot) {
-    return composeSlotQuestion(state, plannerOut.nextSlot);
+    return composePlannerSlotQuestion(state, plannerOut.nextSlot);
   }
 
   if (intent === V3_INTENT.PROPERTY_TYPE_CAPTURE && plannerOut.nextSlot) {
-    return composeSlotQuestion(state, plannerOut.nextSlot);
+    return composePlannerSlotQuestion(state, plannerOut.nextSlot);
   }
 
   if (intent === V3_INTENT.OCCUPANCY_CAPTURE && handoffOut.action === 'OFFER_HANDOFF') {
     return composeHandoffOffer(state);
   }
 
-  if (plannerOut.nextSlot) return composeSlotQuestion(state, plannerOut.nextSlot);
+  if (plannerOut.nextSlot) return composePlannerSlotQuestion(state, plannerOut.nextSlot);
 
   if (plannerOut.qualificationComplete && handoffOut.action === 'OFFER_HANDOFF') {
     if (
@@ -880,15 +902,15 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   }
 
   if (intent === V3_INTENT.BUY_PROPERTY && plannerOut.nextSlot) {
-    return composeSlotQuestion(state, plannerOut.nextSlot);
+    return composePlannerSlotQuestion(state, plannerOut.nextSlot);
   }
 
   if (intent === V3_INTENT.BUYER_BUDGET && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY && plannerOut.nextSlot) {
-    return composeSlotQuestion(state, plannerOut.nextSlot);
+    return composePlannerSlotQuestion(state, plannerOut.nextSlot);
   }
 
   if (intent === V3_INTENT.BEDROOMS_CAPTURE && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY && plannerOut.nextSlot) {
-    return composeSlotQuestion(state, plannerOut.nextSlot);
+    return composePlannerSlotQuestion(state, plannerOut.nextSlot);
   }
 
   if (intent === V3_INTENT.UNKNOWN && shouldSuppressGlobalIntentMenu(state)) {
