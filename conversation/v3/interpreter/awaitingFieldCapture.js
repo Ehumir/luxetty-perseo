@@ -5,7 +5,7 @@ const { V3_INTENT } = require('../types/constants');
 const { parseMoneyAmount } = require('./moneyParser');
 const { tryParseQualificationLocation } = require('./sellLocationCapture');
 const { normalizeLocationFromUserText, isBareKnownZoneToken } = require('./locationNormalizer');
-const { shouldAcceptAsIdentityName } = require('./nameHeuristics');
+const { shouldAcceptAsIdentityName, isNonNameUtterance } = require('./nameHeuristics');
 const { parseAdvisorContactConsent } = require('../planner/consentParser');
 const { isSlotFilled } = require('../state/slotFillState');
 
@@ -91,7 +91,8 @@ function tryResolveAwaitingFieldCapture(state, raw, text, patch, decision) {
     (field === 'full_name' || field === 'budget' || field === 'advisor_contact_consent') &&
     !isBareKnownZoneToken(raw) &&
     !normalizeLocationFromUserText(raw) &&
-    shouldAcceptAsIdentityName(state, raw, { explicitNameMatch: false })
+    shouldAcceptAsIdentityName(state, raw, { explicitNameMatch: false }) &&
+    !isNonNameUtterance(raw)
   ) {
     const nameMatch = raw.match(/^(?:soy|me llamo|mi nombre es)\s+(.+)/i);
     const nm = cleanSpaces(nameMatch ? nameMatch[1] : String(raw || '').trim());

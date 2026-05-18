@@ -217,6 +217,16 @@ function validateMustNotReply(input) {
     }
   }
 
+  if (must_not.verbose_response && facts.userTurnWasCurt === true) {
+    if (String(reply || '').length > 340) {
+      violations.push({
+        constraint: 'must_not.verbose_response',
+        detail: 'Reply too long after curt user message',
+        severity: 'medium',
+      });
+    }
+  }
+
   if (must_not.forced_handoff && facts.qualificationIncomplete === true) {
     if (
       /\b(un asesor|asesor de luxetty).{0,80}(contact|contacte|contacten|te contact)\b/i.test(reply) ||

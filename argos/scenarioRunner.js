@@ -312,6 +312,17 @@ async function runArgosScenario(input) {
   };
 }
 
+function isCurtUserMessage(text) {
+  const t = String(text || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (!t) return false;
+  if (t.length <= 28) return true;
+  return /\bsolo\s+dime\b|\bsolo\s+precio\b|^(ok|no|si|sí|vale|va)$/.test(t);
+}
+
 function buildScenarioFacts(userText, turnResult) {
   const snap = turnResult?.conversation_snapshot || {};
   const codes = extractListingCodes(userText);
@@ -330,6 +341,7 @@ function buildScenarioFacts(userText, turnResult) {
       snap.lead_flow === 'demand' &&
       snap.operation_type === 'sale' &&
       (!snap.known_name || !snap.known_zone || snap.known_budget == null),
+    userTurnWasCurt: isCurtUserMessage(userText),
   };
   return facts;
 }

@@ -365,18 +365,12 @@ function composeHandoffBuyDemand(state) {
   const nm = firstName(state) || 'perfecto';
   const zone = state.locationText || 'esa zona';
   const pres = state.budget != null ? formatMoneyMx(state.budget) : null;
-  const tipo =
-    state.bedrooms != null
-      ? `${state.bedrooms} recámaras`
-      : propertyTypeLabel(state) !== 'inmueble'
-        ? propertyTypeLabel(state)
-        : 'lo que buscas';
   const rangeHint = pres
-    ? `Con ${pres} en ${zone} y ${tipo}, sí vale revisar opciones reales contigo.`
-    : `Por lo que buscas en ${zone}, sí vale revisar opciones reales contigo.`;
+    ? `Con ${pres} en ${zone} sí vale revisar opciones contigo.`
+    : `En ${zone} sí vale revisar opciones contigo.`;
 
   return {
-    responseText: `Perfecto, ${nm}. ${rangeHint} Si te parece, puedo pedirle a un asesor de Luxetty que te contacte por aquí para seguir la búsqueda contigo.`,
+    responseText: `Perfecto, ${nm}. ${rangeHint} ¿Te parece si un asesor de Luxetty te contacta por aquí?`,
     followUpQuestion: null,
     awaitingField: 'advisor_contact_consent',
     toneFlags: { consultive: true, handoff: true },

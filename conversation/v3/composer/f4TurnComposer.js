@@ -10,6 +10,7 @@ const {
 } = require('../interpreter/objectionClassifier');
 const { FORCED_HANDOFF_REASONS } = require('../types/forcedHandoffReasons');
 const { V3_INTENT } = require('../types/constants');
+const { isHumanityDeferHandoffKind } = require('./humanityHandoffComposer');
 
 /**
  * Turnos F4 antes de fallback forzado o F3 (post-cierre, objeciones consultivas).
@@ -73,6 +74,11 @@ function tryComposeF4PlannerTurn(input) {
   const { state, decision, text, handoffOut } = input;
   if (handoffOut.action === 'CONSENT_ACCEPTED' || handoffOut.action === 'HANDOFF_COMPLETE') {
     return null;
+  }
+  const kind = classifyObjection(text, state);
+  if (isHumanityDeferHandoffKind(kind)) {
+    const humanity = tryComposeF4EarlyTurn({ state, decision, text });
+    if (humanity) return humanity;
   }
   if (handoffOut.action === 'OFFER_HANDOFF') {
     return null;

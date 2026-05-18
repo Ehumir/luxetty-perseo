@@ -28,8 +28,13 @@ const NON_NAME_PATTERNS = [
   /por qué preguntas/,
   /preguntas eso/,
   /no entiendes/,
+  /no entiendo/,
   /no estas entendiendo/,
   /no estás entendiendo/,
+  /solo dime/,
+  /\bprecio\b/,
+  /\bopciones\b/,
+  /\bnada\b/,
   /\?$/,
 ];
 

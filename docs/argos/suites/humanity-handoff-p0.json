@@ -1,0 +1,6 @@
+{
+  "suite": "humanity-handoff-p0",
+  "description": "Gate M1-PR-05 — confundido y cortante sin handoff indebido.",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": ["HUMANITY_002.v1.json", "HUMANITY_003.v1.json"]
+}
