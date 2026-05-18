@@ -11,8 +11,8 @@
     "Hola",
     "Busco casa en Cumbres",
     "Tengo presupuesto de 5 millones",
-    "Jorge",
-    "Sí, que me contacte un asesor"
+    "Me llamo Jorge",
+    "Sí, me puede contactar un asesor"
   ],
   "flags": {
     "deterministic_mode": true,
@@ -24,6 +24,9 @@
     "conversation_stage": "CRM_READY",
     "crm_ready": true,
     "advisor_contact_consent": "ACCEPTED",
+    "known_name": "Jorge",
+    "known_budget": 5000000,
+    "known_zone": "Cumbres",
     "should_create_contact": true,
     "should_create_lead": true
   },

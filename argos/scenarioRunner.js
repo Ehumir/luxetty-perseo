@@ -10,6 +10,128 @@ const { createArgosTrace, traceEvent, flushTrace } = require('./argosTrace');
 const { validateMustNotReply } = require('./mustNotValidator');
 const { extractListingCodes } = require('./mustNotValidator');
 
+function resolveSupabaseRaw(input) {
+  if (input.supabaseRaw) return input.supabaseRaw;
+  const flags = input.flags || {};
+  if (flags.crm_dry_run === false) return null;
+  const { supabase } = require('../services/supabaseService');
+  return supabase;
+}
+
+function contactWouldMaterialize(crm) {
+  if (!crm?.contact) return false;
+  return !!(crm.contact.would_create_contact || crm.contact.would_reuse_contact);
+}
+
+function leadWouldMaterialize(crm) {
+  if (!crm?.lead) return false;
+  return !!(crm.lead.would_create_lead || crm.lead.would_reuse_lead);
+}
+
+function pickTurnDiagnostics(debugTrace = []) {
+  const types = new Set(['parser_winner', 'state_transition', 'crm_gate_blockers']);
+  return debugTrace.filter((row) => types.has(row.type));
+}
+
+/**
+ * @param {object} expected
+ * @param {object|null} snapshot
+ * @param {object|null} panel
+ * @param {object|null} crm
+ * @param {object[]} violations
+ */
+function collectExpectedViolations(expected, snapshot, panel, crm, violations) {
+  if (!expected || typeof expected !== 'object') return;
+
+  if (expected.intent) {
+    const actualIntent = panel?.intent || snapshot?.detected_intent || null;
+    if (actualIntent !== expected.intent) {
+      violations.push({
+        code: 'expected_intent_mismatch',
+        expected: expected.intent,
+        actual: actualIntent,
+      });
+    }
+  }
+  if (expected.lead_type) {
+    const actualLead = panel?.lead_type || snapshot?.lead_flow || null;
+    if (actualLead !== expected.lead_type) {
+      violations.push({
+        code: 'expected_lead_type_mismatch',
+        expected: expected.lead_type,
+        actual: actualLead,
+      });
+    }
+  }
+  if (expected.conversation_stage && snapshot?.conversation_stage !== expected.conversation_stage) {
+    violations.push({
+      code: 'expected_conversation_stage_mismatch',
+      expected: expected.conversation_stage,
+      actual: snapshot?.conversation_stage,
+    });
+  }
+  if (expected.crm_ready === true && snapshot?.crm_ready !== true) {
+    violations.push({
+      code: 'expected_crm_ready',
+      expected: true,
+      actual: snapshot?.crm_ready,
+    });
+  }
+  if (expected.crm_ready === false && snapshot?.crm_ready !== false) {
+    violations.push({
+      code: 'expected_crm_not_ready',
+      expected: false,
+      actual: snapshot?.crm_ready,
+    });
+  }
+  if (expected.advisor_contact_consent && snapshot?.advisor_contact_consent !== expected.advisor_contact_consent) {
+    violations.push({
+      code: 'expected_advisor_contact_consent_mismatch',
+      expected: expected.advisor_contact_consent,
+      actual: snapshot?.advisor_contact_consent,
+    });
+  }
+  if (expected.known_name != null) {
+    const actualName = snapshot?.known_name || null;
+    if (String(actualName || '').toLowerCase() !== String(expected.known_name).toLowerCase()) {
+      violations.push({
+        code: 'expected_known_name_mismatch',
+        expected: expected.known_name,
+        actual: actualName,
+      });
+    }
+  }
+  if (expected.known_budget != null && Number(snapshot?.known_budget) !== Number(expected.known_budget)) {
+    violations.push({
+      code: 'expected_known_budget_mismatch',
+      expected: expected.known_budget,
+      actual: snapshot?.known_budget,
+    });
+  }
+  if (expected.known_zone != null) {
+    const actualZone = snapshot?.known_zone || panel?.zone || null;
+    if (String(actualZone || '').toLowerCase() !== String(expected.known_zone).toLowerCase()) {
+      violations.push({
+        code: 'expected_known_zone_mismatch',
+        expected: expected.known_zone,
+        actual: actualZone,
+      });
+    }
+  }
+  if (expected.crm_ready === true && crm?.skipped) {
+    violations.push({
+      code: 'expected_crm_dry_run_not_skipped',
+      reason: crm.reason || null,
+    });
+  }
+  if (expected.should_create_contact && !contactWouldMaterialize(crm)) {
+    violations.push({ code: 'expected_contact_would_materialize' });
+  }
+  if (expected.should_create_lead && !leadWouldMaterialize(crm)) {
+    violations.push({ code: 'expected_lead_would_materialize' });
+  }
+}
+
 /**
  * @param {{
  *   phone_sim: string,
@@ -26,6 +148,7 @@ async function runArgosScenario(input) {
   const expected = scenario.expected || {};
   const violations = [];
   const turns = [];
+  const supabaseRaw = resolveSupabaseRaw(input);
 
   if (messages.length > ARGOS_MAX_TURNS_PER_SCENARIO) {
     return {
@@ -43,6 +166,7 @@ async function runArgosScenario(input) {
   let lastPanel = null;
   let lastSnapshot = null;
   let lastCrm = null;
+  let lastTurnDiagnostics = [];
 
   for (let i = 0; i < messages.length; i += 1) {
     if (Date.now() - started > ARGOS_SCENARIO_TIMEOUT_MS) {
@@ -55,7 +179,7 @@ async function runArgosScenario(input) {
       phone_sim: input.phone_sim,
       text: messages[i],
       flags: input.flags,
-      supabaseRaw: input.supabaseRaw,
+      supabaseRaw,
     });
 
     if (result.error_code === ARGOS_ERROR_CODES.LOOP_DETECTED) {
@@ -68,6 +192,7 @@ async function runArgosScenario(input) {
     lastPanel = result.technical_panel;
     lastSnapshot = result.conversation_snapshot;
     lastCrm = result.crm_dry_run;
+    lastTurnDiagnostics = pickTurnDiagnostics(result.debug_trace);
     const mustNotViolations = validateMustNotReply({
       replyText: result.reply,
       must_not,
@@ -95,26 +220,7 @@ async function runArgosScenario(input) {
     });
   }
 
-  if (expected.intent && lastPanel?.intent !== expected.intent) {
-    violations.push({
-      code: 'expected_intent_mismatch',
-      expected: expected.intent,
-      actual: lastPanel?.intent,
-    });
-  }
-  if (expected.lead_type && lastPanel?.lead_type !== expected.lead_type) {
-    violations.push({
-      code: 'expected_lead_type_mismatch',
-      expected: expected.lead_type,
-      actual: lastPanel?.lead_type,
-    });
-  }
-  if (expected.should_create_contact && !lastCrm?.contact?.would_create_contact) {
-    violations.push({ code: 'expected_should_create_contact' });
-  }
-  if (expected.should_create_lead && !lastCrm?.lead?.would_create_lead) {
-    violations.push({ code: 'expected_should_create_lead' });
-  }
+  collectExpectedViolations(expected, lastSnapshot, lastPanel, lastCrm, violations);
 
   if (must_not.send_whatsapp) {
     traceEvent(trace, {
@@ -139,6 +245,16 @@ async function runArgosScenario(input) {
   }
 
   const flushed = flushTrace(trace);
+  const finalDiagnostics = lastTurnDiagnostics.reduce(
+    (acc, row) => {
+      if (row.type === 'parser_winner') acc.parser_winner = row.payload;
+      if (row.type === 'state_transition') acc.state_transition = row.payload;
+      if (row.type === 'crm_gate_blockers') acc.crm_gate_blockers = row.payload;
+      return acc;
+    },
+    {},
+  );
+
   return {
     ok: violations.length === 0,
     session_id,
@@ -148,12 +264,13 @@ async function runArgosScenario(input) {
       conversation_snapshot: lastSnapshot,
       technical_panel: lastPanel,
       crm_dry_run: lastCrm,
+      ...finalDiagnostics,
     },
     violations,
     must_not_violations: violations.filter((v) => String(v.code || '').startsWith('must_not')),
     must_not,
     events: flushed.events,
-    debug_trace: flushed.debug_trace,
+    debug_trace: [...(lastTurnDiagnostics || []), ...flushed.debug_trace],
   };
 }
 
@@ -175,4 +292,7 @@ function buildScenarioFacts(userText, turnResult) {
 module.exports = {
   runArgosScenario,
   buildScenarioFacts,
+  collectExpectedViolations,
+  contactWouldMaterialize,
+  leadWouldMaterialize,
 };
