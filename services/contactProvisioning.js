@@ -28,6 +28,110 @@ function normalizeCandidateNames(waName, state = {}) {
   return { usefulName, rejectedNames };
 }
 
+async function lookupExistingContact(supabase, conversationRow, normalizedPhone) {
+  let existingContact = null;
+
+  if (conversationRow?.contact_id) {
+    const { data } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('id', conversationRow.contact_id)
+      .maybeSingle();
+    existingContact = data || null;
+  }
+
+  if (!existingContact) {
+    const { data: byWhatsapp } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('whatsapp', normalizedPhone)
+      .limit(1);
+    existingContact = byWhatsapp?.[0] || null;
+  }
+
+  if (!existingContact) {
+    const { data: byPhone } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('phone', normalizedPhone)
+      .limit(1);
+    existingContact = byPhone?.[0] || null;
+  }
+
+  if (!existingContact) {
+    const lookupValues = buildPhoneLookupValues(normalizedPhone);
+    const orFilter = lookupValues
+      .flatMap((value) => [`phone.eq.${value}`, `whatsapp.eq.${value}`])
+      .join(',');
+    const { data } = await supabase
+      .from('contacts')
+      .select('*')
+      .or(orFilter)
+      .limit(1);
+    existingContact = data?.[0] || null;
+  }
+
+  return existingContact;
+}
+
+/**
+ * Plan contacto sin writes (compartido con preview ARGOS y execute).
+ */
+async function _planContact({
+  supabase,
+  conversationRow,
+  state,
+  phone,
+  waName = null,
+  property = null,
+}) {
+  if (!conversationRow?.id || !phone) {
+    return {
+      action: 'would_skip',
+      would_create_contact: false,
+      would_reuse_contact: false,
+      contact_id: null,
+      wasCreated: false,
+      assigned_agent_profile_id: null,
+      normalized_whatsapp: null,
+    };
+  }
+
+  const normalizedPhone = normalizePhoneNumber(phone) || phone;
+  const { usefulName } = normalizeCandidateNames(waName, state);
+  const existingContact = await lookupExistingContact(supabase, conversationRow, normalizedPhone);
+  const propertyAgentId = resolvePropertyAgentId(property);
+
+  if (existingContact) {
+    return {
+      action: 'would_reuse',
+      would_create_contact: false,
+      would_reuse_contact: true,
+      contact_id: existingContact.id,
+      wasCreated: false,
+      assigned_agent_profile_id:
+        existingContact.assigned_agent_profile_id || null,
+      normalized_whatsapp: normalizedPhone,
+      useful_name: usefulName || null,
+    };
+  }
+
+  return {
+    action: 'would_create',
+    would_create_contact: true,
+    would_reuse_contact: false,
+    contact_id: null,
+    wasCreated: true,
+    assigned_agent_profile_id: propertyAgentId || null,
+    normalized_whatsapp: normalizedPhone,
+    useful_name: usefulName || null,
+  };
+}
+
+async function previewContactForConversation(params) {
+  return _planContact(params);
+}
+
 async function ensureContactForConversationCore({
   supabase,
   conversationRow,
@@ -57,47 +161,23 @@ async function ensureContactForConversationCore({
       });
     }
 
-    let existingContact = null;
+    const plan = await _planContact({
+      supabase,
+      conversationRow,
+      state,
+      phone,
+      waName,
+      property,
+    });
 
-    if (conversationRow.contact_id) {
-      const { data } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('id', conversationRow.contact_id)
-        .maybeSingle();
-      existingContact = data || null;
+    if (plan.action === 'would_skip') {
+      return { contactId: null, wasCreated: false };
     }
 
-    if (!existingContact) {
-      const { data: byWhatsapp } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('whatsapp', normalizedPhone)
-        .limit(1);
-      existingContact = byWhatsapp?.[0] || null;
-    }
-
-    if (!existingContact) {
-      const { data: byPhone } = await supabase
-        .from('contacts')
-        .select('*')
-        .eq('phone', normalizedPhone)
-        .limit(1);
-      existingContact = byPhone?.[0] || null;
-    }
-
-    if (!existingContact) {
-      const lookupValues = buildPhoneLookupValues(normalizedPhone);
-      const orFilter = lookupValues
-        .flatMap((value) => [`phone.eq.${value}`, `whatsapp.eq.${value}`])
-        .join(',');
-      const { data } = await supabase
-        .from('contacts')
-        .select('*')
-        .or(orFilter)
-        .limit(1);
-      existingContact = data?.[0] || null;
-    }
+    let existingContact =
+      plan.action === 'would_reuse'
+        ? await lookupExistingContact(supabase, conversationRow, normalizedPhone)
+        : null;
 
     if (existingContact) {
       const payload = {};
@@ -228,5 +308,9 @@ async function ensureContactForConversationCore({
 
 module.exports = {
   ensureContactForConversationCore,
+  _planContact,
+  previewContactForConversation,
+  lookupExistingContact,
+  resolvePropertyAgentId,
 };
 

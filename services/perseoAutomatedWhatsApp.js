@@ -60,7 +60,21 @@ async function sendPerseoAutomatedWhatsApp({
   saveOutboundMessages,
   saveConversationEvent,
   logEvent,
+  argosMode = false,
 }) {
+  if (argosMode === true || rawPayload?.argosMode === true || policy?.argosMode === true) {
+    const err = new Error('ARGOS_WHATSAPP_BLOCKED');
+    err.code = 'ARGOS_WHATSAPP_BLOCKED';
+    if (typeof logEvent === 'function') {
+      logEvent('argos_whatsapp_blocked', {
+        conversation_id: conversationId,
+        channel,
+        reason: 'argos_mode',
+      });
+    }
+    throw err;
+  }
+
   const outbound = normalizeOutboundMessages(messages);
   if (!outbound.length) {
     return { sent: false, reason_code: PERSEO_REASON_CODES.OUTBOUND_MESSAGES_EMPTY };

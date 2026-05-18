@@ -70,7 +70,7 @@ function isAwaitingIdentityName(state) {
 function shouldAcceptAsIdentityName(state, text, opts = {}) {
   if (state.collectedFields?.fullName) return false;
   if (opts.explicitNameMatch) return !isNonNameUtterance(text);
-  if (!isAwaitingIdentityName(state)) return false;
+  if (!isAwaitingIdentityName(state) && !isHandoffPendingMissingName(state)) return false;
   if (isNonNameUtterance(text)) return false;
   const raw = String(text || '').trim();
   if (!raw) return false;
@@ -79,8 +79,20 @@ function shouldAcceptAsIdentityName(state, text, opts = {}) {
   return true;
 }
 
+/**
+ * Durante handoff pendiente el usuario puede responder con su nombre antes del consentimiento explícito.
+ */
+function isHandoffPendingMissingName(state) {
+  if (!state || state.collectedFields?.fullName) return false;
+  const stage = state.conversationStage || state.handoffStage;
+  if (stage !== CONVERSATION_STAGES.HANDOFF_PENDING) return false;
+  if (state.awaitingField === 'advisor_contact_consent') return true;
+  return state.advisorContactConsent === 'REQUESTED';
+}
+
 module.exports = {
   isNonNameUtterance,
   isAwaitingIdentityName,
+  isHandoffPendingMissingName,
   shouldAcceptAsIdentityName,
 };

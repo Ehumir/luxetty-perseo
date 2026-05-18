@@ -1,5 +1,31 @@
 'use strict';
 
+const { CONVERSATION_GOALS } = require('../types/constants');
+
+/**
+ * Intent legacy (`buy`, `sell`, …) derivado del goal V3 para paneles ARGOS/CRM.
+ * @param {string|null|undefined} goal
+ * @param {string|null|undefined} leadFlow
+ */
+function mapGoalToLegacyIntent(goal, leadFlow) {
+  switch (goal) {
+    case CONVERSATION_GOALS.BUY_PROPERTY:
+      return 'buy';
+    case CONVERSATION_GOALS.SELL_PROPERTY:
+      return 'sell';
+    case CONVERSATION_GOALS.RENT_PROPERTY:
+      return 'rent';
+    case CONVERSATION_GOALS.RENT_OUT_PROPERTY:
+      return 'rent_out';
+    case CONVERSATION_GOALS.PROPERTY_INQUIRY:
+      return 'property_interest';
+    default:
+      if (leadFlow === 'demand') return 'buy';
+      if (leadFlow === 'offer') return 'sell';
+      return null;
+  }
+}
+
 /**
  * Proyecta estado V3 in-memory al shape legacy `ai_state` (Supabase + !state QA).
  * @param {import('../types/conversationState').ConversationState|null|undefined} v3State
@@ -10,8 +36,13 @@ function mapV3StateToLegacyAiState(v3State) {
 
   const code = v3State.propertyListingCode != null ? String(v3State.propertyListingCode).trim() : '';
 
+  const intentType = mapGoalToLegacyIntent(v3State.conversationGoal, v3State.leadFlow);
+
   return {
     lead_flow: v3State.leadFlow ?? null,
+    lead_type: v3State.leadFlow ?? null,
+    intent_type: intentType,
+    playbook_type: intentType,
     operation_type: v3State.operationType ?? null,
     full_name: v3State.collectedFields?.fullName ?? null,
     awaiting_field: v3State.awaitingField ?? null,
@@ -67,6 +98,7 @@ function mergeLegacyAiStateWithV3(legacyAiState, v3State) {
 }
 
 module.exports = {
+  mapGoalToLegacyIntent,
   mapV3StateToLegacyAiState,
   mergeLegacyAiStateWithV3,
 };

@@ -402,6 +402,22 @@ function interpretUserMessage(state, text, options = {}) {
     } else {
       consentParsed = parseAdvisorContactConsent(text);
     }
+    if (
+      !consentParsed &&
+      !state.collectedFields?.fullName &&
+      shouldAcceptAsIdentityName(state, text, { explicitNameMatch: false })
+    ) {
+      const nm = cleanSpaces(String(text || '').trim());
+      if (nm) {
+        decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
+        decision.confidence = 0.9;
+        decision.extractedEntities.fullName = nm;
+        patch.collectedFields = { ...(patch.collectedFields || {}), fullName: nm };
+        decision.shouldAskName = false;
+        decision.explicitFlowSwitch = false;
+        return { patch, decision };
+      }
+    }
   }
   if (consentParsed && shouldParseConsentTurn(state)) {
     decision.detectedIntent = V3_INTENT.ADVISOR_CONSENT_CAPTURE;

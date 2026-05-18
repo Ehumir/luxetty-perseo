@@ -1,6 +1,6 @@
 'use strict';
 
-const { ALL_STAGES, V3_INTENT, CONVERSATION_MODE } = require('../types/constants');
+const { ALL_STAGES, V3_INTENT, CONVERSATION_MODE, CONVERSATION_GOALS } = require('../types/constants');
 
 function isDemandIntent(intent) {
   return (
@@ -13,7 +13,30 @@ function isDemandIntent(intent) {
 }
 
 function isOfferIntent(intent) {
-  return intent === 'offer' || intent === V3_INTENT.SELL_PROPERTY;
+  return (
+    intent === 'offer' ||
+    intent === V3_INTENT.SELL_PROPERTY ||
+    intent === V3_INTENT.RENT_OUT_PROPERTY
+  );
+}
+
+/** Flujo oferta activo (vender / rentar propiedad del usuario). */
+function isOfferFlowState(state) {
+  return (
+    state.leadFlow === 'offer' ||
+    state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY ||
+    state.conversationGoal === CONVERSATION_GOALS.RENT_OUT_PROPERTY
+  );
+}
+
+/** Flujo demanda activo (comprar / rentar / consulta por listing). */
+function isDemandFlowState(state) {
+  return (
+    state.leadFlow === 'demand' ||
+    state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY ||
+    state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY ||
+    state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY
+  );
 }
 
 /**
@@ -40,7 +63,7 @@ function evaluateRuleGuard(state, decision, context = {}) {
   }
 
   if (
-    (state.leadFlow === 'offer' || state.conversationGoalLocked) &&
+    isOfferFlowState(state) &&
     isDemandIntent(decision.detectedIntent) &&
     !decision.explicitFlowSwitch
   ) {
@@ -49,7 +72,7 @@ function evaluateRuleGuard(state, decision, context = {}) {
   }
 
   if (
-    state.leadFlow === 'demand' &&
+    isDemandFlowState(state) &&
     isOfferIntent(decision.detectedIntent) &&
     !decision.explicitFlowSwitch
   ) {
