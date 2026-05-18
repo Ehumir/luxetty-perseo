@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "updated_at": "2026-05-18",
+  "updated_at": "2026-05-19",
   "description": "Índice canónico de escenarios ARGOS. Ver ARGOS-SCENARIO-VERSIONING-v1.md",
   "suites": {
     "P0": [
@@ -12,6 +12,15 @@
       "PROP_003.v1.json",
       "CHAOS_001.v1.json",
       "HUMANITY_001.v1.json"
+    ],
+    "release-p0": [
+      "DEMAND_001.v1.json",
+      "DEMAND_002_FULL.v1.json",
+      "DEMAND_002_SLOTS.v1.json",
+      "DEMAND_004.v1.json",
+      "OFFER_001.v1.json",
+      "PROP_003.v1.json",
+      "CHAOS_001.v1.json"
     ],
     "P1": [
       "DEMAND_003.v1.json",
@@ -36,7 +45,9 @@
   },
   "deprecated": [],
   "planned_not_yet_committed": {
-    "P1": "Archivos listados; crear al cerrar S1/S3",
-    "P2": "Ver matriz en ARGOS-CONVERSATIONAL-TRAINING-STRATEGY-v1.md §7.3"
-  }
+    "P1": "Archivos listados; crear en olas S3",
+    "P2": "Ver matriz en ARGOS-CONVERSATIONAL-TRAINING-STRATEGY-v1.md §7.3",
+    "HUMANITY_001": "Manual review v1; escenario JSON opcional P0"
+  },
+  "corpus_governance": "docs/argos/datasets/corpus-index.yaml"
 }

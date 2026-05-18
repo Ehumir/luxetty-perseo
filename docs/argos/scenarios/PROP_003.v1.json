@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "PROP_003",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "property",
+  "category": "propiedad_invalida",
+  "title": "Código inválido — no inventar ficha ni precio",
+  "description": "Listing inexistente; must_not semántico obligatorio.",
+  "typology": { "corpus_ids": ["DEM-B-008"], "rail": "property", "block": "B" },
+  "messages": ["Me interesa LUX-INVALID-999", "¿Cuánto cuesta?"],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "crm_ready": false
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-18", "change": "P0 corpus governance seed." }]
+}

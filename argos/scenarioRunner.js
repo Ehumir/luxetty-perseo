@@ -40,7 +40,7 @@ function pickTurnDiagnostics(debugTrace = []) {
  * @param {object|null} crm
  * @param {object[]} violations
  */
-function collectExpectedViolations(expected, snapshot, panel, crm, violations) {
+function collectExpectedViolations(expected, snapshot, panel, crm, violations, turns = []) {
   if (!expected || typeof expected !== 'object') return;
 
   if (expected.intent) {
@@ -130,6 +130,10 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations) {
   if (expected.should_create_lead && !leadWouldMaterialize(crm)) {
     violations.push({ code: 'expected_lead_would_materialize' });
   }
+  if (expected.loop_detected === true) {
+    const loopHit = (turns || []).some((t) => t.error_code === ARGOS_ERROR_CODES.LOOP_DETECTED);
+    if (!loopHit) violations.push({ code: 'expected_loop_not_detected' });
+  }
 }
 
 /**
@@ -183,7 +187,9 @@ async function runArgosScenario(input) {
     });
 
     if (result.error_code === ARGOS_ERROR_CODES.LOOP_DETECTED) {
-      violations.push({ code: 'LOOP_DETECTED', turn: i + 1 });
+      if (expected.loop_detected !== true) {
+        violations.push({ code: 'LOOP_DETECTED', turn: i + 1 });
+      }
       turns.push(result);
       break;
     }
@@ -220,7 +226,7 @@ async function runArgosScenario(input) {
     });
   }
 
-  collectExpectedViolations(expected, lastSnapshot, lastPanel, lastCrm, violations);
+    collectExpectedViolations(expected, lastSnapshot, lastPanel, lastCrm, violations, turns);
 
   if (must_not.send_whatsapp) {
     traceEvent(trace, {

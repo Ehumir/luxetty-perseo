@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "DEMAND_001",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "demand",
+  "category": "compra_demanda_intent",
+  "title": "Compra — intención sin nombre",
+  "description": "Detecta buy/demand y pide identidad; no debe CRM_READY sin nombre.",
+  "typology": { "corpus_ids": ["DEM-A-003"], "rail": "demand", "block": "A" },
+  "messages": ["Hola", "Busco casa en Cumbres"],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "intent": "buy",
+    "lead_type": "demand",
+    "conversation_stage": "IDENTITY_PENDING",
+    "crm_ready": false
+  },
+  "must_not": {
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true,
+    "forced_handoff": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-18", "change": "P0 corpus governance seed." }]
+}
