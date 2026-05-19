@@ -3,6 +3,7 @@
 const { buildCrmIdempotencyKey } = require('../crm/crmExecuteFoundation');
 const { areCrmRuntimeTablesAvailable, isArgosOrDryContext } = require('./runtimeTableProbe');
 const { isCrmRuntimePersistentEnabled } = require('../../../config/perseoM401Flags');
+const { computeCrmBackoffMs } = require('./crmWorkerPoisoning');
 
 /** @type {Map<string, object>} */
 const memoryGlobal = new Map();
@@ -53,6 +54,9 @@ class MemoryCrmRuntimeStore {
       status: 'pending',
       attempts: 0,
       max_attempts: 3,
+      next_attempt_at: Date.now(),
+      last_error_signature: null,
+      error_repeat_count: 0,
     };
     this.bucket.outbox.push(job);
     await this.appendLog({ phase: 'enqueue', job_id: job.id, idempotency_key: idempotencyKey });
@@ -73,22 +77,71 @@ class MemoryCrmRuntimeStore {
     return { completed: true, result_snapshot: resultSnapshot || {} };
   }
 
-  async markFailed(job, reason, lastError) {
-    job.attempts = (job.attempts || 0) + 1;
-    if (job.attempts >= (job.max_attempts || 3)) {
+  async markFailed(job, reason, lastError, poisonMeta = null) {
+    if (poisonMeta?.action === 'freeze') {
+      job.status = 'frozen';
+      job.freeze_reason = poisonMeta.alert_reason || reason;
+      job.last_error = lastError;
+      await this.appendLog({
+        phase: 'frozen',
+        job_id: job.id,
+        reason,
+        alert_reason: poisonMeta.alert_reason,
+      });
+      return { dead_letter: false, frozen: true, retry: false };
+    }
+
+    job.attempts = poisonMeta?.attempts ?? (job.attempts || 0) + 1;
+    job.last_error_signature = poisonMeta?.last_error_signature ?? job.last_error_signature;
+    job.error_repeat_count = poisonMeta?.error_repeat_count ?? job.error_repeat_count;
+    job.last_error = lastError;
+
+    if (poisonMeta?.action === 'dead_letter' || job.attempts >= (job.max_attempts || 3)) {
       job.status = 'dead_letter';
       this.bucket.deadLetters.push({
         outbox_id: job.id,
-        reason,
+        reason: poisonMeta?.reason || reason,
         last_error: lastError,
         at: new Date().toISOString(),
       });
       await this.appendLog({ phase: 'dead_letter', job_id: job.id, reason, last_error: lastError });
       return { dead_letter: true };
     }
+
+    const backoffMs = poisonMeta?.backoff_ms ?? computeCrmBackoffMs(job.attempts);
     job.status = 'failed';
-    await this.appendLog({ phase: 'retry_scheduled', job_id: job.id, attempt: job.attempts });
+    job.next_attempt_at = Date.now() + backoffMs;
+    await this.appendLog({
+      phase: 'retry_scheduled',
+      job_id: job.id,
+      attempt: job.attempts,
+      backoff_ms: backoffMs,
+    });
     return { dead_letter: false, retry: true };
+  }
+
+  async claimJobs({ batchSize = 5, workerId = 'worker', lockTtlSec = 120 }) {
+    const now = Date.now();
+    const claimed = [];
+    const pending = this.bucket.outbox
+      .filter((j) => {
+        if (!['pending', 'failed'].includes(j.status)) return false;
+        if (j.status === 'frozen' || j.status === 'dead_letter') return false;
+        const nextAt = Number(j.next_attempt_at || 0);
+        if (nextAt > now) return false;
+        if (j.locked_at && j.lock_expires_at > now && j.locked_by !== workerId) return false;
+        return true;
+      })
+      .slice(0, batchSize);
+
+    for (const job of pending) {
+      job.status = 'processing';
+      job.locked_at = now;
+      job.locked_by = workerId;
+      job.lock_expires_at = now + lockTtlSec * 1000;
+      claimed.push(job);
+    }
+    return claimed;
   }
 
   getMode() {
@@ -146,13 +199,34 @@ class DbCrmRuntimeStore {
     return { completed: true };
   }
 
-  async markFailed(jobRow, reason, lastError) {
-    const attempts = (jobRow.attempts || 0) + 1;
-    if (attempts >= (jobRow.max_attempts || 3)) {
+  async markFailed(jobRow, reason, lastError, poisonMeta = null) {
+    const attempts = poisonMeta?.attempts ?? (jobRow.attempts || 0) + 1;
+
+    if (poisonMeta?.action === 'freeze') {
+      await this.supabase
+        .from('crm_outbox')
+        .update({
+          status: 'failed',
+          last_error: lastError,
+          attempts,
+          locked_at: null,
+          locked_by: null,
+        })
+        .eq('id', jobRow.id);
+      await this.appendLog({
+        outbox_id: jobRow.id,
+        phase: 'frozen',
+        reason,
+        alert_reason: poisonMeta.alert_reason,
+      });
+      return { dead_letter: false, frozen: true };
+    }
+
+    if (poisonMeta?.action === 'dead_letter' || attempts >= (jobRow.max_attempts || 3)) {
       await this.supabase.from('crm_dead_letters').insert({
         outbox_id: jobRow.id,
         conversation_id: this.conversationId,
-        reason,
+        reason: poisonMeta?.reason || reason,
         payload_snapshot: jobRow.payload || {},
         last_error: lastError,
       });
@@ -162,11 +236,52 @@ class DbCrmRuntimeStore {
         .eq('id', jobRow.id);
       return { dead_letter: true };
     }
+
+    const backoffMs = poisonMeta?.backoff_ms ?? computeCrmBackoffMs(attempts);
+    const nextAt = new Date(Date.now() + backoffMs).toISOString();
     await this.supabase
       .from('crm_outbox')
-      .update({ status: 'failed', attempts, last_error: lastError })
+      .update({
+        status: 'failed',
+        attempts,
+        last_error: lastError,
+        scheduled_at: nextAt,
+        locked_at: null,
+        locked_by: null,
+      })
       .eq('id', jobRow.id);
     return { dead_letter: false, retry: true };
+  }
+
+  async claimJobs({ batchSize = 5, workerId = 'worker', lockTtlSec = 120 }) {
+    const now = new Date().toISOString();
+    const lockExpires = new Date(Date.now() + lockTtlSec * 1000).toISOString();
+    const { data: candidates, error } = await this.supabase
+      .from('crm_outbox')
+      .select('*')
+      .in('status', ['pending', 'failed'])
+      .lte('scheduled_at', now)
+      .order('scheduled_at', { ascending: true })
+      .limit(batchSize);
+    if (error || !candidates?.length) return [];
+
+    const claimed = [];
+    for (const row of candidates) {
+      const { data: updated, error: upErr } = await this.supabase
+        .from('crm_outbox')
+        .update({
+          status: 'processing',
+          locked_at: now,
+          locked_by: workerId,
+          lock_expires_at: lockExpires,
+        })
+        .eq('id', row.id)
+        .in('status', ['pending', 'failed'])
+        .select('*')
+        .maybeSingle();
+      if (!upErr && updated) claimed.push(updated);
+    }
+    return claimed;
   }
 
   getMode() {

@@ -1,0 +1,17 @@
+{
+  "suite": "crm-worker-p0",
+  "description": "M4-02 — crm-worker-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "CRMW_001.v1.json",
+    "CRMW_002.v1.json",
+    "CRMW_003.v1.json",
+    "CRMW_004.v1.json",
+    "CRMW_005.v1.json",
+    "CRMW_006.v1.json",
+    "CRMW_007.v1.json",
+    "CRMW_008.v1.json"
+  ]
+}

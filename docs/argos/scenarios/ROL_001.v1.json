@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "ROL_001",
+  "family": "rollout_flags",
+  "category": "rollout_flags",
+  "title": "All M4 flags OFF path",
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true,
+    "crm_execute_foundation": true,
+    "crm_runtime_persistent": false,
+    "media_runtime_production": false,
+    "wa_telemetry": false,
+    "crm_worker_async": false
+  },
+  "messages": [
+    "Hola"
+  ],
+  "expected": {
+    "crm_runtime_mode": null
+  },
+  "must_not": {
+    "write_leads": true,
+    "write_contacts": true
+  }
+}

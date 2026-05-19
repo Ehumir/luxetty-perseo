@@ -39,6 +39,8 @@ function applyArgosSimulationEnv(flags = {}) {
     waTelemetry: process.env.PERSEO_WA_TELEMETRY_ENABLED,
     learningRuntime: process.env.PERSEO_LEARNING_RUNTIME_ENABLED,
     policyRuntime: process.env.PERSEO_POLICY_RUNTIME_ENABLED,
+    crmWorkerAsync: process.env.PERSEO_CRM_WORKER_ASYNC_ENABLED,
+    mediaFailOpen: process.env.PERSEO_MEDIA_RUNTIME_FAIL_OPEN_ENABLED,
   };
   const handoffOn = flags.v3_handoff_enabled !== false;
   process.env.PERSEO_V3_HANDOFF_ENABLED = handoffOn ? 'true' : 'false';
@@ -68,6 +70,8 @@ function applyArgosSimulationEnv(flags = {}) {
   setTriFlag('PERSEO_WA_TELEMETRY_ENABLED', flags.wa_telemetry);
   setTriFlag('PERSEO_LEARNING_RUNTIME_ENABLED', flags.learning_runtime);
   setTriFlag('PERSEO_POLICY_RUNTIME_ENABLED', flags.policy_runtime);
+  setTriFlag('PERSEO_CRM_WORKER_ASYNC_ENABLED', flags.crm_worker_async);
+  setTriFlag('PERSEO_MEDIA_RUNTIME_FAIL_OPEN_ENABLED', flags.media_runtime_fail_open);
 
   return {
     handoffEnabled: handoffOn,
@@ -97,6 +101,8 @@ function applyArgosSimulationEnv(flags = {}) {
       restoreTri('PERSEO_WA_TELEMETRY_ENABLED', prev.waTelemetry);
       restoreTri('PERSEO_LEARNING_RUNTIME_ENABLED', prev.learningRuntime);
       restoreTri('PERSEO_POLICY_RUNTIME_ENABLED', prev.policyRuntime);
+      restoreTri('PERSEO_CRM_WORKER_ASYNC_ENABLED', prev.crmWorkerAsync);
+      restoreTri('PERSEO_MEDIA_RUNTIME_FAIL_OPEN_ENABLED', prev.mediaFailOpen);
     },
   };
 }

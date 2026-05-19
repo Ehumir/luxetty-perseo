@@ -90,7 +90,13 @@ async function resolveMediaForIntakeAsync(media, opts = {}) {
       const out = await opts.transcribeFn(media);
       return mapTranscriptionToMedia(media, out);
     } catch (_err) {
-      return { ...media, no_transcript: true, provider: 'openai_failed' };
+      return {
+        ...media,
+        no_transcript: true,
+        provider: 'openai_failed',
+        fallback_reason: 'media_provider_error',
+        media_authoritative: false,
+      };
     }
   }
 
@@ -103,7 +109,14 @@ async function resolveMediaForIntakeAsync(media, opts = {}) {
       const out = await opts.analyzeImageFn(media);
       return mapVisionToMedia(media, out, 'image');
     } catch (_err) {
-      return { ...media, kind: 'image', illegible: true, provider: 'openai_failed' };
+      return {
+        ...media,
+        kind: 'image',
+        illegible: true,
+        provider: 'openai_failed',
+        fallback_reason: 'media_provider_error',
+        media_authoritative: false,
+      };
     }
   }
 
@@ -111,16 +124,26 @@ async function resolveMediaForIntakeAsync(media, opts = {}) {
 }
 
 function mapTranscriptionToMedia(media, result) {
-  if (!result || result.success === false || !result.transcription_text) {
-    return { ...media, no_transcript: true, provider: result?.provider || 'openai' };
+  const text = cleanSpaces(
+    result?.transcription_text || result?.transcript || result?.text || '',
+  );
+  if (!result || result.success === false || !text) {
+    return {
+      ...media,
+      no_transcript: true,
+      provider: result?.provider || 'openai',
+      media_authoritative: false,
+    };
   }
-  const confidence = Number(result.confidence_score ?? 0.7);
+  const confidence = Number(result.confidence_score ?? result.confidence ?? 0.7);
   return {
     ...media,
-    transcript: cleanSpaces(result.transcription_text),
+    transcript: text,
     confidence,
     provider: result.provider || 'openai',
     needs_confirmation: confidence < LOW_CONFIDENCE_THRESHOLD,
+    media_authoritative: false,
+    requires_confirmation: confidence < LOW_CONFIDENCE_THRESHOLD,
   };
 }
 

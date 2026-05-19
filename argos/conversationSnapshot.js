@@ -65,6 +65,10 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
       v3State?.lastMediaIntake?.provider || v3State?.lastLogicalTurnSource || null,
     policy_runtime_applied: v3State?.lastPolicyRuntimeApplied === true,
     policy_runtime_rule_id: v3State?.lastPolicyRuntimeRuleId || null,
+    media_fallback_reason: v3State?.lastMediaFallbackReason || null,
+    media_fail_open: v3State?.lastMediaFailOpen === true,
+    crm_worker_pending: v3State?.crmQueueStatus === 'pending_worker',
+    crm_frozen: v3State?.crmQueueStatus === 'frozen',
   };
 }
 

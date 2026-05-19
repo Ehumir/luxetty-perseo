@@ -1,0 +1,26 @@
+# M4-02 WhatsApp real smoke — structured run record (not manual-only)
+
+version: 1
+fields:
+  pilot_id: string
+  phone: string
+  started_at: iso8601
+  ended_at: iso8601
+  flags_active: object
+  transcript:
+    - turn: number
+      role: user|assistant
+      text: string
+      media_kind: audio|image|document|null
+  scores:
+    humanity: { h1: pass|fail, h2: pass|fail, h3: pass|fail, h4: pass|fail, h5: pass|fail, total: number }
+    fallback_score: number  # 0-1 — 1 = graceful fallback when needed
+    media_outcome: pass|fail|na
+    crm_outcome: completed|skipped|pending|dry_run|na
+    interruption_recovery: pass|fail|na
+    multi_question_handling: pass|fail|na
+  operational:
+    telemetry_events: number
+    crm_duplicate_detected: boolean
+    loop_detected: boolean
+  verdict: pass|fail

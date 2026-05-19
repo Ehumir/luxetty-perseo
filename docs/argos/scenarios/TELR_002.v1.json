@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "TELR_002",
+  "family": "wa_telemetry_runtime",
+  "category": "wa_telemetry_runtime",
+  "title": "Policy hit captured",
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true,
+    "crm_execute_foundation": true,
+    "wa_telemetry": true,
+    "policy_runtime": true
+  },
+  "messages": [
+    "Busco en zona prohibida test"
+  ],
+  "expected": {
+    "telemetry_recorded": true
+  },
+  "must_not": {
+    "write_leads": true,
+    "write_contacts": true
+  }
+}

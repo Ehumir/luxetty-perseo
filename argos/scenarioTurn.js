@@ -35,6 +35,10 @@ function normalizeScenarioTurn(raw) {
     if (raw.simulate_confidence != null) {
       media.simulate_confidence = Number(raw.simulate_confidence);
     }
+    if (raw.fallback_reason) media.fallback_reason = raw.fallback_reason;
+    if (raw.media_timeout === true) media.media_timeout = true;
+    if (raw.fail_open_applied === true) media.fail_open_applied = true;
+    if (raw.no_transcript === true) media.no_transcript = true;
     return { text: cleanSpaces(raw.text || raw.caption || ''), media };
   }
 
