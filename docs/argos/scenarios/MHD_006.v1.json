@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "MHD_006",
+  "family": "media_hardening",
+  "category": "media_hardening",
+  "title": "Media hardening 6",
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true,
+    "crm_execute_foundation": true,
+    "crm_runtime_persistent": true,
+    "wa_telemetry": true,
+    "media_hardening": true,
+    "media_runtime_production": true,
+    "media_runtime_fail_open": true
+  },
+  "messages": [
+    {
+      "type": "image",
+      "mime_type": "application/x-unknown",
+      "simulate_hints": [
+        "x"
+      ]
+    }
+  ],
+  "expected": {
+    "telemetry_recorded": true
+  },
+  "must_not": {
+    "write_leads": true,
+    "write_contacts": true,
+    "invent_price": true
+  }
+}

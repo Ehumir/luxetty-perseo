@@ -659,6 +659,7 @@ app.get('/webhook', (req, res) => {
 });
 
 app.post('/webhook', async (req, res) => {
+  const webhookStart = Date.now();
   try {
     const { value, message } = extractInboundMessage(req.body);
     if (!message) {
@@ -694,6 +695,23 @@ app.post('/webhook', async (req, res) => {
 
     let conversationRow = await getOrCreateConversation(from);
     const conversationId = conversationRow?.id || null;
+
+    try {
+      const { checkFloodProtection, endWebhookTiming } = require('./conversation/v3/runtime/runtimeSafety');
+      const flood = checkFloodProtection(conversationId || from);
+      if (!flood.allowed) {
+        logEvent('runtime_flood_blocked', {
+          conversation_id: conversationId,
+          count: flood.count,
+        });
+        res.sendStatus(200);
+        endWebhookTiming(webhookStart);
+        return;
+      }
+    } catch (_floodErr) {
+      /* non-blocking */
+    }
+
     const previousAiState = normalizeAiState(conversationRow?.ai_state);
 
     await saveConversationEvent(conversationId, 'conversation_resolved', {
@@ -1215,9 +1233,21 @@ app.post('/webhook', async (req, res) => {
       logEvent,
     });
 
+    try {
+      const { endWebhookTiming } = require('./conversation/v3/runtime/runtimeSafety');
+      endWebhookTiming(webhookStart);
+    } catch (_t) {
+      /* non-blocking */
+    }
     res.sendStatus(200);
   } catch (err) {
     console.error('webhook_post_fatal', err);
+    try {
+      const { endWebhookTiming } = require('./conversation/v3/runtime/runtimeSafety');
+      endWebhookTiming(webhookStart);
+    } catch (_t) {
+      /* non-blocking */
+    }
     res.sendStatus(200);
   }
 });

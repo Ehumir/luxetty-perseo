@@ -1,0 +1,27 @@
+{
+  "suite": "robustness-p0",
+  "description": "M4-03 — robustness-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "ROB_001.v1.json",
+    "ROB_002.v1.json",
+    "ROB_003.v1.json",
+    "ROB_004.v1.json",
+    "ROB_005.v1.json",
+    "ROB_006.v1.json",
+    "ROB_007.v1.json",
+    "ROB_008.v1.json",
+    "ROB_009.v1.json",
+    "ROB_010.v1.json",
+    "ROB_011.v1.json",
+    "ROB_012.v1.json",
+    "ROB_013.v1.json",
+    "ROB_014.v1.json",
+    "ROB_015.v1.json",
+    "ROB_016.v1.json",
+    "ROB_017.v1.json",
+    "ROB_018.v1.json"
+  ]
+}

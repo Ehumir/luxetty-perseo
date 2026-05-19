@@ -1,0 +1,21 @@
+{
+  "suite": "runtime-observability-p0",
+  "description": "M4-03 — runtime-observability-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "OBS_001.v1.json",
+    "OBS_002.v1.json",
+    "OBS_003.v1.json",
+    "OBS_004.v1.json",
+    "OBS_005.v1.json",
+    "OBS_006.v1.json",
+    "OBS_007.v1.json",
+    "OBS_008.v1.json",
+    "OBS_009.v1.json",
+    "OBS_010.v1.json",
+    "OBS_011.v1.json",
+    "OBS_012.v1.json"
+  ]
+}

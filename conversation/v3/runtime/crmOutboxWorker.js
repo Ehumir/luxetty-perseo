@@ -14,6 +14,14 @@ const { resolveCrmRuntimeStore, MemoryCrmRuntimeStore } = require('./crmRuntimeS
 const { evaluateJobPoisoning } = require('./crmWorkerPoisoning');
 const { recordOperationalEvent } = require('./waTelemetry');
 const { isArgosOrDryContext } = require('./runtimeTableProbe');
+const {
+  recordRetryAttempt,
+  recoverStuckJobs,
+  recordWorkerHeartbeat,
+} = require('./crmDurability');
+const { isCrmDurabilityEnabled } = require('../../../config/perseoM403Flags');
+const { recordMetric } = require('./observability/runtimeMetricsCollector');
+const { checkWorkerStarvation } = require('./runtimeSafety');
 
 function defaultWorkerId() {
   return (
@@ -82,8 +90,12 @@ async function processCrmOutboxJob(job, executeCore, store, ctx = {}) {
       return { ok: true, skipped: true, result };
     }
     throw new Error(result?.reason || 'crm_not_executed');
-  } catch (err) {
+    } catch (err) {
     const msg = String(err?.message || err);
+    const storm = recordRetryAttempt();
+    if (storm.storm) {
+      await store.appendLog({ outbox_id: job.id, phase: 'retry_storm_pause', count: storm.count });
+    }
     const poison = evaluateJobPoisoning(job, msg);
     const fail = await store.markFailed(job, poison.reason, msg, poison);
     if (fail.frozen) {
@@ -122,6 +134,7 @@ async function processCrmOutboxJob(job, executeCore, store, ctx = {}) {
  * Claim and process a batch of CRM outbox jobs.
  */
 async function runCrmOutboxWorkerBatch(options = {}) {
+  const workerStart = Date.now();
   if (!isCrmRuntimePersistentEnabled() && !options.forceMemory) {
     return { processed: 0, skipped: true, reason: 'crm_runtime_disabled' };
   }
@@ -146,6 +159,10 @@ async function runCrmOutboxWorkerBatch(options = {}) {
     return { processed: 0, skipped: true, reason: 'no_store' };
   }
 
+  if (isCrmDurabilityEnabled()) {
+    await recoverStuckJobs(store, { workerId: ctx.workerId });
+  }
+
   const jobs = await store.claimJobs({
     batchSize,
     workerId: ctx.workerId,
@@ -165,14 +182,33 @@ async function runCrmOutboxWorkerBatch(options = {}) {
     processed += 1;
   }
 
+  const workerMs = Date.now() - workerStart;
+  recordMetric('worker_latency', { ms: workerMs });
+  const starvation = checkWorkerStarvation(processed, jobs.length, batchSize);
+  recordWorkerHeartbeat({
+    worker_id: ctx.workerId,
+    claimed: jobs.length,
+    processed,
+    latency_ms: workerMs,
+    starved: starvation.starved,
+  });
+
   v3Log('crm_worker_batch', {
     worker_id: ctx.workerId,
     claimed: jobs.length,
     processed,
     mode: store.getMode(),
+    latency_ms: workerMs,
   });
 
-  return { processed, claimed: jobs.length, results, mode: store.getMode() };
+  return {
+    processed,
+    claimed: jobs.length,
+    results,
+    mode: store.getMode(),
+    worker_latency_ms: workerMs,
+    starvation,
+  };
 }
 
 async function runCrmOutboxWorkerOnce(options = {}) {

@@ -369,6 +369,20 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
       actual: snapshot?.crm_frozen,
     });
   }
+  if (expected.runtime_observability_recorded === true && snapshot?.runtime_observability_recorded !== true) {
+    violations.push({
+      code: 'expected_runtime_observability_recorded',
+      expected: true,
+      actual: snapshot?.runtime_observability_recorded,
+    });
+  }
+  if (expected.runtime_escalation_triggered === true && snapshot?.runtime_escalation_triggered !== true) {
+    violations.push({
+      code: 'expected_runtime_escalation_triggered',
+      expected: true,
+      actual: snapshot?.runtime_escalation_triggered,
+    });
+  }
 }
 
 /**

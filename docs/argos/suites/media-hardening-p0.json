@@ -1,0 +1,23 @@
+{
+  "suite": "media-hardening-p0",
+  "description": "M4-03 — media-hardening-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "MHD_001.v1.json",
+    "MHD_002.v1.json",
+    "MHD_003.v1.json",
+    "MHD_004.v1.json",
+    "MHD_005.v1.json",
+    "MHD_006.v1.json",
+    "MHD_007.v1.json",
+    "MHD_008.v1.json",
+    "MHD_009.v1.json",
+    "MHD_010.v1.json",
+    "MHD_011.v1.json",
+    "MHD_012.v1.json",
+    "MHD_013.v1.json",
+    "MHD_014.v1.json"
+  ]
+}

@@ -32,6 +32,8 @@ const {
 const { runUnderstandingRuntime } = require('../runtime/understandingRuntime');
 const { runResilienceRuntime } = require('../runtime/resilienceRuntime');
 const { recordOperationalEvent, buildTelemetryFromTurn } = require('../runtime/waTelemetry');
+const { applyM403RuntimeFinishing } = require('../runtime/applyM403Finishing');
+const { applyMediaHardeningToMedia } = require('../runtime/mediaHardening');
 
 function finalizeAssistantTurn(state, replyText, effectiveText, decision) {
   const reply = applyHumanityWave2Reply({ state, replyText, text: effectiveText, decision });
@@ -81,6 +83,7 @@ function applyM4RuntimeFinishing(state, { effectiveText, replyText, decision, re
     lastTelemetryRecorded: telemetryResult.recorded === true,
     lastTelemetryMode: telemetryResult.mode || 'disabled',
   };
+  next = applyM403RuntimeFinishing(next, { decision, resolvedMedia, input });
   return { state: next, resilienceRuntime, telemetryResult };
 }
 
@@ -158,6 +161,10 @@ function processV3Turn(input) {
   }
 
   let resolvedMedia = input.media && typeof input.media === 'object' ? input.media : null;
+  if (resolvedMedia) {
+    const hardened = applyMediaHardeningToMedia(resolvedMedia, { force: input.argosMode });
+    resolvedMedia = hardened.media;
+  }
   const mediaRealOn = isMediaRealV1Enabled() || isMediaRuntimeProductionEnabled();
   if (resolvedMedia && mediaRealOn) {
     resolvedMedia = resolveMediaForIntake(resolvedMedia, {
