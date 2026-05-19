@@ -3,7 +3,7 @@
 # Governance: docs/argos/datasets/CORPUS-GOVERNANCE-v1.md
 
 corpus_version: 1
-updated_at: "2026-05-18"
+updated_at: "2026-05-19"
 generator: generate-corpus-index.js
 
 governance:
@@ -53,6 +53,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: promoted
+    scenario_candidate_id: OFFER_001
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 1"
   - corpus_id: "CAP-A-002"
     source_document: "tipologia-captadores"
@@ -84,6 +91,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 2"
   - corpus_id: "CAP-A-003"
     source_document: "tipologia-captadores"
@@ -115,6 +129,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 3"
   - corpus_id: "CAP-A-004"
     source_document: "tipologia-captadores"
@@ -146,6 +167,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 4"
   - corpus_id: "CAP-A-005"
     source_document: "tipologia-captadores"
@@ -177,6 +205,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 5"
   - corpus_id: "CAP-A-006"
     source_document: "tipologia-captadores"
@@ -208,6 +243,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 6"
   - corpus_id: "CAP-A-007"
     source_document: "tipologia-captadores"
@@ -239,6 +281,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 7"
   - corpus_id: "CAP-A-008"
     source_document: "tipologia-captadores"
@@ -270,6 +319,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 8"
   - corpus_id: "CAP-A-009"
     source_document: "tipologia-captadores"
@@ -301,6 +357,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 9"
   - corpus_id: "CAP-A-010"
     source_document: "tipologia-captadores"
@@ -332,6 +395,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 10"
   - corpus_id: "CAP-A-011"
     source_document: "tipologia-captadores"
@@ -363,6 +433,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 11"
   - corpus_id: "CAP-A-012"
     source_document: "tipologia-captadores"
@@ -394,6 +471,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 12"
   - corpus_id: "CAP-A-013"
     source_document: "tipologia-captadores"
@@ -425,6 +509,13 @@ entries:
     behavior_cluster: "offer|sell|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "CAP-A-013"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 666053014f0ea0bb
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque A caso 13"
   - corpus_id: "CAP-B-001"
     source_document: "tipologia-captadores"
@@ -456,6 +547,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 1"
   - corpus_id: "CAP-B-002"
     source_document: "tipologia-captadores"
@@ -487,6 +585,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 2"
   - corpus_id: "CAP-B-003"
     source_document: "tipologia-captadores"
@@ -518,6 +623,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 3"
   - corpus_id: "CAP-B-004"
     source_document: "tipologia-captadores"
@@ -549,6 +661,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 4"
   - corpus_id: "CAP-B-005"
     source_document: "tipologia-captadores"
@@ -580,6 +699,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 5"
   - corpus_id: "CAP-B-006"
     source_document: "tipologia-captadores"
@@ -611,6 +737,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 6"
   - corpus_id: "CAP-B-007"
     source_document: "tipologia-captadores"
@@ -642,6 +775,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 7"
   - corpus_id: "CAP-B-008"
     source_document: "tipologia-captadores"
@@ -673,6 +813,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 8"
   - corpus_id: "CAP-B-009"
     source_document: "tipologia-captadores"
@@ -704,6 +851,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 9"
   - corpus_id: "CAP-B-010"
     source_document: "tipologia-captadores"
@@ -735,6 +889,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 10"
   - corpus_id: "CAP-B-011"
     source_document: "tipologia-captadores"
@@ -766,6 +927,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 11"
   - corpus_id: "CAP-B-012"
     source_document: "tipologia-captadores"
@@ -797,6 +965,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 12"
   - corpus_id: "CAP-B-013"
     source_document: "tipologia-captadores"
@@ -828,6 +1003,13 @@ entries:
     behavior_cluster: "offer|sell|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "CAP-B-013"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: dc5e60f8fd53e034
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque B caso 13"
   - corpus_id: "CAP-C-001"
     source_document: "tipologia-captadores"
@@ -859,6 +1041,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 1"
   - corpus_id: "CAP-C-002"
     source_document: "tipologia-captadores"
@@ -890,6 +1079,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 2"
   - corpus_id: "CAP-C-003"
     source_document: "tipologia-captadores"
@@ -921,6 +1117,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 3"
   - corpus_id: "CAP-C-004"
     source_document: "tipologia-captadores"
@@ -952,6 +1155,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 4"
   - corpus_id: "CAP-C-005"
     source_document: "tipologia-captadores"
@@ -983,6 +1193,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 5"
   - corpus_id: "CAP-C-006"
     source_document: "tipologia-captadores"
@@ -1014,6 +1231,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 6"
   - corpus_id: "CAP-C-007"
     source_document: "tipologia-captadores"
@@ -1045,6 +1269,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 7"
   - corpus_id: "CAP-C-008"
     source_document: "tipologia-captadores"
@@ -1076,6 +1307,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 8"
   - corpus_id: "CAP-C-009"
     source_document: "tipologia-captadores"
@@ -1107,6 +1345,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 9"
   - corpus_id: "CAP-C-010"
     source_document: "tipologia-captadores"
@@ -1138,6 +1383,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 10"
   - corpus_id: "CAP-C-011"
     source_document: "tipologia-captadores"
@@ -1169,6 +1421,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 11"
   - corpus_id: "CAP-C-012"
     source_document: "tipologia-captadores"
@@ -1200,6 +1459,13 @@ entries:
     behavior_cluster: "offer|sell|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "CAP-C-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8339a917b31e66c2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque C caso 12"
   - corpus_id: "CAP-D-001"
     source_document: "tipologia-captadores"
@@ -1231,6 +1497,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 1"
   - corpus_id: "CAP-D-002"
     source_document: "tipologia-captadores"
@@ -1262,6 +1535,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 2"
   - corpus_id: "CAP-D-003"
     source_document: "tipologia-captadores"
@@ -1293,6 +1573,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 3"
   - corpus_id: "CAP-D-004"
     source_document: "tipologia-captadores"
@@ -1324,6 +1611,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 4"
   - corpus_id: "CAP-D-005"
     source_document: "tipologia-captadores"
@@ -1355,6 +1649,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 5"
   - corpus_id: "CAP-D-006"
     source_document: "tipologia-captadores"
@@ -1386,6 +1687,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 6"
   - corpus_id: "CAP-D-007"
     source_document: "tipologia-captadores"
@@ -1417,6 +1725,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 7"
   - corpus_id: "CAP-D-008"
     source_document: "tipologia-captadores"
@@ -1448,6 +1763,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 8"
   - corpus_id: "CAP-D-009"
     source_document: "tipologia-captadores"
@@ -1479,6 +1801,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 9"
   - corpus_id: "CAP-D-010"
     source_document: "tipologia-captadores"
@@ -1510,6 +1839,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 10"
   - corpus_id: "CAP-D-011"
     source_document: "tipologia-captadores"
@@ -1541,6 +1877,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 11"
   - corpus_id: "CAP-D-012"
     source_document: "tipologia-captadores"
@@ -1572,6 +1915,13 @@ entries:
     behavior_cluster: "offer|sell|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "CAP-D-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 901c27b80fafca09
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque D caso 12"
   - corpus_id: "CAP-E-001"
     source_document: "tipologia-captadores"
@@ -1603,6 +1953,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 1"
   - corpus_id: "CAP-E-002"
     source_document: "tipologia-captadores"
@@ -1634,6 +1991,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 2"
   - corpus_id: "CAP-E-003"
     source_document: "tipologia-captadores"
@@ -1665,6 +2029,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 3"
   - corpus_id: "CAP-E-004"
     source_document: "tipologia-captadores"
@@ -1696,6 +2067,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 4"
   - corpus_id: "CAP-E-005"
     source_document: "tipologia-captadores"
@@ -1727,6 +2105,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 5"
   - corpus_id: "CAP-E-006"
     source_document: "tipologia-captadores"
@@ -1758,6 +2143,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 6"
   - corpus_id: "CAP-E-007"
     source_document: "tipologia-captadores"
@@ -1789,6 +2181,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 7"
   - corpus_id: "CAP-E-008"
     source_document: "tipologia-captadores"
@@ -1820,6 +2219,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 8"
   - corpus_id: "CAP-E-009"
     source_document: "tipologia-captadores"
@@ -1851,6 +2257,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 9"
   - corpus_id: "CAP-E-010"
     source_document: "tipologia-captadores"
@@ -1882,6 +2295,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 10"
   - corpus_id: "CAP-E-011"
     source_document: "tipologia-captadores"
@@ -1913,6 +2333,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 11"
   - corpus_id: "CAP-E-012"
     source_document: "tipologia-captadores"
@@ -1944,6 +2371,13 @@ entries:
     behavior_cluster: "offer|sell|legal_safe_handoff|F6|cautious_detail|high"
     dedup_key: "CAP-E-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 191bff62d506a6d0
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque E caso 12"
   - corpus_id: "CAP-F-001"
     source_document: "tipologia-captadores"
@@ -1975,6 +2409,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 1"
   - corpus_id: "CAP-F-002"
     source_document: "tipologia-captadores"
@@ -2006,6 +2447,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 2"
   - corpus_id: "CAP-F-003"
     source_document: "tipologia-captadores"
@@ -2037,6 +2485,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 3"
   - corpus_id: "CAP-F-004"
     source_document: "tipologia-captadores"
@@ -2068,6 +2523,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 4"
   - corpus_id: "CAP-F-005"
     source_document: "tipologia-captadores"
@@ -2099,6 +2561,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 5"
   - corpus_id: "CAP-F-006"
     source_document: "tipologia-captadores"
@@ -2130,6 +2599,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 6"
   - corpus_id: "CAP-F-007"
     source_document: "tipologia-captadores"
@@ -2161,6 +2637,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 7"
   - corpus_id: "CAP-F-008"
     source_document: "tipologia-captadores"
@@ -2192,6 +2675,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 8"
   - corpus_id: "CAP-F-009"
     source_document: "tipologia-captadores"
@@ -2223,6 +2713,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 9"
   - corpus_id: "CAP-F-010"
     source_document: "tipologia-captadores"
@@ -2254,6 +2751,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 10"
   - corpus_id: "CAP-F-011"
     source_document: "tipologia-captadores"
@@ -2285,6 +2789,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 11"
   - corpus_id: "CAP-F-012"
     source_document: "tipologia-captadores"
@@ -2316,6 +2827,13 @@ entries:
     behavior_cluster: "offer|sell|crm_continuity|F7|returning_user|medium"
     dedup_key: "CAP-F-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 61ab2080e2bf808d
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque F caso 12"
   - corpus_id: "CAP-G-001"
     source_document: "tipologia-captadores"
@@ -2347,6 +2865,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 1"
   - corpus_id: "CAP-G-002"
     source_document: "tipologia-captadores"
@@ -2378,6 +2903,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 2"
   - corpus_id: "CAP-G-003"
     source_document: "tipologia-captadores"
@@ -2409,6 +2941,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 3"
   - corpus_id: "CAP-G-004"
     source_document: "tipologia-captadores"
@@ -2440,6 +2979,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 4"
   - corpus_id: "CAP-G-005"
     source_document: "tipologia-captadores"
@@ -2471,6 +3017,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 5"
   - corpus_id: "CAP-G-006"
     source_document: "tipologia-captadores"
@@ -2502,6 +3055,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 6"
   - corpus_id: "CAP-G-007"
     source_document: "tipologia-captadores"
@@ -2533,6 +3093,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 7"
   - corpus_id: "CAP-G-008"
     source_document: "tipologia-captadores"
@@ -2564,6 +3131,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 8"
   - corpus_id: "CAP-G-009"
     source_document: "tipologia-captadores"
@@ -2595,6 +3169,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 9"
   - corpus_id: "CAP-G-010"
     source_document: "tipologia-captadores"
@@ -2626,6 +3207,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 10"
   - corpus_id: "CAP-G-011"
     source_document: "tipologia-captadores"
@@ -2657,6 +3245,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 11"
   - corpus_id: "CAP-G-012"
     source_document: "tipologia-captadores"
@@ -2688,6 +3283,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 12"
   - corpus_id: "CAP-G-013"
     source_document: "tipologia-captadores"
@@ -2719,6 +3321,13 @@ entries:
     behavior_cluster: "offer|sell|premium_capture|F3|hyper_detailed|medium"
     dedup_key: "CAP-G-013"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 29b7d63fbbc8e0fd
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque G caso 13"
   - corpus_id: "CAP-H-001"
     source_document: "tipologia-captadores"
@@ -2750,6 +3359,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 1"
   - corpus_id: "CAP-H-002"
     source_document: "tipologia-captadores"
@@ -2781,6 +3397,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 2"
   - corpus_id: "CAP-H-003"
     source_document: "tipologia-captadores"
@@ -2812,6 +3435,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 3"
   - corpus_id: "CAP-H-004"
     source_document: "tipologia-captadores"
@@ -2843,6 +3473,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 4"
   - corpus_id: "CAP-H-005"
     source_document: "tipologia-captadores"
@@ -2874,6 +3511,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 5"
   - corpus_id: "CAP-H-006"
     source_document: "tipologia-captadores"
@@ -2905,6 +3549,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 6"
   - corpus_id: "CAP-H-007"
     source_document: "tipologia-captadores"
@@ -2936,6 +3587,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 7"
   - corpus_id: "CAP-H-008"
     source_document: "tipologia-captadores"
@@ -2967,6 +3625,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 8"
   - corpus_id: "CAP-H-009"
     source_document: "tipologia-captadores"
@@ -2998,6 +3663,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 9"
   - corpus_id: "CAP-H-010"
     source_document: "tipologia-captadores"
@@ -3029,6 +3701,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 10"
   - corpus_id: "CAP-H-011"
     source_document: "tipologia-captadores"
@@ -3060,6 +3739,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 11"
   - corpus_id: "CAP-H-012"
     source_document: "tipologia-captadores"
@@ -3091,6 +3777,13 @@ entries:
     behavior_cluster: "offer|sell|forced_handoff|F8|aggressive_chaotic|high"
     dedup_key: "CAP-H-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 33b05bad77ef4135
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Captación bloque H caso 12"
   - corpus_id: "DEM-A-001"
     source_document: "tipologia-compradores"
@@ -3122,6 +3815,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: promoted
+    scenario_candidate_id: DEMAND_002_FULL
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 1"
   - corpus_id: "DEM-A-002"
     source_document: "tipologia-compradores"
@@ -3153,6 +3853,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: promoted
+    scenario_candidate_id: DEMAND_002_SLOTS
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 2"
   - corpus_id: "DEM-A-003"
     source_document: "tipologia-compradores"
@@ -3184,6 +3891,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: promoted
+    scenario_candidate_id: DEMAND_001
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 3"
   - corpus_id: "DEM-A-004"
     source_document: "tipologia-compradores"
@@ -3215,6 +3929,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 4"
   - corpus_id: "DEM-A-005"
     source_document: "tipologia-compradores"
@@ -3246,6 +3967,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 5"
   - corpus_id: "DEM-A-006"
     source_document: "tipologia-compradores"
@@ -3277,6 +4005,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 6"
   - corpus_id: "DEM-A-007"
     source_document: "tipologia-compradores"
@@ -3308,6 +4043,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 7"
   - corpus_id: "DEM-A-008"
     source_document: "tipologia-compradores"
@@ -3339,6 +4081,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 8"
   - corpus_id: "DEM-A-009"
     source_document: "tipologia-compradores"
@@ -3370,6 +4119,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 9"
   - corpus_id: "DEM-A-010"
     source_document: "tipologia-compradores"
@@ -3401,6 +4157,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: promoted
+    scenario_candidate_id: DEMAND_004
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 10"
   - corpus_id: "DEM-A-011"
     source_document: "tipologia-compradores"
@@ -3432,6 +4195,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 11"
   - corpus_id: "DEM-A-012"
     source_document: "tipologia-compradores"
@@ -3463,6 +4233,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 12"
   - corpus_id: "DEM-A-013"
     source_document: "tipologia-compradores"
@@ -3494,6 +4271,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-013"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 13"
   - corpus_id: "DEM-A-014"
     source_document: "tipologia-compradores"
@@ -3525,6 +4309,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-014"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 14"
   - corpus_id: "DEM-A-015"
     source_document: "tipologia-compradores"
@@ -3556,6 +4347,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-015"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 15"
   - corpus_id: "DEM-A-016"
     source_document: "tipologia-compradores"
@@ -3587,6 +4385,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-016"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 16"
   - corpus_id: "DEM-A-017"
     source_document: "tipologia-compradores"
@@ -3618,6 +4423,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-017"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 17"
   - corpus_id: "DEM-A-018"
     source_document: "tipologia-compradores"
@@ -3649,6 +4461,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-018"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 18"
   - corpus_id: "DEM-A-019"
     source_document: "tipologia-compradores"
@@ -3680,6 +4499,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-019"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 19"
   - corpus_id: "DEM-A-020"
     source_document: "tipologia-compradores"
@@ -3711,6 +4537,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-020"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 20"
   - corpus_id: "DEM-A-021"
     source_document: "tipologia-compradores"
@@ -3742,6 +4575,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-021"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 21"
   - corpus_id: "DEM-A-022"
     source_document: "tipologia-compradores"
@@ -3773,6 +4613,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-022"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 22"
   - corpus_id: "DEM-A-023"
     source_document: "tipologia-compradores"
@@ -3804,6 +4651,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-023"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 23"
   - corpus_id: "DEM-A-024"
     source_document: "tipologia-compradores"
@@ -3835,6 +4689,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-024"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 24"
   - corpus_id: "DEM-A-025"
     source_document: "tipologia-compradores"
@@ -3866,6 +4727,13 @@ entries:
     behavior_cluster: "demand|buy|qualification_or_crm_ready|F1|rational_cooperative|low"
     dedup_key: "DEM-A-025"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: efe676eac52e022a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque A caso 25"
   - corpus_id: "DEM-B-001"
     source_document: "tipologia-compradores"
@@ -3897,6 +4765,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 1"
   - corpus_id: "DEM-B-002"
     source_document: "tipologia-compradores"
@@ -3928,6 +4803,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 2"
   - corpus_id: "DEM-B-003"
     source_document: "tipologia-compradores"
@@ -3959,6 +4841,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 3"
   - corpus_id: "DEM-B-004"
     source_document: "tipologia-compradores"
@@ -3990,6 +4879,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 4"
   - corpus_id: "DEM-B-005"
     source_document: "tipologia-compradores"
@@ -4021,6 +4917,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 5"
   - corpus_id: "DEM-B-006"
     source_document: "tipologia-compradores"
@@ -4052,6 +4955,13 @@ entries:
     behavior_cluster: "property|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: ea6066a47095cba2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 6"
   - corpus_id: "DEM-B-007"
     source_document: "tipologia-compradores"
@@ -4083,6 +4993,13 @@ entries:
     behavior_cluster: "property|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: ea6066a47095cba2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 7"
   - corpus_id: "DEM-B-008"
     source_document: "tipologia-compradores"
@@ -4114,6 +5031,13 @@ entries:
     behavior_cluster: "property|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: ea6066a47095cba2
+    promotion_status: promoted
+    scenario_candidate_id: PROP_003
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 8"
   - corpus_id: "DEM-B-009"
     source_document: "tipologia-compradores"
@@ -4145,6 +5069,13 @@ entries:
     behavior_cluster: "property|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: ea6066a47095cba2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 9"
   - corpus_id: "DEM-B-010"
     source_document: "tipologia-compradores"
@@ -4176,6 +5107,13 @@ entries:
     behavior_cluster: "property|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: ea6066a47095cba2
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 10"
   - corpus_id: "DEM-B-011"
     source_document: "tipologia-compradores"
@@ -4207,6 +5145,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 11"
   - corpus_id: "DEM-B-012"
     source_document: "tipologia-compradores"
@@ -4238,6 +5183,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 12"
   - corpus_id: "DEM-B-013"
     source_document: "tipologia-compradores"
@@ -4269,6 +5221,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-013"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 13"
   - corpus_id: "DEM-B-014"
     source_document: "tipologia-compradores"
@@ -4300,6 +5259,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-014"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 14"
   - corpus_id: "DEM-B-015"
     source_document: "tipologia-compradores"
@@ -4331,6 +5297,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-015"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 15"
   - corpus_id: "DEM-B-016"
     source_document: "tipologia-compradores"
@@ -4362,6 +5335,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-016"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 16"
   - corpus_id: "DEM-B-017"
     source_document: "tipologia-compradores"
@@ -4393,6 +5373,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-017"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 17"
   - corpus_id: "DEM-B-018"
     source_document: "tipologia-compradores"
@@ -4424,6 +5411,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-018"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 18"
   - corpus_id: "DEM-B-019"
     source_document: "tipologia-compradores"
@@ -4455,6 +5449,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-019"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 19"
   - corpus_id: "DEM-B-020"
     source_document: "tipologia-compradores"
@@ -4486,6 +5487,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-020"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 20"
   - corpus_id: "DEM-B-021"
     source_document: "tipologia-compradores"
@@ -4517,6 +5525,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-021"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 21"
   - corpus_id: "DEM-B-022"
     source_document: "tipologia-compradores"
@@ -4548,6 +5563,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-022"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 22"
   - corpus_id: "DEM-B-023"
     source_document: "tipologia-compradores"
@@ -4579,6 +5601,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-023"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 23"
   - corpus_id: "DEM-B-024"
     source_document: "tipologia-compradores"
@@ -4610,6 +5639,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-024"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 24"
   - corpus_id: "DEM-B-025"
     source_document: "tipologia-compradores"
@@ -4641,6 +5677,13 @@ entries:
     behavior_cluster: "demand|buy|context_recovery|F4|distracted_fragmented|medium"
     dedup_key: "DEM-B-025"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: f0c32363978e2379
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque B caso 25"
   - corpus_id: "DEM-C-001"
     source_document: "tipologia-compradores"
@@ -4672,6 +5715,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 1"
   - corpus_id: "DEM-C-002"
     source_document: "tipologia-compradores"
@@ -4703,6 +5753,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 2"
   - corpus_id: "DEM-C-003"
     source_document: "tipologia-compradores"
@@ -4734,6 +5791,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 3"
   - corpus_id: "DEM-C-004"
     source_document: "tipologia-compradores"
@@ -4765,6 +5829,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 4"
   - corpus_id: "DEM-C-005"
     source_document: "tipologia-compradores"
@@ -4796,6 +5867,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 5"
   - corpus_id: "DEM-C-006"
     source_document: "tipologia-compradores"
@@ -4827,6 +5905,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 6"
   - corpus_id: "DEM-C-007"
     source_document: "tipologia-compradores"
@@ -4858,6 +5943,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 7"
   - corpus_id: "DEM-C-008"
     source_document: "tipologia-compradores"
@@ -4889,6 +5981,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 8"
   - corpus_id: "DEM-C-009"
     source_document: "tipologia-compradores"
@@ -4920,6 +6019,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 9"
   - corpus_id: "DEM-C-010"
     source_document: "tipologia-compradores"
@@ -4951,6 +6057,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 10"
   - corpus_id: "DEM-C-011"
     source_document: "tipologia-compradores"
@@ -4982,6 +6095,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 11"
   - corpus_id: "DEM-C-012"
     source_document: "tipologia-compradores"
@@ -5013,6 +6133,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 12"
   - corpus_id: "DEM-C-013"
     source_document: "tipologia-compradores"
@@ -5044,6 +6171,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-013"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 13"
   - corpus_id: "DEM-C-014"
     source_document: "tipologia-compradores"
@@ -5075,6 +6209,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-014"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 14"
   - corpus_id: "DEM-C-015"
     source_document: "tipologia-compradores"
@@ -5106,6 +6247,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-015"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 15"
   - corpus_id: "DEM-C-016"
     source_document: "tipologia-compradores"
@@ -5137,6 +6285,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-016"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 16"
   - corpus_id: "DEM-C-017"
     source_document: "tipologia-compradores"
@@ -5168,6 +6323,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-017"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 17"
   - corpus_id: "DEM-C-018"
     source_document: "tipologia-compradores"
@@ -5199,6 +6361,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-018"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 18"
   - corpus_id: "DEM-C-019"
     source_document: "tipologia-compradores"
@@ -5230,6 +6399,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-019"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 19"
   - corpus_id: "DEM-C-020"
     source_document: "tipologia-compradores"
@@ -5261,6 +6437,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-020"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 20"
   - corpus_id: "DEM-C-021"
     source_document: "tipologia-compradores"
@@ -5292,6 +6475,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-021"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 21"
   - corpus_id: "DEM-C-022"
     source_document: "tipologia-compradores"
@@ -5323,6 +6513,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-022"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 22"
   - corpus_id: "DEM-C-023"
     source_document: "tipologia-compradores"
@@ -5354,6 +6551,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-023"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 23"
   - corpus_id: "DEM-C-024"
     source_document: "tipologia-compradores"
@@ -5385,6 +6589,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-024"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 24"
   - corpus_id: "DEM-C-025"
     source_document: "tipologia-compradores"
@@ -5416,6 +6627,13 @@ entries:
     behavior_cluster: "demand|buy|objection_handling|F5|skeptical_demanding|medium_high"
     dedup_key: "DEM-C-025"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 035de7cb95749279
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque C caso 25"
   - corpus_id: "DEM-D-001"
     source_document: "tipologia-compradores"
@@ -5447,6 +6665,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 1"
   - corpus_id: "DEM-D-002"
     source_document: "tipologia-compradores"
@@ -5478,6 +6703,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 2"
   - corpus_id: "DEM-D-003"
     source_document: "tipologia-compradores"
@@ -5509,6 +6741,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 3"
   - corpus_id: "DEM-D-004"
     source_document: "tipologia-compradores"
@@ -5540,6 +6779,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 4"
   - corpus_id: "DEM-D-005"
     source_document: "tipologia-compradores"
@@ -5571,6 +6817,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 5"
   - corpus_id: "DEM-D-006"
     source_document: "tipologia-compradores"
@@ -5602,6 +6855,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 6"
   - corpus_id: "DEM-D-007"
     source_document: "tipologia-compradores"
@@ -5633,6 +6893,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 7"
   - corpus_id: "DEM-D-008"
     source_document: "tipologia-compradores"
@@ -5664,6 +6931,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 8"
   - corpus_id: "DEM-D-009"
     source_document: "tipologia-compradores"
@@ -5695,6 +6969,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-009"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 9"
   - corpus_id: "DEM-D-010"
     source_document: "tipologia-compradores"
@@ -5726,6 +7007,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-010"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 10"
   - corpus_id: "DEM-D-011"
     source_document: "tipologia-compradores"
@@ -5757,6 +7045,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-011"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 11"
   - corpus_id: "DEM-D-012"
     source_document: "tipologia-compradores"
@@ -5788,6 +7083,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-012"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 12"
   - corpus_id: "DEM-D-013"
     source_document: "tipologia-compradores"
@@ -5819,6 +7121,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-013"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 13"
   - corpus_id: "DEM-D-014"
     source_document: "tipologia-compradores"
@@ -5850,6 +7159,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-014"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 14"
   - corpus_id: "DEM-D-015"
     source_document: "tipologia-compradores"
@@ -5881,6 +7197,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-015"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 15"
   - corpus_id: "DEM-D-016"
     source_document: "tipologia-compradores"
@@ -5912,6 +7235,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-016"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 16"
   - corpus_id: "DEM-D-017"
     source_document: "tipologia-compradores"
@@ -5943,6 +7273,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-017"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 17"
   - corpus_id: "DEM-D-018"
     source_document: "tipologia-compradores"
@@ -5974,6 +7311,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-018"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 18"
   - corpus_id: "DEM-D-019"
     source_document: "tipologia-compradores"
@@ -6005,6 +7349,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-019"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 19"
   - corpus_id: "DEM-D-020"
     source_document: "tipologia-compradores"
@@ -6036,6 +7387,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-020"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 20"
   - corpus_id: "DEM-D-021"
     source_document: "tipologia-compradores"
@@ -6067,6 +7425,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-021"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 21"
   - corpus_id: "DEM-D-022"
     source_document: "tipologia-compradores"
@@ -6098,6 +7463,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-022"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 22"
   - corpus_id: "DEM-D-023"
     source_document: "tipologia-compradores"
@@ -6129,6 +7501,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-023"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 23"
   - corpus_id: "DEM-D-024"
     source_document: "tipologia-compradores"
@@ -6160,6 +7539,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-024"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 24"
   - corpus_id: "DEM-D-025"
     source_document: "tipologia-compradores"
@@ -6191,6 +7577,13 @@ entries:
     behavior_cluster: "demand|buy|empathetic_handoff|F6|emotional_urgent|high"
     dedup_key: "DEM-D-025"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 55d3904b3ad831d1
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Demanda bloque D caso 25"
   - corpus_id: "HUM-001"
     source_document: "argos-humanity-family"
@@ -6222,6 +7615,13 @@ entries:
     behavior_cluster: "humanity|mixed|natural_flow|HUMANITY|warm_cooperative|medium"
     dedup_key: "HUM-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: e506ffb8ec353be8
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Arquetipo HUMANITY warm_cooperative"
   - corpus_id: "HUM-002"
     source_document: "argos-humanity-family"
@@ -6253,6 +7653,13 @@ entries:
     behavior_cluster: "humanity|mixed|natural_flow|HUMANITY|confused|medium"
     dedup_key: "HUM-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 95189517a13c897b
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Arquetipo HUMANITY confused"
   - corpus_id: "HUM-003"
     source_document: "argos-humanity-family"
@@ -6284,6 +7691,13 @@ entries:
     behavior_cluster: "humanity|mixed|natural_flow|HUMANITY|blunt_minimal|medium"
     dedup_key: "HUM-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 1b7c6c801ad8ddfb
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Arquetipo HUMANITY blunt_minimal"
   - corpus_id: "HUM-004"
     source_document: "argos-humanity-family"
@@ -6315,6 +7729,13 @@ entries:
     behavior_cluster: "humanity|mixed|natural_flow|HUMANITY|emotional_urgent|medium"
     dedup_key: "HUM-004"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: a2639386f4b40b90
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Arquetipo HUMANITY emotional_urgent"
   - corpus_id: "HUM-005"
     source_document: "argos-humanity-family"
@@ -6346,6 +7767,13 @@ entries:
     behavior_cluster: "humanity|mixed|natural_flow|HUMANITY|topic_switcher|medium"
     dedup_key: "HUM-005"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: bbd75b6a4c907e50
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Arquetipo HUMANITY topic_switcher"
   - corpus_id: "HUM-006"
     source_document: "argos-humanity-family"
@@ -6377,6 +7805,13 @@ entries:
     behavior_cluster: "humanity|mixed|natural_flow|HUMANITY|evasive_identity|medium"
     dedup_key: "HUM-006"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: ddf1fa0bbedc959c
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Arquetipo HUMANITY evasive_identity"
   - corpus_id: "HUM-007"
     source_document: "argos-humanity-family"
@@ -6408,6 +7843,13 @@ entries:
     behavior_cluster: "humanity|mixed|natural_flow|HUMANITY|aggressive|medium"
     dedup_key: "HUM-007"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 9b47d4fe5525b7ec
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Arquetipo HUMANITY aggressive"
   - corpus_id: "HUM-008"
     source_document: "argos-humanity-family"
@@ -6439,6 +7881,13 @@ entries:
     behavior_cluster: "humanity|mixed|natural_flow|HUMANITY|repetitive|medium"
     dedup_key: "HUM-008"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 9c172d3f96b23da0
+    promotion_status: candidate
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Arquetipo HUMANITY repetitive"
   - corpus_id: "CHAOS-001"
     source_document: "argos-chaos-family"
@@ -6470,6 +7919,13 @@ entries:
     behavior_cluster: "chaos|greeting|loop_detected|F8|aggressive_chaotic|high"
     dedup_key: "CHAOS-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 2be91af4c41fba8c
+    promotion_status: promoted
+    scenario_candidate_id: CHAOS_001
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: "Saludos repetidos — escenario CHAOS_001"
   - corpus_id: "EDGE-001"
     source_document: "argos-edge-family"
@@ -6501,6 +7957,13 @@ entries:
     behavior_cluster: "edge|buy|ownership_contact_owner|F7|rational_cooperative|medium"
     dedup_key: "EDGE-001"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 6947948e3880509c
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: ownership_contact_owner
   - corpus_id: "EDGE-002"
     source_document: "argos-edge-family"
@@ -6532,6 +7995,13 @@ entries:
     behavior_cluster: "edge|buy|crm_reuse_lead|F7|rational_cooperative|medium"
     dedup_key: "EDGE-002"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 8536fc1c056a7487
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: crm_reuse_lead
   - corpus_id: "EDGE-003"
     source_document: "argos-edge-family"
@@ -6563,4 +8033,11 @@ entries:
     behavior_cluster: "edge|buy|duplicate_whatsapp|F7|rational_cooperative|medium"
     dedup_key: "EDGE-003"
     status: active
+    import_batch_id: "legacy-tipologia-v1"
+    turn_count: 0
+    outcome_hash: 86d2a3137370d01a
+    promotion_status: indexed
+    scenario_candidate_id: null
+    last_exploratory_run_id: null
+    policy_tags: []
     notes: duplicate_whatsapp

@@ -1,0 +1,15 @@
+{
+  "record_schema_version": "1.0",
+  "corpus_id": "FIXTURE-DUP-B",
+  "source": { "format": "json", "file": "duplicate-b.json", "imported_at": "2026-05-19T00:00:00.000Z" },
+  "metadata": { "rail_hint": "offer", "channel": "whatsapp" },
+  "turns": [
+    { "index": 0, "role": "user", "text": "Mismo guion duplicado", "attachments": [] },
+    { "index": 1, "role": "assistant", "text": "Entendido", "attachments": [] }
+  ],
+  "labels": { "families": [], "outcomes": ["dup"], "risk_tags": [] },
+  "promotion": { "status": "indexed", "promoted_scenario": null, "reject_reason": null },
+  "attachments": [],
+  "risk_tags": [],
+  "policy_tags": []
+}

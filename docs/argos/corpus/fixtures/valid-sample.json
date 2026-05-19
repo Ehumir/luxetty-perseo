@@ -1,0 +1,32 @@
+{
+  "record_schema_version": "1.0",
+  "corpus_id": "FIXTURE-JSON-001",
+  "source": {
+    "format": "json",
+    "file": "valid-sample.json",
+    "imported_at": "2026-05-19T00:00:00.000Z",
+    "import_batch_id": "fixture-batch-m2-02"
+  },
+  "metadata": {
+    "rail_hint": "demand",
+    "language": "es-MX",
+    "channel": "whatsapp"
+  },
+  "turns": [
+    { "index": 0, "role": "user", "text": "Hola", "attachments": [] },
+    { "index": 1, "role": "assistant", "text": "Hola, ¿en qué te ayudo?", "attachments": [] }
+  ],
+  "labels": {
+    "families": ["F1"],
+    "outcomes": ["greeting"],
+    "risk_tags": []
+  },
+  "promotion": {
+    "status": "indexed",
+    "promoted_scenario": null,
+    "reject_reason": null
+  },
+  "attachments": [],
+  "risk_tags": [],
+  "policy_tags": []
+}

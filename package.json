@@ -11,6 +11,8 @@
     "test:perseo": "node --test test/perseoRegression.test.js test/conversationRegression.test.js test/crmFlowRegression.test.js test/crmCreationAuditV2.test.js test/inboundReliability.test.js test/sprint3Playbooks.test.js test/propertyIntentResolver.test.js test/propertyConversationFlow.test.js test/perseoGatekeeper.test.js",
     "test:crm": "node --test test/crmLeadIntegrity.test.js",
     "test:argos": "node --test test/argos*.test.js",
+    "test:corpus": "node --test test/corpusFoundation.test.js",
+    "corpus-validate": "node scripts/corpus-validate.js",
     "validate:graph-outbound": "node scripts/validate-graph-outbound.js",
     "check:sprint2-env": "node scripts/check-perseo-sprint2-env.js",
     "gate:no-regression": "bash scripts/gate-no-regression.sh",

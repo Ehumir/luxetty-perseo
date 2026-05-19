@@ -1,0 +1,7 @@
+---
+corpus_id: FIXTURE-TXT-001
+import_batch_id: fixture-batch-m2-02
+---
+[user] Busco departamento en San Pedro
+[assistant] Claro, ¿tienes presupuesto aproximado?
+[user] Unos 3 millones
