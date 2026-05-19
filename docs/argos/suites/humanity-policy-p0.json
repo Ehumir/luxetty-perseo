@@ -1,0 +1,6 @@
+{
+  "suite": "humanity-policy-p0",
+  "description": "M2-01 — Humanity + policy/planner coexistence.",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": ["HUMANITY_002.v1.json", "HUMANITY_003.v1.json"]
+}

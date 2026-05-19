@@ -447,6 +447,20 @@ function validateMustNotReply(input) {
     }
   }
 
+  if (must_not.promise_below_minimum_capture) {
+    const lower = normalizeText(reply);
+    if (
+      /\b(te ayudamos a vender|podemos captar|agendamos visita|publicamos tu propiedad)\b/i.test(lower) &&
+      !/\bpol[ií]tica comercial|no podemos avanzar|desde \$|desde usd\b/i.test(lower)
+    ) {
+      violations.push({
+        constraint: 'must_not.promise_below_minimum_capture',
+        detail: 'Promised capture while below commercial minimum',
+        severity: 'critical',
+      });
+    }
+  }
+
   return violations;
 }
 

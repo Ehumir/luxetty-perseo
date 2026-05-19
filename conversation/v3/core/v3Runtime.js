@@ -15,6 +15,12 @@ const { V3_INTENT } = require('../types/constants');
 const { tryComposeF4EarlyTurn, shouldSuppressForcedHandoff } = require('../composer/f4TurnComposer');
 const { replySignature } = require('../composer/openingVariantPicker');
 const { isHandoffFlowActive } = require('../interpreter/objectionClassifier');
+const {
+  runPolicyCrossLayer,
+  shouldShortCircuitPolicy,
+  buildPolicyShortCircuitReply,
+} = require('./policyCrossTurn');
+const { isPolicyEngineEnabled } = require('../../../config/perseoM2Flags');
 
 /**
  * @param {{
@@ -29,6 +35,7 @@ const { isHandoffFlowActive } = require('../interpreter/objectionClassifier');
  *     campaignHeadline?: string|null,
  *     activeProperty?: import('../types/conversationState').ConversationState['activeProperty'],
  *   }|null,
+ *   logEvent?: Function,
  * }} input
  */
 function processV3Turn(input) {
@@ -101,15 +108,67 @@ function processV3Turn(input) {
     explicit_flow_switch: decision.explicitFlowSwitch,
   });
 
+  const policyCrossLayer = runPolicyCrossLayer({
+    state,
+    decision,
+    text,
+    logEvent: input.logEvent,
+  });
+  let patchMerged = patch;
+  if (policyCrossLayer?.patchFromSegments) {
+    const segPatch = policyCrossLayer.patchFromSegments;
+    patchMerged = {
+      ...patch,
+      ...segPatch,
+      collectedFields: {
+        ...(patch.collectedFields || {}),
+        ...(segPatch.collectedFields || {}),
+      },
+    };
+  }
+
   let unknownStreak = 0;
   if (decision.detectedIntent === V3_INTENT.ADVISOR_CONSENT_CAPTURE || isHandoffFlowActive(state)) {
     unknownStreak = 0;
   } else if (decision.detectedIntent === V3_INTENT.UNKNOWN) {
     unknownStreak = (Number(state.unknownIntentStreak) || 0) + 1;
   }
-  const patchWithStreak = { ...patch, unknownIntentStreak: unknownStreak, lastUserText: text };
+  const patchWithStreak = {
+    ...patchMerged,
+    unknownIntentStreak: unknownStreak,
+    lastUserText: text,
+  };
 
   const { state: nextState, guard } = applyV3StateTransition(state, patchWithStreak, decision);
+
+  if (policyCrossLayer && shouldShortCircuitPolicy({ layer: policyCrossLayer, state: nextState, text })) {
+    const policyReply = buildPolicyShortCircuitReply({
+      layer: policyCrossLayer,
+      state: nextState,
+    });
+    if (policyReply) {
+      const policyState = {
+        ...nextState,
+        lastPolicyDecision: policyCrossLayer.policyResult?.decision || null,
+        lastPolicyRuleId: policyCrossLayer.policyResult?.rule_id || null,
+        lastSegments: policyCrossLayer.segments || null,
+        lastResponsePlan: policyCrossLayer.responsePlan || null,
+        lastAssistantReply: policyReply,
+        lastAssistantReplySignature: replySignature(policyReply),
+      };
+      setSession(conversationId, policyState);
+      return {
+        ok: true,
+        reply: policyReply,
+        state: policyState,
+        decision,
+        guard,
+        responseSource: 'v3_policy_cross',
+        fallbackToLegacy: false,
+        policyCrossLayer,
+      };
+    }
+  }
 
   const f4Early = tryComposeF4EarlyTurn({ state: nextState, decision, text });
   if (f4Early && decision.detectedIntent !== V3_INTENT.ADVISOR_CONSENT_CAPTURE) {
@@ -210,6 +269,16 @@ function processV3Turn(input) {
     };
   }
 
+  if (policyCrossLayer && isPolicyEngineEnabled()) {
+    finalState = {
+      ...finalState,
+      lastPolicyDecision: policyCrossLayer.policyResult?.decision || null,
+      lastPolicyRuleId: policyCrossLayer.policyResult?.rule_id || null,
+      lastSegments: policyCrossLayer.segments || null,
+      lastResponsePlan: policyCrossLayer.responsePlan || null,
+    };
+  }
+
   setSession(conversationId, finalState);
 
   v3Log('composer_output', {
@@ -228,6 +297,7 @@ function processV3Turn(input) {
     guard,
     responseSource,
     fallbackToLegacy: false,
+    policyCrossLayer: policyCrossLayer || null,
   };
 }
 

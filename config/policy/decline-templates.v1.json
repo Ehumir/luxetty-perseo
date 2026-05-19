@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "DECLINE_SOFT": {
+    "sale_below_minimum_mxn": "Gracias por compartirlo. Por política comercial, en venta trabajamos propiedades desde $3,000,000 MXN. Si más adelante se ajusta el rango, con gusto retomamos.",
+    "sale_below_minimum_usd": "Gracias por compartirlo. Por política comercial, en venta trabajamos propiedades desde USD $150,000. Si el rango cambia, con gusto lo revisamos.",
+    "rent_below_minimum_mxn": "Gracias por el dato. En renta manejamos propiedades desde $10,000 MXN mensuales. Si se ajusta el rango, podemos retomarlo.",
+    "rent_below_minimum_usd": "Gracias por el dato. En renta manejamos propiedades desde USD $500 mensuales. Si cambia el rango, con gusto lo vemos.",
+    "zone_out_of_coverage": "Gracias por la ubicación. Por ahora nuestro foco operativo es Cumbres, San Pedro y Carretera Nacional en el área de Monterrey. Si te sirve alguna de esas zonas, dime y seguimos.",
+    "default": "Gracias por escribirnos. Por el momento no podemos avanzar con este perfil según nuestra política comercial, pero quedo atento si cambian los datos."
+  },
+  "HANDOFF": {
+    "zone_ambiguous": "Para ubicarte bien con un asesor, ¿me confirmas colonia o zona exacta en el área de Monterrey?",
+    "policy_exception": "Tu caso tiene matices que prefiero que revise un asesor. ¿Te parece si te contactamos por WhatsApp?"
+  },
+  "QUALIFY": {
+    "missing_amount": "Para orientarte bien, ¿en qué rango aproximado está la propiedad (venta o renta)?",
+    "missing_zone": "¿En qué zona o colonia está la propiedad?"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "POLICY_003",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "policy",
+  "category": "rent_below_minimum_mxn",
+  "title": "Renta 8k MXN — DECLINE_SOFT",
+  "messages": [
+    "Hola",
+    "Busco renta de departamento por 8 mil pesos al mes en San Pedro"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "demand",
+    "operation_type": "rent",
+    "policy_decision": "DECLINE_SOFT",
+    "policy_rule_id": "rent_min_mxn",
+    "crm_ready": false
+  },
+  "must_not": {
+    "promise_below_minimum_capture": true,
+    "forced_handoff": true,
+    "flow_restart": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  }
+}

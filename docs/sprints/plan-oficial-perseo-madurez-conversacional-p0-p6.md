@@ -297,6 +297,24 @@ Capa final (puede ser el mismo modelo en segunda pasada **o** plantilla mínima 
 
 ---
 
+### Bloque futuro — Learning, Policy & Multimodal (LP0–LP8)
+
+**No bloquea M1 ni cierre M1-D.** Documento rector:
+
+`docs/argos/PERSEO-ARGOS-LEARNING-POLICY-MULTIMODAL-ROADMAP-v1.md`
+
+| Tema | Fases roadmap LP | Relación R0–R7 |
+|------|------------------|----------------|
+| Corpus masivo + promoción a escenarios | LP1–LP2, LP8 | Amplía **R7** (ARGOS); evita 10k JSON |
+| Policy comercial (montos, zonas, descarte) | LP0, LP3 | Complementa **R2** RuleGuard / negocio |
+| Exploratory runs no bloqueantes | LP4 | **R7** métricas |
+| Audio / imagen | LP5–LP6 | **R6** multimedia |
+| Mensajes multintención | LP7 | **R2–R3** Decision Core + composer |
+
+**Prioridad post M1:** ver **`docs/argos/PERSEO-ARGOS-INTEGRATED-ROADMAP-v2.md`** (M2: bloques A–C; M3: D–E; M4: UI/exploratory). Arquitectura LP: `PERSEO-ARGOS-LEARNING-POLICY-MULTIMODAL-ROADMAP-v1.md`.
+
+---
+
 ## 6. Qué queda del plan P0–P6 y cómo se mapea
 
 | Bloque heredado (P0–P6) | Destino en roadmap 2.0 |

@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "CROSS_004",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "cross_intent",
+  "category": "long_disordered_message",
+  "title": "Mensaje largo desordenado con slots",
+  "messages": [
+    "Hola",
+    "Busco comprar\nJorge\nCumbres\n5 millones\n¿tienen algo?"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "demand",
+    "known_name": "Jorge",
+    "known_zone": "Cumbres",
+    "known_budget": 5000000,
+    "crm_ready": false
+  },
+  "must_not": {
+    "flow_restart": true,
+    "sticky_context_trap": true,
+    "forced_handoff": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  }
+}

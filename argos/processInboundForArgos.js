@@ -175,6 +175,32 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
     });
   }
 
+  const pcl = v3Result.policyCrossLayer;
+  if (pcl?.segments) {
+    traceEvent(trace, {
+      type: 'segments',
+      phase: 'understanding',
+      visibility: 'debug',
+      payload: { segments: pcl.segments },
+    });
+  }
+  if (pcl?.responsePlan) {
+    traceEvent(trace, {
+      type: 'response_plan',
+      phase: 'understanding',
+      visibility: 'debug',
+      payload: { plan: pcl.responsePlan },
+    });
+  }
+  if (pcl?.policyResult) {
+    traceEvent(trace, {
+      type: 'policy_decision',
+      phase: 'policy',
+      visibility: 'debug',
+      payload: pcl.policyResult,
+    });
+  }
+
   let reply = 'No pude procesar tu mensaje en este momento.';
   let v3State = v3Result.v3State || getSession(conversationId);
 

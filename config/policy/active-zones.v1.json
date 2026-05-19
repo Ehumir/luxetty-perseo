@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "zones": [
+    {
+      "id": "cumbres",
+      "label": "Cumbres",
+      "match_patterns": ["cumbres"],
+      "colonies": ["Cumbres", "Cumbres Elite", "Cumbres Madeira"]
+    },
+    {
+      "id": "san_pedro",
+      "label": "San Pedro",
+      "match_patterns": ["san pedro", "valle oriente"],
+      "colonies": ["San Pedro", "Valle Oriente"]
+    },
+    {
+      "id": "carretera_nacional",
+      "label": "Carretera Nacional",
+      "match_patterns": ["carretera nacional"],
+      "colonies": ["Carretera Nacional"]
+    }
+  ],
+  "explicit_out_of_coverage": [
+    "cdmx",
+    "ciudad de mexico",
+    "guadalajara",
+    "monterrey centro",
+    "centro de monterrey"
+  ]
+}

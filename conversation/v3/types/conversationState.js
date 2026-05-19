@@ -92,6 +92,11 @@ function createInitialConversationState(seed = {}) {
     stickyOperationType: null,
     /** M1-D — historial de códigos consultados (más reciente primero). */
     propertyHistory: [],
+    /** M2 — última decisión PolicyEngine (ARGOS trace / snapshot). */
+    lastPolicyDecision: null,
+    lastPolicyRuleId: null,
+    lastSegments: null,
+    lastResponsePlan: null,
   };
 }
 

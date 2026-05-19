@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "POLICY_004",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "policy",
+  "category": "rent_below_minimum_usd",
+  "title": "Renta 400 USD — DECLINE_SOFT",
+  "messages": [
+    "Hola",
+    "Busco rentar un depa por 400 dolares al mes"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "demand",
+    "policy_decision": "DECLINE_SOFT",
+    "policy_rule_id": "rent_min_usd",
+    "crm_ready": false
+  },
+  "must_not": {
+    "promise_below_minimum_capture": true,
+    "forced_handoff": true,
+    "flow_restart": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  }
+}
