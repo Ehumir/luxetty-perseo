@@ -1,0 +1,15 @@
+{
+  "suite": "crm-execute-p0",
+  "description": "M3-02 — crm-execute-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "CRM2_001.v1.json",
+    "CRM2_002.v1.json",
+    "CRM2_003.v1.json",
+    "CRM2_004.v1.json",
+    "CRM2_005.v1.json",
+    "CRM2_006.v1.json"
+  ]
+}

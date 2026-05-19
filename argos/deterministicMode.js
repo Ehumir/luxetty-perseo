@@ -27,6 +27,11 @@ function applyArgosSimulationEnv(flags = {}) {
     mediaIntake: process.env.PERSEO_MEDIA_INTAKE_V1_ENABLED,
     policy: process.env.PERSEO_POLICY_ENGINE_ENABLED,
     planner: process.env.PERSEO_MESSAGE_PLANNER_ENABLED,
+    mediaReal: process.env.PERSEO_MEDIA_REAL_V1_ENABLED,
+    crmFoundation: process.env.PERSEO_CRM_EXECUTE_FOUNDATION_ENABLED,
+    resilience: process.env.PERSEO_RESILIENCE_V1_ENABLED,
+    humanityWave2: process.env.PERSEO_HUMANITY_WAVE2_ENABLED,
+    waHardening: process.env.PERSEO_WA_HARDENING_V2_ENABLED,
   };
   const handoffOn = flags.v3_handoff_enabled !== false;
   process.env.PERSEO_V3_HANDOFF_ENABLED = handoffOn ? 'true' : 'false';
@@ -40,6 +45,16 @@ function applyArgosSimulationEnv(flags = {}) {
   if (flags.message_planner === true) process.env.PERSEO_MESSAGE_PLANNER_ENABLED = 'true';
   else if (flags.message_planner === false) process.env.PERSEO_MESSAGE_PLANNER_ENABLED = 'false';
 
+  const setTriFlag = (key, val) => {
+    if (val === true) process.env[key] = 'true';
+    else if (val === false) process.env[key] = 'false';
+  };
+  setTriFlag('PERSEO_MEDIA_REAL_V1_ENABLED', flags.media_real_v1);
+  setTriFlag('PERSEO_CRM_EXECUTE_FOUNDATION_ENABLED', flags.crm_execute_foundation);
+  setTriFlag('PERSEO_RESILIENCE_V1_ENABLED', flags.resilience_v1);
+  setTriFlag('PERSEO_HUMANITY_WAVE2_ENABLED', flags.humanity_wave2);
+  setTriFlag('PERSEO_WA_HARDENING_V2_ENABLED', flags.wa_hardening_v2);
+
   return {
     handoffEnabled: handoffOn,
     mediaIntakeEnabled: mediaOn,
@@ -52,6 +67,15 @@ function applyArgosSimulationEnv(flags = {}) {
       else process.env.PERSEO_POLICY_ENGINE_ENABLED = prev.policy;
       if (prev.planner === undefined) delete process.env.PERSEO_MESSAGE_PLANNER_ENABLED;
       else process.env.PERSEO_MESSAGE_PLANNER_ENABLED = prev.planner;
+      const restoreTri = (key, val) => {
+        if (val === undefined) delete process.env[key];
+        else process.env[key] = val;
+      };
+      restoreTri('PERSEO_MEDIA_REAL_V1_ENABLED', prev.mediaReal);
+      restoreTri('PERSEO_CRM_EXECUTE_FOUNDATION_ENABLED', prev.crmFoundation);
+      restoreTri('PERSEO_RESILIENCE_V1_ENABLED', prev.resilience);
+      restoreTri('PERSEO_HUMANITY_WAVE2_ENABLED', prev.humanityWave2);
+      restoreTri('PERSEO_WA_HARDENING_V2_ENABLED', prev.waHardening);
     },
   };
 }

@@ -1,0 +1,15 @@
+{
+  "suite": "resilience-p0",
+  "description": "M3-02 — resilience-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "RES_001.v1.json",
+    "RES_002.v1.json",
+    "RES_003.v1.json",
+    "RES_004.v1.json",
+    "RES_005.v1.json",
+    "RES_006.v1.json"
+  ]
+}

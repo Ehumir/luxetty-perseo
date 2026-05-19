@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "WA2_006",
+  "family": "wa_hardening",
+  "category": "la_otra",
+  "title": "Referencia la otra propiedad",
+  "messages": [
+    "Hola",
+    "LUX-A0453",
+    "Y la otra que vi LUX-A0461",
+    "¿Precio de la otra?"
+  ],
+  "expected": {
+    "property_code": "LUX-A0461"
+  },
+  "must_not": {
+    "flow_restart": true
+  },
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true
+  }
+}

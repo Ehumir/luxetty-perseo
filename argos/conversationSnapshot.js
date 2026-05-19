@@ -43,6 +43,14 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
     policy_rule_id: v3State?.lastPolicyRuleId || null,
     media_intake_mode: v3State?.lastMediaIntake?.mode || null,
     logical_turn_source: v3State?.lastLogicalTurnSource || null,
+    resilience_question_count: Number(v3State?.entityTracker?.last_questions?.length || 0),
+    resilience_multi_question:
+      v3State?.lastResilienceMetrics?.multi_question === true ||
+      (v3State?.entityTracker?.last_questions?.length || 0) > 1,
+    resilience_ambiguity_resolved: v3State?.lastResilienceMetrics?.ambiguity_resolved === true,
+    tracked_name: v3State?.entityTracker?.name || null,
+    crm_queue_status: v3State?.crmQueueStatus || null,
+    humanity_tone: v3State?.lastHumanityTone || null,
   };
 }
 

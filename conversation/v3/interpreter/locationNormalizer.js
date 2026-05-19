@@ -80,7 +80,9 @@ function normalizeLocationFromUserText(raw) {
 function isBareKnownZoneToken(raw) {
   const t = normalizeText(String(raw || ''));
   if (!t || t.split(/\s+/).length > 3) return false;
-  return /^(cumbres|san pedro|garcia|garcía|carretera nacional)$/.test(t);
+  return /^(cumbres|san pedro|garcia|garcía|carretera nacional|monterrey|valle oriente|san nicolas|san nicolás)$/.test(
+    t,
+  );
 }
 
 module.exports = {

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "WA2_007",
+  "family": "wa_hardening",
+  "category": "abrupt_switch",
+  "title": "Cambio brusco compra a venta",
+  "messages": [
+    "Hola",
+    "Busco comprar en Cumbres",
+    "Mejor quiero vender mi casa en Cumbres"
+  ],
+  "expected": {
+    "lead_flow": "offer"
+  },
+  "must_not": {
+    "sticky_context_trap": false
+  },
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true
+  }
+}

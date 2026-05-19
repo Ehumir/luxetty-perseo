@@ -1,0 +1,15 @@
+{
+  "suite": "humanity-wave2-p0",
+  "description": "M3-02 — humanity-wave2-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "HUM2_001.v1.json",
+    "HUM2_002.v1.json",
+    "HUM2_003.v1.json",
+    "HUM2_004.v1.json",
+    "HUM2_005.v1.json",
+    "HUM2_006.v1.json"
+  ]
+}

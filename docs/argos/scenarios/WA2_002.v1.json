@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "WA2_002",
+  "family": "wa_hardening",
+  "category": "emoji_multiline",
+  "title": "Multilínea con emojis",
+  "messages": [
+    "Hola 👋",
+    "Busco 🏠\nMonterrey\n2 millones\n¿opciones?"
+  ],
+  "expected": {
+    "lead_flow": "demand",
+    "known_zone": "Monterrey",
+    "known_budget": 2000000
+  },
+  "must_not": {
+    "robotic_response": true
+  },
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true
+  }
+}

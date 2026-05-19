@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "MREAL_002",
+  "family": "media_real",
+  "category": "audio_low_conf",
+  "title": "Audio baja confianza",
+  "messages": [
+    "Hola",
+    {
+      "type": "audio",
+      "transcript": "algo en san pedro",
+      "confidence": 0.2
+    }
+  ],
+  "expected": {
+    "media_intake_mode": "audio_low_confidence"
+  },
+  "must_not": {
+    "media_no_fallback": true
+  },
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true
+  }
+}

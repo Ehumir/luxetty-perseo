@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "MREAL_004",
+  "family": "media_real",
+  "category": "screenshot",
+  "title": "Screenshot con caption",
+  "messages": [
+    {
+      "type": "screenshot",
+      "caption": "Busco rentar en San Pedro",
+      "simulate_hints": [
+        {
+          "hint": "mapa zona",
+          "confidence": 0.6
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "lead_flow": "demand"
+  },
+  "must_not": {
+    "invent_price": true
+  },
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true
+  }
+}

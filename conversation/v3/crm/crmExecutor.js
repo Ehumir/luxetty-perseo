@@ -9,6 +9,8 @@ const { mergeConversationState } = require('../types/conversationState');
 const { v3Log } = require('../core/v3Logger');
 const { normalizeText } = require('../../../utils/text');
 const { isInvalidContactName } = require('../../../utils/helpers');
+const { isCrmExecuteFoundationEnabled } = require('../../../config/perseoM302Flags');
+const { executeV3CrmWithFoundation } = require('./crmExecuteFoundation');
 
 /**
  * @param {string} event
@@ -108,7 +110,7 @@ async function logContactNameMismatchProposal({
  *   updateConversationMeta?: Function,
  * }} input
  */
-async function executeV3CrmIfEligible(input) {
+async function executeV3CrmIfEligibleImpl(input) {
   const state = input.v3State || {};
   const conversationId = state.conversationId || input.conversationRow?.id;
   const gate = evaluateV3CrmExecutionGate({
@@ -357,6 +359,14 @@ async function executeV3CrmIfEligible(input) {
   }
 }
 
+async function executeV3CrmIfEligible(input) {
+  if (isCrmExecuteFoundationEnabled()) {
+    return executeV3CrmWithFoundation(input, executeV3CrmIfEligibleImpl);
+  }
+  return executeV3CrmIfEligibleImpl(input);
+}
+
 module.exports = {
   executeV3CrmIfEligible,
+  executeV3CrmIfEligibleImpl,
 };
