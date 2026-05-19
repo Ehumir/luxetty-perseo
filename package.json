@@ -16,7 +16,15 @@
     "validate:graph-outbound": "node scripts/validate-graph-outbound.js",
     "check:sprint2-env": "node scripts/check-perseo-sprint2-env.js",
     "gate:no-regression": "bash scripts/gate-no-regression.sh",
-    "smoke:referral-persist": "node scripts/smoke-referral-persist.js"
+    "smoke:referral-persist": "node scripts/smoke-referral-persist.js",
+    "staging:verify-db": "node scripts/staging-verify-db.js",
+    "staging:crm-worker": "node scripts/staging-crm-worker-smoke.js",
+    "staging:media": "node scripts/staging-media-smoke.js",
+    "staging:telemetry": "node scripts/staging-telemetry-smoke.js",
+    "staging:replay": "node scripts/staging-replay-smoke.js",
+    "staging:duplicates": "node scripts/staging-duplicate-check.js",
+    "staging:health": "node scripts/staging-runtime-health.js",
+    "staging:all": "node scripts/staging-run-all.js"
   },
   "keywords": [],
   "author": "",
