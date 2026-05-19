@@ -1,0 +1,15 @@
+{
+  "suite": "corpus-p0",
+  "description": "Offline corpus foundation — validated via test/corpusFoundation.test.js and scripts/corpus-validate.js",
+  "threshold": { "pass_rate": 1.0 },
+  "runner": "node --test test/corpusFoundation.test.js",
+  "checks": [
+    "parse_md",
+    "parse_txt",
+    "parse_csv",
+    "parse_json",
+    "dedupe_outcome_hash",
+    "reject_invalid_records",
+    "docx_pdf_stubs"
+  ]
+}

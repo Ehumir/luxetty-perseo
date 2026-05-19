@@ -7,6 +7,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 const OUT = path.join(__dirname, '..', 'docs', 'argos', 'datasets', 'corpus-index.yaml');
 
@@ -143,14 +144,35 @@ function yamlList(arr) {
   return `[${arr.map((x) => yamlQuote(x)).join(', ')}]`;
 }
 
+function indexOutcomeHash(entry) {
+  const seed = entry.behavior_cluster || entry.dedup_key || entry.corpus_id;
+  return crypto.createHash('sha256').update(String(seed)).digest('hex').slice(0, 16);
+}
+
+function promotionStatus(entry, promoted) {
+  if (promoted) return 'promoted';
+  if (entry.priority_candidate === 'P0' || entry.priority_candidate === 'HUMANITY') return 'candidate';
+  return 'indexed';
+}
+
 function buildEntry(base) {
   const promoted = PROMOTED[base.corpus_id];
-  return {
+  const entry = {
     ...base,
     promoted_to_scenario: !!promoted,
     scenario_code: promoted?.scenario_code || null,
     regression_critical: promoted?.regression_critical || false,
     reusable_patterns: base.reusable_patterns || [],
+  };
+  return {
+    ...entry,
+    import_batch_id: 'legacy-tipologia-v1',
+    turn_count: 0,
+    outcome_hash: indexOutcomeHash(entry),
+    promotion_status: promotionStatus(entry, !!promoted),
+    scenario_candidate_id: promoted?.scenario_code || null,
+    last_exploratory_run_id: null,
+    policy_tags: [],
   };
 }
 
@@ -417,6 +439,13 @@ function serializeEntry(e) {
     `    behavior_cluster: ${yamlQuote(e.behavior_cluster)}`,
     `    dedup_key: ${yamlQuote(e.dedup_key)}`,
     `    status: ${yamlQuote(e.status)}`,
+    `    import_batch_id: ${yamlQuote(e.import_batch_id)}`,
+    `    turn_count: ${e.turn_count}`,
+    `    outcome_hash: ${yamlQuote(e.outcome_hash)}`,
+    `    promotion_status: ${yamlQuote(e.promotion_status)}`,
+    `    scenario_candidate_id: ${e.scenario_candidate_id ? yamlQuote(e.scenario_candidate_id) : 'null'}`,
+    `    last_exploratory_run_id: null`,
+    `    policy_tags: ${yamlList(e.policy_tags)}`,
     `    notes: ${yamlQuote(e.notes)}`,
   ];
   return lines.join('\n');

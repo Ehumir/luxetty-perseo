@@ -1,0 +1,4 @@
+corpus_id,turn_index,role,text,import_batch_id
+FIXTURE-CSV-001,0,user,Quiero rentar un depa,fixture-batch-m2-02
+FIXTURE-CSV-001,1,assistant,¿En qué zona buscas?,fixture-batch-m2-02
+FIXTURE-CSV-001,2,user,Monterrey centro,fixture-batch-m2-02

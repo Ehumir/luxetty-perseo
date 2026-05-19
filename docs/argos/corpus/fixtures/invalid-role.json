@@ -1,0 +1,11 @@
+{
+  "record_schema_version": "1.0",
+  "corpus_id": "FIXTURE-INVALID-ROLE",
+  "source": { "format": "json", "file": "invalid-role.json", "imported_at": "2026-05-19T00:00:00.000Z" },
+  "metadata": { "channel": "whatsapp" },
+  "turns": [
+    { "index": 0, "role": "bot", "text": "Hola", "attachments": [] }
+  ],
+  "labels": { "families": [], "outcomes": [], "risk_tags": [] },
+  "promotion": { "status": "indexed", "promoted_scenario": null, "reject_reason": null }
+}

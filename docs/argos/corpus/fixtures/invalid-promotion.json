@@ -1,0 +1,11 @@
+{
+  "record_schema_version": "1.0",
+  "corpus_id": "FIXTURE-INVALID-PROMOTION",
+  "source": { "format": "json", "file": "invalid-promotion.json", "imported_at": "2026-05-19T00:00:00.000Z" },
+  "metadata": { "channel": "whatsapp" },
+  "turns": [
+    { "index": 0, "role": "user", "text": "Hola", "attachments": [] }
+  ],
+  "labels": { "families": [], "outcomes": [], "risk_tags": [] },
+  "promotion": { "status": "auto_promoted", "promoted_scenario": "OFFER_999", "reject_reason": null }
+}
