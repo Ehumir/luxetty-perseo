@@ -36,6 +36,8 @@ const NON_NAME_PATTERNS = [
   /\bopciones\b/,
   /\bnada\b/,
   /\?$/,
+  /\b(desocupad|ocupad|habitad|libre|rentad)\b/,
+  /\best[aá]\s+(en|desocupad|libre|ocupad)/,
 ];
 
 /**
@@ -61,10 +63,15 @@ function isAwaitingIdentityName(state) {
   const q = String(state.lastAssistantQuestion || state.lastAssistantReply || '');
   return (
     /compartes tu nombre|comparte tu nombre/i.test(q) ||
+    /me dices tu nombre|me dices como te llamas/i.test(q) ||
+    /c[oó]mo te llamas/i.test(q) ||
     /qui[eé]n tengo el gusto/i.test(q) ||
     /me ayudas con tu nombre/i.test(q) ||
-    /para continuar.*compartes tu nombre/i.test(q) ||
-    /me compartes tu nombre/i.test(q)
+    /para continuar.*nombre/i.test(q) ||
+    /para seguir.*nombre/i.test(q) ||
+    /me compartes.*tu nombre/i.test(q) ||
+    /zona y tu nombre/i.test(q) ||
+    /en qu[eé] zona.*nombre/i.test(q)
   );
 }
 

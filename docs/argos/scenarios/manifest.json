@@ -25,7 +25,15 @@
     "release-p1": [
       "DEMAND_003.v1.json",
       "DEMAND_005.v1.json",
-      "DEMAND_006.v1.json"
+      "DEMAND_006.v1.json",
+      "OFFER_002.v1.json",
+      "OFFER_003.v1.json",
+      "OFFER_004.v1.json",
+      "PROP_001.v1.json",
+      "PROP_002.v1.json",
+      "EDGE_001.v1.json",
+      "HUMANITY_004.v1.json",
+      "HUMANITY_005.v1.json"
     ],
     "humanity-p0": ["HUMANITY_001.v1.json", "REG_GREETING_001.v1.json"],
     "P1": [

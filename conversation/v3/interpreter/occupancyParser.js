@@ -13,6 +13,7 @@ function parseOccupancyStatus(text) {
   if (!t) return null;
 
   if (t === 'libre' || /\besta libre\b/.test(t) || /\bestá libre\b/.test(t)) return 'libre';
+  if (t.includes('desocupad') || t.includes('sin inquilino') || t.includes('vacant')) return 'libre';
   if (t.includes('habitad') || t.includes('habitada')) return 'habitada';
   if (t.includes('ocupad') || t.includes('ocupada')) return 'ocupada';
   if (t.includes('rentad') || t.includes('rentada')) return 'rentada';

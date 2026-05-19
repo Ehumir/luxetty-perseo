@@ -17,6 +17,6 @@ describe('argosReleaseP1Suite', () => {
       encoding: 'utf8',
       env: process.env,
     });
-    assert.match(out, /pass=3\/3/);
+    assert.match(out, /pass=11\/11/);
   });
 });

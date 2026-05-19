@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "OFFER_004",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "offer",
+  "category": "venta_valuacion_sin_precio",
+  "title": "Venta — valuación sin precio conocido",
+  "description": "Propietario pide valuación; no exige precio si desconoce; continuidad captación.",
+  "typology": { "corpus_ids": ["CAP-P1-004"], "rail": "offer", "block": "M1-D" },
+  "messages": [
+    "Quiero saber cuánto vale mi casa",
+    "Cumbres",
+    "No tengo precio",
+    "Jorge",
+    "Sí"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "offer",
+    "operation_type": "sale",
+    "known_zone": "Cumbres",
+    "known_name": "Jorge",
+    "advisor_contact_consent": "ACCEPTED",
+    "crm_ready": false
+  },
+  "must_not": {
+    "flow_restart": true,
+    "offer_to_demand": true,
+    "forced_price_requirement": true,
+    "hard_template_response": true,
+    "robotic_response": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-19", "change": "M1-PR-08 OFFER_004 valuation no price." }]
+}

@@ -15,6 +15,19 @@ function composeObjectionReply(kind, state) {
   const nm = firstName(state);
 
   switch (kind) {
+    case 'sale_urgency_emotional': {
+      const zone = state.locationText || null;
+      const head = nm ? `Te entiendo, ${nm}.` : 'Te entiendo.';
+      const zoneQ = zone
+        ? `Seguimos con la venta en ${zone}.`
+        : 'Para avanzar sin presión: ¿en qué zona está la propiedad y cómo te llamas?';
+      return {
+        responseText: `${head} Vender con prisa puede generar ansiedad; con calma ordenamos lo básico. ${zoneQ}`,
+        followUpQuestion: zone ? '¿Cómo te llamas?' : null,
+        awaitingField: zone ? 'full_name' : 'location_text',
+        toneFlags: { empathetic: true, humanity: true },
+      };
+    }
     case 'sell_valuation_unknown': {
       const zone = state.locationText || 'esa zona';
       const nm = firstName(state);

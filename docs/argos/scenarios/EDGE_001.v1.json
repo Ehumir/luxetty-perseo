@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "EDGE_001",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "edge",
+  "category": "reset_continuidad",
+  "title": "Edge — pivot de tema y reset de sesión",
+  "description": "Cambio de zona sin borrar todo; !reset limpia contexto previo.",
+  "typology": { "corpus_ids": ["EDGE-P1-001"], "rail": "edge", "block": "M1-D" },
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres",
+    "5 millones",
+    "olvida eso, mejor busco en San Pedro",
+    "4 millones",
+    "!reset",
+    "Busco depa en San Pedro",
+    "Laura"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "demand",
+    "known_zone": "San Pedro",
+    "known_name": "Laura"
+  },
+  "must_not": {
+    "context_wipe_without_reset": true,
+    "stale_context_after_reset": true,
+    "flow_restart_incorrect": true,
+    "flow_restart": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-19", "change": "M1-PR-09 EDGE_001 pivot + reset." }]
+}

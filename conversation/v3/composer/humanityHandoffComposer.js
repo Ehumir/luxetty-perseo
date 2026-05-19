@@ -79,7 +79,12 @@ function composeCurtDirectReply(state) {
  * @param {import('../interpreter/objectionClassifier').ObjectionKind|null} kind
  */
 function isHumanityDeferHandoffKind(kind) {
-  return kind === 'frustration_not_understood' || kind === 'useless' || kind === 'curt_direct_question';
+  return (
+    kind === 'frustration_not_understood' ||
+    kind === 'useless' ||
+    kind === 'curt_direct_question' ||
+    kind === 'sale_urgency_emotional'
+  );
 }
 
 module.exports = {

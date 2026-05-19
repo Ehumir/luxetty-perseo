@@ -29,6 +29,10 @@ function parseAdvisorContactConsent(text) {
     /\b(me parece\s+(?:muy\s+)?bien|muy bien|de acuerdo)\b/.test(t) ||
     t.includes('que me contacte') ||
     t.includes('que me contacten') ||
+    t.includes('contactarme') ||
+    t.includes('contactenme') ||
+    /\bpuede\s+contactarme\b/.test(t) ||
+    /\bme\s+puede\s+contactar\b/.test(t) ||
     t.includes('contacten') ||
     t.includes('contacte') ||
     /\bpor\s+whatsapp\b/.test(t) ||

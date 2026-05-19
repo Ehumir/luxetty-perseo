@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "PROP_001",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "property",
+  "category": "propiedad_valida",
+  "title": "Propiedad válida — precio publicado sin inventar",
+  "description": "Consulta LUX-A0470 con inventario ARGOS; precio y enlace solo desde fixture.",
+  "typology": { "corpus_ids": ["PROP-P1-001"], "rail": "property", "block": "M1-D" },
+  "messages": [
+    "Hola",
+    "Me interesa LUX-A0470",
+    "Jorge",
+    "¿Cuánto cuesta?",
+    "¿Me pasas el enlace?"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "setup": { "property_code": "LUX-A0470" },
+  "expected": {
+    "lead_flow": "demand",
+    "property_code": "LUX-A0470",
+    "known_name": "Jorge"
+  },
+  "must_not": {
+    "invent_property": true,
+    "invent_price": true,
+    "invent_link": true,
+    "property_context_loss": true,
+    "flow_restart": true,
+    "hallucinated_availability": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-19", "change": "M1-PR-09 PROP_001 valid listing." }]
+}

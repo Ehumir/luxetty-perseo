@@ -127,6 +127,10 @@ function processHandoff(state, text, decision, plannerOut) {
 
   /** F3.3A — PROPERTY_INQUIRY: primero modo Q&A; handoff solo con intención fuerte o cierre suave tras ayuda. */
   if (state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY && consentUnknown) {
+    if (decision.detectedIntent === V3_INTENT.PROPERTY_FACT_QUESTION) {
+      action = 'PROPERTY_QA_CONTINUE';
+      return { patch, action };
+    }
     if (decision.detectedIntent === V3_INTENT.IDENTITY_CAPTURE) {
       patch.propertySubMode = 'PROPERTY_QA';
       patch.propertyQaUserTurnCount = 0;

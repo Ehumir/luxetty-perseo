@@ -91,9 +91,19 @@ function validateMustNotReply(input) {
   }
 
   if (must_not.invent_price) {
-    const amounts = extractMoneyMentions(reply);
+    const listingCodes = extractListingCodes(reply);
+    const amounts = extractMoneyMentions(reply).filter((amount) => {
+      if (!Number.isFinite(amount) || amount < 10_000) return false;
+      const asStr = String(Math.round(amount));
+      for (const code of listingCodes) {
+        if (String(code).replace(/\D/g, '').includes(asStr)) return false;
+      }
+      return true;
+    });
     const deniesUncertainty =
-      /no puedo confirmar|sin inventar|no tengo (?:el |un )?precio|asesor.*confirm/i.test(reply);
+      /no puedo confirmar|sin inventar|no tengo (?:el |un )?precio|no encuentro|no invento|asesor.*confirm/i.test(
+        reply,
+      );
     if (amounts.length && !deniesUncertainty && knownPrices.length) {
       const tolerance = 0.05;
       for (const amount of amounts) {
@@ -120,6 +130,140 @@ function validateMustNotReply(input) {
           severity: 'high',
         });
       }
+    }
+  }
+
+  if (must_not.hallucinated_availability) {
+    const claimsAvailable =
+      /\b(disponible|te la aparto|est[aá] libre|sigue disponible)\b/i.test(normalizeText(reply));
+    if (claimsAvailable && facts.propertyFound && facts.available === false) {
+      violations.push({
+        constraint: 'must_not.hallucinated_availability',
+        detail: 'Claims availability but inventory marks unavailable',
+        severity: 'critical',
+      });
+    }
+    if (claimsAvailable && facts.propertyLookupAttempted && !facts.propertyFound) {
+      violations.push({
+        constraint: 'must_not.hallucinated_availability',
+        detail: 'Claims availability without property facts',
+        severity: 'critical',
+      });
+    }
+  }
+
+  if (must_not.fake_link) {
+    for (const url of extractUrls(reply)) {
+      if (!hostAllowed(url, allowedHosts) && !knownUrls.includes(url)) {
+        violations.push({
+          constraint: 'must_not.fake_link',
+          detail: `URL not allowlisted: ${url}`,
+          severity: 'high',
+        });
+      }
+    }
+  }
+
+  if (must_not.empathy_missing) {
+    const t = normalizeText(reply);
+    const userUrgent = facts.userExpressedUrgency === true;
+    if (userUrgent && !/\b(entiendo|te escucho|con calma|sé que|comprendo|tranquil)\b/.test(t)) {
+      violations.push({
+        constraint: 'must_not.empathy_missing',
+        detail: 'User expressed urgency but reply lacks brief empathy',
+        severity: 'medium',
+      });
+    }
+  }
+
+  if (must_not.sticky_context_trap) {
+    if (
+      facts.explicitFlowSwitch === true &&
+      facts.stickyLeadFlow &&
+      facts.leadFlow === facts.stickyLeadFlow
+    ) {
+      violations.push({
+        constraint: 'must_not.sticky_context_trap',
+        detail: 'Explicit flow switch but sticky lead flow unchanged',
+        severity: 'critical',
+      });
+    }
+  }
+
+  if (must_not.offer_to_demand_without_confirmation) {
+    if (facts.stickyLeadFlow === 'offer' && facts.leadFlow === 'demand' && !facts.explicitFlowSwitch) {
+      violations.push({
+        constraint: 'must_not.offer_to_demand_without_confirmation',
+        detail: 'Flipped offer→demand without explicit switch',
+        severity: 'critical',
+      });
+    }
+  }
+
+  if (must_not.demand_to_offer_without_confirmation) {
+    if (facts.stickyLeadFlow === 'demand' && facts.leadFlow === 'offer' && !facts.explicitFlowSwitch) {
+      violations.push({
+        constraint: 'must_not.demand_to_offer_without_confirmation',
+        detail: 'Flipped demand→offer without explicit switch',
+        severity: 'critical',
+      });
+    }
+  }
+
+  if (must_not.context_wipe_without_reset) {
+    if (
+      facts.userSoftTopicDismissal === true &&
+      facts.sessionResetAtTurn == null &&
+      facts.hadKnownNameBeforeDismissal === true &&
+      !facts.known_name
+    ) {
+      violations.push({
+        constraint: 'must_not.context_wipe_without_reset',
+        detail: 'Soft topic dismissal cleared captured name without reset',
+        severity: 'high',
+      });
+    }
+  }
+
+  if (must_not.stale_context_after_reset) {
+    if (facts.sessionResetAtTurn != null && facts.turnIndex > facts.sessionResetAtTurn) {
+      for (const zone of facts.preResetZones || []) {
+        if (
+          !zone ||
+          String(zone).toLowerCase() === String(facts.known_zone || '').toLowerCase()
+        ) {
+          continue;
+        }
+        if (zone && new RegExp(`\\b${String(zone).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(reply)) {
+          violations.push({
+            constraint: 'must_not.stale_context_after_reset',
+            detail: `Reply mentions pre-reset zone ${zone}`,
+            severity: 'high',
+          });
+          break;
+        }
+      }
+      for (const budget of facts.preResetBudgets || []) {
+        const amounts = extractMoneyMentions(reply);
+        if (amounts.some((a) => Math.abs(a - budget) <= Math.max(50000, budget * 0.02))) {
+          violations.push({
+            constraint: 'must_not.stale_context_after_reset',
+            detail: `Reply mentions pre-reset budget ${budget}`,
+            severity: 'high',
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  if (must_not.flow_restart_incorrect) {
+    if (facts.suppressGlobalMenu === true && isGlobalIntentMenu(reply)) {
+      violations.push({
+        constraint: 'must_not.flow_restart_incorrect',
+        detail: 'Global intent menu while flow should continue',
+        severity: 'high',
+      });
     }
   }
 
@@ -263,6 +407,31 @@ function validateMustNotReply(input) {
         severity: 'critical',
       });
     }
+  }
+
+  if (must_not.forced_price_requirement && (facts.valuationRequested || facts.priceUnknown)) {
+    const lower = normalizeText(reply);
+    if (
+      /\?/.test(reply) &&
+      /\b(qu[eé]\s+precio\s+esperado|precio\s+esperado\s+manejas|cu[aá]nto\s+pides|precio\s+quieres\s+pedir)\b/.test(
+        lower,
+      ) &&
+      !/\bvaluaci[oó]n|sin\s+precio\s+fijo|no\s+tienes\s+precio\b/.test(lower)
+    ) {
+      violations.push({
+        constraint: 'must_not.forced_price_requirement',
+        detail: 'Insisted on expected price after valuation / unknown price path',
+        severity: 'high',
+      });
+    }
+  }
+
+  if (must_not.hard_template_response && facts.suppressGlobalMenu === true && isGlobalIntentMenu(reply)) {
+    violations.push({
+      constraint: 'must_not.hard_template_response',
+      detail: 'Global intent menu while offer/demand flow is active',
+      severity: 'high',
+    });
   }
 
   if (must_not.forced_handoff && facts.qualificationIncomplete === true) {

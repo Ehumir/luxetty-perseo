@@ -112,6 +112,46 @@ function getBuyDemandContinuityVariants(state) {
   return variants;
 }
 
+function getSellOfferContinuityVariants(state) {
+  const zone = state.locationText ? ` en ${state.locationText}` : '';
+  const variants = [
+    `Seguimos con la captación de tu propiedad${zone}. ¿Qué dato quieres completar (precio, ocupación o tipo)?`,
+    'Perfecto, continúo contigo en la venta. Dime el siguiente dato de tu inmueble.',
+    'Tomé el contexto de tu propiedad. ¿Afinamos precio esperado, ocupación o algún detalle?',
+    'De acuerdo, vamos con la venta. ¿Qué información te falta registrar?',
+  ];
+  if (!state.collectedFields?.fullName) {
+    variants.unshift('Para seguir con la captación, ¿me compartes tu nombre?');
+  }
+  if (state.locationText && !sellOfferPriceSatisfied(state)) {
+    variants.unshift(
+      `Gracias por la zona (${state.locationText}). Si no tienes precio fijo, podemos orientarte con valuación; ¿cómo está la ocupación?`,
+    );
+  }
+  return variants;
+}
+
+function getRentOfferContinuityVariants(state) {
+  const zone = state.locationText ? ` en ${state.locationText}` : '';
+  const variants = [
+    `Seguimos con poner tu propiedad en renta${zone}. ¿Qué dato quieres completar (renta esperada, ocupación)?`,
+    'Perfecto, continúo contigo en la captación para renta. Dime el siguiente dato.',
+    'Tomé que quieres rentar tu propiedad. ¿Afinamos ocupación o renta esperada?',
+    'De acuerdo, vamos con la renta de tu inmueble. ¿Qué te gustaría precisar ahora?',
+  ];
+  if (!state.collectedFields?.fullName) {
+    variants.unshift('Para seguir con la renta de tu propiedad, ¿me compartes tu nombre?');
+  }
+  return variants;
+}
+
+function sellOfferPriceSatisfied(state) {
+  if (state.expectedPrice != null) return true;
+  if (state.valuationRequested === true || state.priceUnknown === true) return true;
+  if (state.collectedFields?.valuationRequested === true) return true;
+  return false;
+}
+
 function getRentDemandContinuityVariants(state) {
   const zone = state.locationText ? ` en ${state.locationText}` : '';
   const variants = [
@@ -136,12 +176,33 @@ function getRentDemandContinuityVariants(state) {
 /**
  * @param {import('../types/conversationState').ConversationState} state
  */
+function resolveContinuityVariants(state) {
+  if (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+    return getBuyDemandContinuityVariants(state);
+  }
+  if (state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
+    return getSellOfferContinuityVariants(state);
+  }
+  if (state.conversationGoal === CONVERSATION_GOALS.RENT_OUT_PROPERTY) {
+    return getRentOfferContinuityVariants(state);
+  }
+  if (state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY) {
+    const code = state.propertyListingCode ? ` ${state.propertyListingCode}` : '';
+    const variants = [
+      `Sigo con tu interés en${code || ' la propiedad'}. Puedo orientarte con lo publicado sin inventar datos.`,
+      `Continuamos con${code || ' tu consulta'}. ¿Prefieres precio, zona o enlace de la ficha?`,
+    ];
+    if (!state.collectedFields?.fullName) {
+      variants.unshift(`Para${code ? ` la referencia${code},` : ''} ¿me compartes tu nombre?`);
+    }
+    return variants;
+  }
+  return getRentDemandContinuityVariants(state);
+}
+
 function composeGenericUnderstandingPrompt(state) {
   if (shouldSuppressGlobalIntentMenu(state)) {
-    const continuityVariants =
-      state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY
-        ? getBuyDemandContinuityVariants(state)
-        : getRentDemandContinuityVariants(state);
+    const continuityVariants = resolveContinuityVariants(state);
     const text = pickOpeningVariant(state, continuityVariants);
     return {
       responseText: text,
@@ -218,10 +279,7 @@ function applyGeneralReplyAntiRepetition(input) {
 
   let candidates = [];
   if (shouldSuppressGlobalIntentMenu(state)) {
-    candidates =
-      state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY
-        ? getBuyDemandContinuityVariants(state)
-        : getRentDemandContinuityVariants(state);
+    candidates = resolveContinuityVariants(state);
   } else if (isGlobalIntentMenu(replyText)) {
     candidates = [...GLOBAL_OPENING_VARIANTS];
   } else {
@@ -258,7 +316,10 @@ module.exports = {
   pickOpeningVariant,
   composeGenericUnderstandingPrompt,
   getBuyDemandContinuityVariants,
+  getSellOfferContinuityVariants,
+  getRentOfferContinuityVariants,
   getRentDemandContinuityVariants,
+  resolveContinuityVariants,
   composeSocialRapportReply,
   composeRentDemandKickoff,
   applyGeneralReplyAntiRepetition,

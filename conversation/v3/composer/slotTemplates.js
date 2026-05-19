@@ -16,6 +16,8 @@ const {
 } = require('./openingVariantPicker');
 const { isSlotFilled } = require('../state/slotFillState');
 const { evaluateQualification } = require('../planner/qualificationPlanner');
+const { composeObjectionReply } = require('./objectionComposer');
+const { isOfferValuationUnknownRequest } = require('../interpreter/offerValuationSignals');
 
 /**
  * @param {import('../types/conversationState').ConversationState} state
@@ -48,6 +50,13 @@ function formatMoneyMx(amount) {
   } catch {
     return `$${Math.round(n).toLocaleString('es-MX')}`;
   }
+}
+
+function getCommunicableExpectedPriceLabel(state) {
+  const amount = Number(state?.expectedPrice);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  if (state?.priceUnknown === true) return null;
+  return formatMoneyMx(amount);
 }
 
 function firstName(state) {
@@ -183,6 +192,15 @@ function composeSlotQuestion(state, slotId) {
       return composeAdvisorGreeting(state);
     case 'full_name':
       if (state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
+        if (state.flowSwitchAck) {
+          return {
+            responseText:
+              'Entendido, cambiamos de rumbo: te acompaño con la venta de tu propiedad. ¿Me dices tu nombre?',
+            followUpQuestion: null,
+            awaitingField: 'full_name',
+            toneFlags: { consultive: true, flowSwitch: true },
+          };
+        }
         return {
           responseText: pickOpeningVariant(state, [
             'Claro, te apoyo con la venta. Para orientarte mejor, ¿me compartes tu nombre?',
@@ -322,9 +340,12 @@ function composeSlotQuestion(state, slotId) {
       };
     case 'occupancy_status': {
       const tipo = propertyTypeLabel(state);
-      const pres = formatMoneyMx(state.expectedPrice);
+      const pres = getCommunicableExpectedPriceLabel(state);
+      const context = pres
+        ? `Tengo tu ${tipo} en ${zone} con precio esperado de ${pres}.`
+        : `Tengo tu ${tipo} en ${zone}.`;
       return {
-        responseText: `Perfecto, ${nm}. Tengo tu ${tipo} en ${zone} con precio esperado de ${pres}. ¿Está habitada, rentada o libre?`,
+        responseText: `Perfecto, ${nm}. ${context} ¿Está habitada, rentada o libre?`,
         followUpQuestion: null,
         awaitingField: 'occupancy_status',
         toneFlags: { consultive: true },
@@ -346,7 +367,7 @@ function composeSlotQuestion(state, slotId) {
 function composeHandoffOffer(state) {
   const nm = firstName(state) || 'perfecto';
   const zone = state.locationText || 'esa zona';
-  const pres = state.expectedPrice != null ? formatMoneyMx(state.expectedPrice) : null;
+  const pres = getCommunicableExpectedPriceLabel(state);
   const rangeHint = pres ? `Por la zona y el rango (${pres}) que me comentas, sí vale la pena revisarla bien.` : `Por lo que me comentas de ${zone}, sí vale la pena revisarla bien.`;
 
   return {
@@ -411,6 +432,40 @@ function getActivePropertyFacts(state) {
     bedrooms: ap.bedrooms != null ? Number(ap.bedrooms) : null,
     constructionM2: ap.construction_m2 != null ? Number(ap.construction_m2) : null,
     currency: ap.currency || 'MXN',
+  };
+}
+
+function composeTopicPivotAck(state = {}) {
+  const st = state && typeof state === 'object' ? state : {};
+  const zone = st.locationText || null;
+  const nm = firstName(st);
+  if (zone) {
+    const head = nm ? `${nm}, entendido` : 'Entendido';
+    return {
+      responseText: `${head}: dejamos lo anterior. En ${zone}, ¿qué presupuesto aproximado manejas?`,
+      followUpQuestion: null,
+      awaitingField: 'budget',
+      toneFlags: { consultive: true, topicPivot: true },
+    };
+  }
+  return {
+    responseText:
+      'Entendido, dejamos lo anterior. ¿En qué zona quieres enfocar la búsqueda ahora?',
+    followUpQuestion: null,
+    awaitingField: 'location_text',
+    toneFlags: { consultive: true, topicPivot: true },
+  };
+}
+
+function composePropertyLookupMiss(state = {}) {
+  const st = state && typeof state === 'object' ? state : {};
+  const code = cleanSpaces(String(st.propertyListingCode || ''));
+  const ref = code ? `la referencia ${code}` : 'ese código';
+  return {
+    responseText: `No encuentro ${ref} en inventario publicado por este canal, así que no invento precio ni ficha. ¿Puedes confirmar el código completo (ej. LUX-A0470) o prefieres que busquemos por zona y presupuesto?`,
+    followUpQuestion: null,
+    awaitingField: null,
+    toneFlags: { consultive: true, propertyMiss: true },
   };
 }
 
@@ -660,6 +715,17 @@ function applyPropertyReplyAntiLoop(input) {
     state.handoffStage === CONVERSATION_STAGES.HANDOFF_PENDING
   ) {
     const prev = String(state.lastAssistantReply || '');
+    const userShort = /^(hola|hey|buenas|ok|si|sí|vale)$/i.test(
+      normalizeText(String(state.lastUserText || '')),
+    );
+    if (
+      userShort &&
+      prev &&
+      isCommercialHandoffReply(prev) &&
+      state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY
+    ) {
+      return { text: composePropertyLoopBreak(state), replaced: true };
+    }
     if (prev && isCommercialHandoffReply(text) && isCommercialHandoffReply(prev)) {
       if (
         state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY &&
@@ -775,11 +841,26 @@ function composeStickyQualificationTurn(state, decision) {
   const intent = decision.detectedIntent;
   const nm = firstName(state);
   const zone = state.locationText;
-  const pres = formatMoneyMx(state.expectedPrice);
+  const pres = getCommunicableExpectedPriceLabel(state);
   const budget = formatMoneyMx(state.budget);
 
   if (intent === V3_INTENT.LOCATION_CAPTURE && zone) {
     if (state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
+      const priceOk =
+        state.expectedPrice != null ||
+        state.valuationRequested === true ||
+        state.priceUnknown === true;
+      if (state.collectedFields?.fullName && priceOk) {
+        return {
+          responseText: pickOpeningVariant(state, [
+            `Perfecto, tomé la zona (${zone}). ¿Cómo está la ocupación (libre, habitada, rentada)?`,
+            `Gracias, registré ${zone}. ¿La propiedad está libre, habitada o rentada?`,
+          ]),
+          followUpQuestion: null,
+          awaitingField: state.occupancyStatus ? null : 'occupancy_status',
+          toneFlags: { consultive: true, stickyAck: true },
+        };
+      }
       const variants = [
         `Tomé la zona (${zone}). ¿Qué precio esperado manejas para la venta?`,
         `Perfecto, registré ${zone}. ¿Tienes un precio en mente?`,
@@ -821,6 +902,18 @@ function composeStickyQualificationTurn(state, decision) {
   }
 
   if (intent === V3_INTENT.SELLER_PRICE && state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
+    if (state.collectedFields?.fullName) {
+      return {
+        responseText: pickOpeningVariant(state, [
+          pres
+            ? `Tomé un precio esperado de ${pres}. ¿Cómo está la ocupación (libre, habitada, rentada)?`
+            : 'Tomé el precio. ¿Cómo está la ocupación de la propiedad?',
+        ]),
+        followUpQuestion: null,
+        awaitingField: state.occupancyStatus ? null : 'occupancy_status',
+        toneFlags: { consultive: true, stickyAck: true },
+      };
+    }
     return {
       responseText: pickOpeningVariant(state, [
         pres ? `Tomé un precio esperado de ${pres}. ¿Me compartes tu nombre?` : 'Tomé el precio. ¿Me compartes tu nombre?',
@@ -868,11 +961,32 @@ function composeStickyQualificationTurn(state, decision) {
  * @param {ReturnType<import('../planner/qualificationPlanner').evaluateQualification>} plannerOut
  * @param {{ action: string }} handoffOut
  */
+function shouldComposeSellValuationUnknown(state, decision) {
+  if (state.conversationGoal !== CONVERSATION_GOALS.SELL_PROPERTY) return false;
+  if (!(state.priceUnknown || state.valuationRequested)) return false;
+  const last = String(state.lastUserText || '');
+  if (isOfferValuationUnknownRequest(last)) return true;
+  return (
+    decision?.detectedIntent === V3_INTENT.UNKNOWN &&
+    Boolean(state.collectedFields?.fullName) &&
+    Boolean(state.locationText)
+  );
+}
+
 function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   const intent = decision.detectedIntent;
 
+  if (state.topicPivotTurn) {
+    return composeTopicPivotAck(state);
+  }
+
   const stickyAck = composeStickyQualificationTurn(state, decision);
   if (stickyAck) return stickyAck;
+
+  if (shouldComposeSellValuationUnknown(state, decision)) {
+    const composed = composeObjectionReply('sell_valuation_unknown', state);
+    if (composed) return composed;
+  }
 
   if (intent === V3_INTENT.DEMAND_REFINEMENT && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
     return composeDemandRefinementTurn(state, decision);
@@ -917,6 +1031,18 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
     }
   }
 
+  if (
+    intent === V3_INTENT.PROPERTY_FACT_QUESTION &&
+    state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY
+  ) {
+    const fam = decision.propertyInquiryFamily || 'generic';
+    const hasFacts = !!(state.activeProperty && state.activeProperty.id);
+    if ((fam === 'price' || fam === 'availability') && !hasFacts) {
+      return composePropertyLookupMiss(state);
+    }
+    return composePropertyFactReply(state, fam);
+  }
+
   if (intent === V3_INTENT.CAMPAIGN_GENERIC_TOUCH) return composeCampaignGenericTouch(state);
 
   if (handoffOut.action === 'CONSENT_ACCEPTED' || handoffOut.action === 'HANDOFF_COMPLETE') {
@@ -930,6 +1056,10 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   if (handoffOut.action === 'PROPERTY_QA_CONTINUE') {
     if (intent === V3_INTENT.PROPERTY_FACT_QUESTION) {
       const fam = decision.propertyInquiryFamily || 'generic';
+      const hasFacts = !!(state.activeProperty && state.activeProperty.id);
+      if ((fam === 'price' || fam === 'availability') && !hasFacts) {
+        return composePropertyLookupMiss(state);
+      }
       return composePropertyFactReply(state, fam);
     }
     return composePropertyQaNeutralContinue(state);
@@ -968,8 +1098,20 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   }
 
   if (intent === V3_INTENT.SELL_PROPERTY) {
+    if (!state.collectedFields?.fullName && !state.locationText) {
+      return {
+        responseText: pickOpeningVariant(state, [
+          'Con gusto, te apoyo con el valor de tu propiedad. ¿En qué zona está y cómo te llamas?',
+          'Perfecto, te ayudo con la orientación de valuación. ¿Me compartes la zona y tu nombre?',
+        ]),
+        followUpQuestion: null,
+        awaitingField: 'location_text',
+        toneFlags: { consultive: true, valuationLead: true },
+      };
+    }
     if (!state.collectedFields?.fullName) return composeSlotQuestion(state, 'full_name');
-    return composeSlotQuestion(state, 'location_text');
+    if (!state.locationText) return composeSlotQuestion(state, 'location_text');
+    return composeSlotQuestion(state, 'expected_price');
   }
 
   if (intent === V3_INTENT.PROPERTY_INQUIRY) {
@@ -998,8 +1140,11 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
     return composePlannerSlotQuestion(state, plannerOut.nextSlot);
   }
 
-  if (intent === V3_INTENT.OCCUPANCY_CAPTURE && handoffOut.action === 'OFFER_HANDOFF') {
-    return composeHandoffOffer(state);
+  if (intent === V3_INTENT.OCCUPANCY_CAPTURE) {
+    const occ = state.occupancyStatus || state.collectedFields?.occupancyStatus;
+    if (occ && handoffOut.action === 'OFFER_HANDOFF') {
+      return composeHandoffOffer(state);
+    }
   }
 
   if (plannerOut.nextSlot) return composePlannerSlotQuestion(state, plannerOut.nextSlot);
@@ -1027,6 +1172,21 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
 
   if (intent === V3_INTENT.BEDROOMS_CAPTURE && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY && plannerOut.nextSlot) {
     return composePlannerSlotQuestion(state, plannerOut.nextSlot);
+  }
+
+  if (
+    intent === V3_INTENT.UNKNOWN &&
+    (state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY ||
+      state.conversationGoal === CONVERSATION_GOALS.RENT_OUT_PROPERTY) &&
+    (state.priceUnknown || state.valuationRequested) &&
+    isOfferValuationUnknownRequest(state.lastUserText || '')
+  ) {
+    const kind =
+      state.conversationGoal === CONVERSATION_GOALS.RENT_OUT_PROPERTY
+        ? 'sell_valuation_unknown'
+        : 'sell_valuation_unknown';
+    const composed = composeObjectionReply(kind, state);
+    if (composed) return composed;
   }
 
   if (intent === V3_INTENT.UNKNOWN && shouldSuppressGlobalIntentMenu(state)) {
