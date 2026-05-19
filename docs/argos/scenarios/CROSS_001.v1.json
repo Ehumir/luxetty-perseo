@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "CROSS_001",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "cross_intent",
+  "category": "dual_intent_sell_buy",
+  "title": "Vender casa y comprar otra",
+  "messages": [
+    "Hola",
+    "Quiero vender mi casa y también comprar otra en Cumbres con 5 millones"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "demand",
+    "known_zone": "Cumbres",
+    "known_budget": 5000000,
+    "policy_decision": "ATTEND",
+    "crm_ready": false
+  },
+  "must_not": {
+    "flow_restart": true,
+    "hard_template_response": true,
+    "offer_to_demand_without_confirmation": true,
+    "forced_handoff": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  }
+}

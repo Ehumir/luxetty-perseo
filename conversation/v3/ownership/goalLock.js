@@ -12,6 +12,17 @@ const { releaseStickyContext, stampStickyContext, enforceStickyContext } = requi
 function applyGoalOwnership(state, patch, decision) {
   const out = { ...patch };
 
+  if (out.crossIntentPrimaryRail === 'demand') {
+    out.conversationGoal = CONVERSATION_GOALS.BUY_PROPERTY;
+    out.conversationGoalLocked = true;
+    out.goalConfidence = Math.max(state.goalConfidence || 0, 0.88);
+    out.leadFlow = 'demand';
+    out.operationType = out.operationType === 'rent' ? 'rent' : 'sale';
+    out.propertySpecificIntent = false;
+    delete out.crossIntentPrimaryRail;
+    return enforceStickyContext(state, out, decision);
+  }
+
   if (decision.explicitFlowSwitch) {
     releaseStickyContext(out);
   }

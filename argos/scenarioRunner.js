@@ -38,7 +38,14 @@ function leadWouldMaterialize(crm) {
 }
 
 function pickTurnDiagnostics(debugTrace = []) {
-  const types = new Set(['parser_winner', 'state_transition', 'crm_gate_blockers']);
+  const types = new Set([
+    'parser_winner',
+    'state_transition',
+    'crm_gate_blockers',
+    'policy_decision',
+    'segments',
+    'response_plan',
+  ]);
   return debugTrace.filter((row) => types.has(row.type));
 }
 
@@ -169,6 +176,32 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
   if (expected.loop_detected === true) {
     const loopHit = (turns || []).some((t) => t.error_code === ARGOS_ERROR_CODES.LOOP_DETECTED);
     if (!loopHit) violations.push({ code: 'expected_loop_not_detected' });
+  }
+  if (expected.policy_decision) {
+    const actual =
+      snapshot?.policy_decision ||
+      (turns.length && turns[turns.length - 1].conversation_snapshot?.policy_decision) ||
+      null;
+    if (actual !== expected.policy_decision) {
+      violations.push({
+        code: 'expected_policy_decision_mismatch',
+        expected: expected.policy_decision,
+        actual,
+      });
+    }
+  }
+  if (expected.policy_rule_id) {
+    const actual =
+      snapshot?.policy_rule_id ||
+      (turns.length && turns[turns.length - 1].conversation_snapshot?.policy_rule_id) ||
+      null;
+    if (actual !== expected.policy_rule_id) {
+      violations.push({
+        code: 'expected_policy_rule_id_mismatch',
+        expected: expected.policy_rule_id,
+        actual,
+      });
+    }
   }
 }
 

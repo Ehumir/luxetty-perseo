@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "POLICY_001",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "policy",
+  "category": "sale_below_minimum_mxn",
+  "title": "Venta 2.5M MXN — DECLINE_SOFT",
+  "description": "Venta en Cumbres bajo mínimo 3M MXN.",
+  "messages": [
+    "Hola",
+    "Quiero vender mi casa en Cumbres, la tengo en 2.5 millones de pesos"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "offer",
+    "operation_type": "sale",
+    "policy_decision": "DECLINE_SOFT",
+    "policy_rule_id": "sale_min_mxn",
+    "crm_ready": false
+  },
+  "must_not": {
+    "promise_below_minimum_capture": true,
+    "forced_handoff": true,
+    "flow_restart": true,
+    "robotic_response": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  }
+}

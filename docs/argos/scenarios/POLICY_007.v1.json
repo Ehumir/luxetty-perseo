@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "POLICY_007",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "policy",
+  "category": "insufficient_policy_data",
+  "title": "Venta sin monto ni zona — DEFER",
+  "messages": ["Hola", "Quiero vender mi casa"],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "offer",
+    "operation_type": "sale",
+    "policy_decision": "DEFER",
+    "crm_ready": false
+  },
+  "must_not": {
+    "forced_handoff": true,
+    "flow_restart": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  }
+}

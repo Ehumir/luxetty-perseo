@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "REG_POLICY_TONE_001",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "regression",
+  "category": "decline_soft_human_tone",
+  "title": "Tras decline suave tono humano",
+  "messages": [
+    "Hola",
+    "Quiero vender en 2 millones en Cumbres",
+    "Ok entiendo, ¿y si subo el precio a 3.5 millones?"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "offer",
+    "operation_type": "sale",
+    "known_zone": "Cumbres",
+    "policy_decision": "ATTEND",
+    "crm_ready": false
+  },
+  "must_not": {
+    "robotic_response": true,
+    "flow_restart": true,
+    "forced_handoff": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  }
+}

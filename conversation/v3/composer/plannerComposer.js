@@ -36,6 +36,9 @@ function composePlannerResponse(input) {
  */
 function composePlannerReplyText(input) {
   const out = composePlannerResponse(input);
+  if (!out || typeof out !== 'object') {
+    return pickOpeningVariant(input.state || {}, [...GLOBAL_OPENING_VARIANTS]);
+  }
   let merged = cleanSpaces(out.responseText || '');
   const followUp = cleanSpaces(out.followUpQuestion || '');
   const bodyHasQuestion = /¿/.test(merged);

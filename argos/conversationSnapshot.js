@@ -39,6 +39,8 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
     valuation_requested: v3State?.valuationRequested === true,
     price_unknown: v3State?.priceUnknown === true,
     occupancy_status: v3State?.occupancyStatus || v3State?.collectedFields?.occupancyStatus || null,
+    policy_decision: v3State?.lastPolicyDecision || null,
+    policy_rule_id: v3State?.lastPolicyRuleId || null,
   };
 }
 

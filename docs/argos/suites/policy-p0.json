@@ -1,0 +1,15 @@
+{
+  "suite": "policy-p0",
+  "description": "M2-01 — Policy Engine v1 gate.",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": [
+    "POLICY_001.v1.json",
+    "POLICY_002.v1.json",
+    "POLICY_003.v1.json",
+    "POLICY_004.v1.json",
+    "POLICY_005.v1.json",
+    "POLICY_006.v1.json",
+    "POLICY_007.v1.json",
+    "POLICY_008.v1.json"
+  ]
+}

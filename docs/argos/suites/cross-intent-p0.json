@@ -1,0 +1,13 @@
+{
+  "suite": "cross-intent-p0",
+  "description": "M2-01 — Message understanding + cross-intent gate.",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": [
+    "CROSS_001.v1.json",
+    "CROSS_002.v1.json",
+    "CROSS_003.v1.json",
+    "CROSS_004.v1.json",
+    "CROSS_005.v1.json",
+    "CROSS_006.v1.json"
+  ]
+}

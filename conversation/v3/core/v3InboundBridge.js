@@ -68,6 +68,7 @@ function tryV3PrimaryReply(input) {
       reset: cmd === 'reset',
       campaignHeadline: input.campaignHeadline ?? null,
       legacyHydration: input.legacyHydration ?? null,
+      logEvent: input.logEvent,
     });
     if (!result.ok && result.fallbackToLegacy) {
       const forced = buildForcedHandoffFromSession({
@@ -114,6 +115,7 @@ function tryV3PrimaryReply(input) {
       v3State: result.state,
       decision: result.decision || null,
       guard: result.guard || null,
+      policyCrossLayer: result.policyCrossLayer || null,
       skipLegacyCrm: true,
     };
   } catch (err) {

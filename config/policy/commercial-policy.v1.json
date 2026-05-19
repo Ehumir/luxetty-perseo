@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "profile_id": "luxetty_default",
+  "currency_defaults": {
+    "sale": "MXN",
+    "rent": "MXN"
+  },
+  "minimums": {
+    "sale": {
+      "MXN": 3000000,
+      "USD": 150000
+    },
+    "rent": {
+      "MXN": 10000,
+      "USD": 500
+    }
+  },
+  "out_of_zone_action": "DECLINE_SOFT",
+  "ambiguous_zone_action": "QUALIFY",
+  "insufficient_data_action": "DEFER"
+}
