@@ -22,6 +22,23 @@ const {
 } = require('./policyCrossTurn');
 const { isPolicyEngineEnabled } = require('../../../config/perseoM2Flags');
 const { maybeRunMediaIntakeV1 } = require('../media/mediaIntakeV1');
+const { resolveMediaForIntake } = require('../media/mediaRealBridge');
+const { runResilienceLayer } = require('../resilience/conversationalResilience');
+const { applyHumanityWave2Reply, detectHumanityTone } = require('../humanity/humanityWave2');
+const { isMediaRealV1Enabled } = require('../../../config/perseoM302Flags');
+
+function finalizeAssistantTurn(state, replyText, effectiveText, decision) {
+  const reply = applyHumanityWave2Reply({ state, replyText, text: effectiveText, decision });
+  return {
+    reply,
+    state: {
+      ...state,
+      lastAssistantReply: reply,
+      lastAssistantReplySignature: replySignature(reply),
+      lastHumanityTone: detectHumanityTone(state, effectiveText),
+    },
+  };
+}
 
 /**
  * @param {{
@@ -93,7 +110,14 @@ function processV3Turn(input) {
     }
   }
 
-  const mediaIntakeResult = maybeRunMediaIntakeV1({ text, media, state });
+  let resolvedMedia = input.media && typeof input.media === 'object' ? input.media : null;
+  if (resolvedMedia && isMediaRealV1Enabled()) {
+    resolvedMedia = resolveMediaForIntake(resolvedMedia, {
+      deterministic: input.argosDeterministic === true || resolvedMedia.provider === 'argos_deterministic',
+    });
+  }
+
+  const mediaIntakeResult = maybeRunMediaIntakeV1({ text, media: resolvedMedia, state });
   const effectiveText = mediaIntakeResult.logical_turn?.text ?? text;
 
   if (typeof input.logEvent === 'function' && mediaIntakeResult.media_intake) {
@@ -169,13 +193,35 @@ function processV3Turn(input) {
   } else if (decision.detectedIntent === V3_INTENT.UNKNOWN) {
     unknownStreak = (Number(state.unknownIntentStreak) || 0) + 1;
   }
-  const patchWithStreak = {
+  let patchWithStreak = {
     ...patchMerged,
     unknownIntentStreak: unknownStreak,
     lastUserText: effectiveText,
     lastMediaIntake: mediaIntakeResult.media_intake || null,
     lastLogicalTurnSource: mediaIntakeResult.logical_turn?.source || null,
   };
+
+  const resilienceLayer = runResilienceLayer({ state, text: effectiveText, decision });
+  if (resilienceLayer) {
+    if (typeof input.logEvent === 'function') {
+      input.logEvent('resilience_layer', {
+        question_count: resilienceLayer.question_count,
+        metrics: resilienceLayer.metrics,
+        ambiguity: resilienceLayer.ambiguity?.resolved || false,
+      });
+    }
+    const resPatch = resilienceLayer.patch || {};
+    patchWithStreak = {
+      ...patchWithStreak,
+      ...resPatch,
+      collectedFields: {
+        ...(patchWithStreak.collectedFields || {}),
+        ...(resPatch.collectedFields || {}),
+      },
+      entityTracker: resilienceLayer.entityTracker,
+      lastResilienceMetrics: resilienceLayer.metrics,
+    };
+  }
 
   const { state: nextState, guard } = applyV3StateTransition(state, patchWithStreak, decision);
 
@@ -185,19 +231,18 @@ function processV3Turn(input) {
       state: nextState,
     });
     if (policyReply) {
+      const fin = finalizeAssistantTurn(nextState, policyReply, effectiveText, decision);
       const policyState = {
-        ...nextState,
+        ...fin.state,
         lastPolicyDecision: policyCrossLayer.policyResult?.decision || null,
         lastPolicyRuleId: policyCrossLayer.policyResult?.rule_id || null,
         lastSegments: policyCrossLayer.segments || null,
         lastResponsePlan: policyCrossLayer.responsePlan || null,
-        lastAssistantReply: policyReply,
-        lastAssistantReplySignature: replySignature(policyReply),
       };
       setSession(conversationId, policyState);
       return {
         ok: true,
-        reply: policyReply,
+        reply: fin.reply,
         state: policyState,
         decision,
         guard,
@@ -210,11 +255,17 @@ function processV3Turn(input) {
 
   const f4Early = tryComposeF4EarlyTurn({ state: nextState, decision, text: effectiveText });
   if (f4Early && decision.detectedIntent !== V3_INTENT.ADVISOR_CONSENT_CAPTURE) {
-    setSession(conversationId, f4Early.state);
+    const fin = finalizeAssistantTurn(
+      f4Early.state,
+      f4Early.composed.responseText,
+      effectiveText,
+      decision,
+    );
+    setSession(conversationId, fin.state);
     return {
       ok: true,
-      reply: f4Early.composed.responseText,
-      state: f4Early.state,
+      reply: fin.reply,
+      state: fin.state,
       decision,
       guard,
       responseSource: f4Early.responseSource,
@@ -241,16 +292,17 @@ function processV3Turn(input) {
       reason: forcedReason,
       userText: effectiveText,
     });
-    setSession(conversationId, forced.state);
+    const fin = finalizeAssistantTurn(forced.state, forced.replyText, effectiveText, decision);
+    setSession(conversationId, fin.state);
     v3Log('forced_handoff_applied', {
       conversation_id: conversationId,
       reason: forcedReason,
-      stage: forced.state.conversationStage,
+      stage: fin.state.conversationStage,
     });
     return {
       ok: true,
-      reply: forced.replyText,
-      state: forced.state,
+      reply: fin.reply,
+      state: fin.state,
       decision,
       guard,
       responseSource: forced.responseSource,
@@ -322,6 +374,10 @@ function processV3Turn(input) {
     };
   }
 
+  const fin = finalizeAssistantTurn(finalState, replyText, effectiveText, decision);
+  replyText = fin.reply;
+  finalState = fin.state;
+
   setSession(conversationId, finalState);
 
   v3Log('composer_output', {
@@ -341,6 +397,8 @@ function processV3Turn(input) {
     responseSource,
     fallbackToLegacy: false,
     policyCrossLayer: policyCrossLayer || null,
+    mediaIntake: mediaIntakeResult.media_intake || null,
+    resilienceLayer: resilienceLayer || null,
   };
 }
 

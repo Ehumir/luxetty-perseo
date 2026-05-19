@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "HUM2_003",
+  "family": "humanity_wave2",
+  "category": "less_template",
+  "title": "Menos plantilla en nombre",
+  "messages": [
+    "Hola",
+    "Busco comprar en Cumbres 3 millones"
+  ],
+  "expected": {
+    "lead_flow": "demand"
+  },
+  "must_not": {
+    "robotic_response": true
+  },
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true
+  }
+}

@@ -221,6 +221,37 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
       });
     }
   }
+  if (expected.resilience_multi_question === true && snapshot?.resilience_multi_question !== true) {
+    violations.push({
+      code: 'expected_resilience_multi_question',
+      expected: true,
+      actual: snapshot?.resilience_multi_question,
+    });
+  }
+  if (expected.tracked_name != null) {
+    const actual = snapshot?.tracked_name || snapshot?.known_name || null;
+    if (String(actual || '').toLowerCase() !== String(expected.tracked_name).toLowerCase()) {
+      violations.push({
+        code: 'expected_tracked_name_mismatch',
+        expected: expected.tracked_name,
+        actual,
+      });
+    }
+  }
+  if (expected.humanity_tone != null && snapshot?.humanity_tone !== expected.humanity_tone) {
+    violations.push({
+      code: 'expected_humanity_tone_mismatch',
+      expected: expected.humanity_tone,
+      actual: snapshot?.humanity_tone,
+    });
+  }
+  if (expected.crm_queue_status != null && snapshot?.crm_queue_status !== expected.crm_queue_status) {
+    violations.push({
+      code: 'expected_crm_queue_status_mismatch',
+      expected: expected.crm_queue_status,
+      actual: snapshot?.crm_queue_status,
+    });
+  }
 }
 
 /**

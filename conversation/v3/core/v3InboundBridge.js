@@ -67,6 +67,7 @@ function tryV3PrimaryReply(input) {
       phone: input.phone,
       text: input.text,
       media: input.media ?? null,
+      argosDeterministic: input.argosDeterministic === true || input.argosMode === true,
       reset: cmd === 'reset',
       campaignHeadline: input.campaignHeadline ?? null,
       legacyHydration: input.legacyHydration ?? null,

@@ -1,0 +1,15 @@
+{
+  "suite": "media-real-p0",
+  "description": "M3-02 — media-real-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "MREAL_001.v1.json",
+    "MREAL_002.v1.json",
+    "MREAL_003.v1.json",
+    "MREAL_004.v1.json",
+    "MREAL_005.v1.json",
+    "MREAL_006.v1.json"
+  ]
+}

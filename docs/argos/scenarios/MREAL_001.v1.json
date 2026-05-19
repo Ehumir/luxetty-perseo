@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "MREAL_001",
+  "family": "media_real",
+  "category": "audio_transcript",
+  "title": "Audio con transcript simulado",
+  "messages": [
+    "Hola",
+    {
+      "type": "audio",
+      "simulate_transcript": "Busco comprar en Cumbres con 5 millones",
+      "confidence": 0.92
+    }
+  ],
+  "expected": {
+    "media_intake_mode": "transcript_used",
+    "logical_turn_source": "audio_transcript"
+  },
+  "must_not": {
+    "fake_transcript": true
+  },
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true
+  }
+}

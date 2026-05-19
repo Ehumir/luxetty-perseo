@@ -79,7 +79,41 @@ function runMediaIntakeV1(input) {
     };
   }
 
-  if (media.kind === 'image') {
+  if (media.kind === 'document' || media.kind === 'pdf') {
+    const docText = cleanSpaces(media.extracted_text || '');
+    const confidence = Number(media.confidence ?? (docText ? 0.85 : 0));
+
+    if (!docText) {
+      return {
+        logical_turn: { text: text || '', source: 'document_empty', confidence: 0 },
+        media_intake: {
+          mode: 'document_no_text',
+          kind: media.kind,
+          extracted_text: null,
+          confidence: null,
+        },
+        shortCircuitReply: composeImageIllegibleFallback(),
+      };
+    }
+
+    const merged = text ? `${text}\n${docText}` : docText;
+    return {
+      logical_turn: {
+        text: normalizeMultilineText(merged),
+        source: 'document_text',
+        confidence,
+      },
+      media_intake: {
+        mode: 'document_text_used',
+        kind: media.kind,
+        extracted_text: docText,
+        confidence,
+        document_non_authoritative: true,
+      },
+    };
+  }
+
+  if (media.kind === 'image' || media.kind === 'screenshot') {
     const hints = normalizeHints(media.hints);
     const caption = cleanSpaces(media.caption || '');
     const userText = text || caption;

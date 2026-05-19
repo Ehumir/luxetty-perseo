@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true,
+    "crm_execute_foundation": true
+  },
+  "scenario_code": "CRM2_002",
+  "family": "crm_execute",
+  "category": "idempotent_preview",
+  "title": "Preview CRM sin writes",
+  "messages": [
+    "Hola",
+    "Quiero vender en Valle 8 millones",
+    "María",
+    "Libre",
+    "Casa",
+    "Sí acepto asesor"
+  ],
+  "expected": {
+    "lead_flow": "offer"
+  },
+  "must_not": {
+    "write_leads": true
+  }
+}

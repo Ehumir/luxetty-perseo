@@ -17,25 +17,41 @@ function normalizeScenarioTurn(raw) {
 
   const type = raw.type || raw.media;
   if (type === 'audio') {
-    return {
-      text: cleanSpaces(raw.text || raw.caption || ''),
-      media: {
-        kind: 'audio',
-        transcript: cleanSpaces(raw.transcript || ''),
-        confidence: raw.confidence != null ? Number(raw.confidence) : undefined,
-        no_transcript: raw.no_transcript === true,
-      },
+    const media = {
+      kind: 'audio',
+      transcript: cleanSpaces(raw.transcript || raw.simulate_transcript || ''),
+      confidence: raw.confidence != null ? Number(raw.confidence) : undefined,
+      no_transcript: raw.no_transcript === true,
     };
+    if (raw.simulate_transcript) {
+      media.simulate_transcript = cleanSpaces(raw.simulate_transcript);
+      media.provider = 'argos_deterministic';
+    }
+    return { text: cleanSpaces(raw.text || raw.caption || ''), media };
   }
 
-  if (type === 'image') {
+  if (type === 'image' || type === 'screenshot') {
+    const media = {
+      kind: type === 'screenshot' ? 'screenshot' : 'image',
+      hints: Array.isArray(raw.hints) ? raw.hints : [],
+      caption: cleanSpaces(raw.caption || ''),
+      illegible: raw.illegible === true,
+    };
+    if (Array.isArray(raw.simulate_hints)) {
+      media.simulate_hints = raw.simulate_hints;
+      media.provider = 'argos_deterministic';
+    }
+    return { text: cleanSpaces(raw.text || raw.caption || ''), media };
+  }
+
+  if (type === 'document' || type === 'pdf') {
     return {
       text: cleanSpaces(raw.text || raw.caption || ''),
       media: {
-        kind: 'image',
-        hints: Array.isArray(raw.hints) ? raw.hints : [],
-        caption: cleanSpaces(raw.caption || ''),
-        illegible: raw.illegible === true,
+        kind: type,
+        extracted_text: cleanSpaces(raw.extracted_text || raw.simulate_text || ''),
+        confidence: raw.confidence != null ? Number(raw.confidence) : undefined,
+        provider: raw.simulate_text ? 'argos_deterministic' : undefined,
       },
     };
   }

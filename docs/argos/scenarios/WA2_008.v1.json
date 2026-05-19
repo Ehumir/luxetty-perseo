@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "WA2_008",
+  "family": "wa_hardening",
+  "category": "interruption",
+  "title": "Interrupción y retoma",
+  "messages": [
+    "Hola",
+    "Quiero vender",
+    "Espera",
+    "Sigo, es en Valle Oriente"
+  ],
+  "expected": {
+    "lead_flow": "offer",
+    "known_zone": "Valle Oriente"
+  },
+  "must_not": {
+    "flow_restart": true
+  },
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true
+  }
+}
