@@ -1,0 +1,13 @@
+{
+  "suite": "rollout-flags-p0",
+  "description": "M4-02 — rollout-flags-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "ROL_001.v1.json",
+    "ROL_002.v1.json",
+    "ROL_003.v1.json",
+    "ROL_004.v1.json"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "suite": "webhook-media-p0",
+  "description": "M4-02 — webhook-media-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "WHM_001.v1.json",
+    "WHM_002.v1.json",
+    "WHM_003.v1.json",
+    "WHM_004.v1.json",
+    "WHM_005.v1.json",
+    "WHM_006.v1.json",
+    "WHM_007.v1.json",
+    "WHM_008.v1.json"
+  ]
+}

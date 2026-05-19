@@ -70,6 +70,12 @@ function applyM4RuntimeFinishing(state, { effectiveText, replyText, decision, re
     input.logEvent,
     { argosMode: input.argosMode === true, crmDryRun: true },
   );
+  if (resolvedMedia?.fallback_reason) {
+    next = { ...next, lastMediaFallbackReason: resolvedMedia.fallback_reason };
+  }
+  if (resolvedMedia?.fail_open_applied || resolvedMedia?.media_timeout) {
+    next = { ...next, lastMediaFailOpen: true };
+  }
   next = {
     ...next,
     lastTelemetryRecorded: telemetryResult.recorded === true,

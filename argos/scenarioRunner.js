@@ -19,6 +19,12 @@ const { parseSprint1StrictCommand } = require('../conversation/qaSprint1Commands
 const { isSoftTopicDismissal } = require('../conversation/v3/interpreter/topicPivotSignals');
 const { isSaleUrgencyEmotional } = require('../conversation/v3/interpreter/objectionClassifier');
 const { normalizeScenarioTurn } = require('./scenarioTurn');
+const { buildConversationSnapshot } = require('./conversationSnapshot');
+const { getSession: getArgosSession } = require('./argosSessionStore');
+
+function argosConversationId(session_id) {
+  return `argos:${session_id}`;
+}
 
 function resolveSupabaseRaw(input) {
   if (input.supabaseRaw) return input.supabaseRaw;
@@ -333,6 +339,36 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
       actual: snapshot?.policy_runtime_applied,
     });
   }
+  if (expected.media_fallback_reason != null) {
+    if (snapshot?.media_fallback_reason !== expected.media_fallback_reason) {
+      violations.push({
+        code: 'expected_media_fallback_reason_mismatch',
+        expected: expected.media_fallback_reason,
+        actual: snapshot?.media_fallback_reason,
+      });
+    }
+  }
+  if (expected.media_fail_open === true && snapshot?.media_fail_open !== true) {
+    violations.push({
+      code: 'expected_media_fail_open',
+      expected: true,
+      actual: snapshot?.media_fail_open,
+    });
+  }
+  if (expected.crm_worker_pending === true && snapshot?.crm_worker_pending !== true) {
+    violations.push({
+      code: 'expected_crm_worker_pending',
+      expected: true,
+      actual: snapshot?.crm_worker_pending,
+    });
+  }
+  if (expected.crm_frozen === true && snapshot?.crm_frozen !== true) {
+    violations.push({
+      code: 'expected_crm_frozen',
+      expected: true,
+      actual: snapshot?.crm_frozen,
+    });
+  }
 }
 
 /**
@@ -352,6 +388,7 @@ async function runArgosScenario(input) {
   const violations = [];
   const turns = [];
   const supabaseRaw = resolveSupabaseRaw(input);
+  const flags = scenario.flags || input.flags || {};
 
   if (messages.length > ARGOS_MAX_TURNS_PER_SCENARIO) {
     return {
@@ -469,7 +506,39 @@ async function runArgosScenario(input) {
     });
   }
 
-    collectExpectedViolations(expected, lastSnapshot, lastPanel, lastCrm, violations, turns);
+  if (expected.crm_worker_process === true && session_id) {
+    const conversationId = argosConversationId(session_id);
+    const { runCrmOutboxWorkerOnce } = require('../conversation/v3/runtime/crmOutboxWorker');
+    const { executeV3CrmIfEligible } = require('../conversation/v3/crm/crmExecutor');
+    const { getSession, setSession } = require('../conversation/v3/core/sessionStore');
+    const workerOut = await runCrmOutboxWorkerOnce({
+      conversationId,
+      argosMode: true,
+      crmDryRun: flags.crm_dry_run !== false,
+      supabase: supabaseRaw ? resolveSupabaseRaw({ flags, supabaseRaw }) : null,
+      executeCore: (inp) =>
+        executeV3CrmIfEligible({
+          ...inp,
+          phone: inp.phone || input.phone_sim,
+          conversationRow: { id: conversationId },
+          argosMode: true,
+          crmDryRun: flags.crm_dry_run !== false,
+        }),
+    });
+    const st = getSession(conversationId);
+    if (st) {
+      setSession(conversationId, st);
+      const argosSession = session_id ? getArgosSession(session_id) : null;
+      lastSnapshot = buildConversationSnapshot(st, argosSession?.legacy_ai_state);
+    }
+    traceEvent(trace, {
+      type: 'crm_worker_processed',
+      phase: 'crm',
+      payload: { claimed: workerOut.claimed, processed: workerOut.processed },
+    });
+  }
+
+  collectExpectedViolations(expected, lastSnapshot, lastPanel, lastCrm, violations, turns);
 
   if (must_not.send_whatsapp) {
     traceEvent(trace, {

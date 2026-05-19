@@ -16,9 +16,15 @@ function getMemoryTelemetry() {
 }
 
 /**
- * Operational WA telemetry — log / memory / DB (only when table available).
+ * Operational WA telemetry ONLY (retries, fallback, media, crm, latency, loops, policy).
+ * NOT conversation analytics / BI — keep payloads small.
  */
 function recordOperationalEvent(supabase, event, logEvent, ctx = {}) {
+  const meta = { ...(event.metadata || {}) };
+  if (event.worker_latency_ms != null) meta.worker_latency_ms = Number(event.worker_latency_ms);
+  if (event.loop_score != null) meta.loop_score = Number(event.loop_score);
+  if (event.retry_count != null) meta.retry_count = Number(event.retry_count);
+
   const row = {
     conversation_id: event.conversation_id || null,
     channel: event.channel || 'whatsapp',
@@ -29,7 +35,7 @@ function recordOperationalEvent(supabase, event, logEvent, ctx = {}) {
     media_processed: event.media_processed || null,
     crm_execution_result: event.crm_execution_result || null,
     fallback_reason: event.fallback_reason || null,
-    metadata: event.metadata || {},
+    metadata: meta,
   };
 
   v3Log('wa_operational', row);
@@ -100,9 +106,12 @@ function buildTelemetryFromTurn({ state, decision, mediaResult, crmResult }) {
     fallback_reason: state?.lastFallbackReason || null,
     metadata: {
       stage: state?.qualificationStage,
-      understanding_threads: state?.understanding?.threads?.length || 0,
       recovery_plan: state?.recoveryPlan?.action || null,
+      loop_score: state?.lastResilienceRuntime?.anti_loop_score ?? null,
+      worker_pending: state?.crmQueueStatus === 'pending_worker',
     },
+    loop_score: state?.lastResilienceRuntime?.anti_loop_score ?? null,
+    retry_count: state?.crmOutboxAttempts ?? null,
   };
 }
 

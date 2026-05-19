@@ -904,14 +904,42 @@ app.post('/webhook', async (req, res) => {
         }
       }
 
+      let v3Media = null;
+      if (message?.type && message.type !== 'text') {
+        try {
+          const { resolveInboundMediaForV3Turn } = require('./services/inboundMediaV3Bridge');
+          const mediaResolved = await resolveInboundMediaForV3Turn({
+            message,
+            conversationId,
+            messageId: metaMessageId,
+            logEvent,
+          });
+          v3Media = mediaResolved.media;
+          if (mediaResolved.fallback_reason) {
+            logEvent('media_v3_fallback', {
+              conversation_id: conversationId,
+              reason: mediaResolved.fallback_reason,
+              fail_open: mediaResolved.fail_open,
+            });
+          }
+        } catch (mediaErr) {
+          logEvent('media_v3_bridge_error', {
+            conversation_id: conversationId,
+            error: String(mediaErr?.message || mediaErr),
+          });
+        }
+      }
+
       const v3Try = v3InboundBridge.tryV3PrimaryReply({
         conversationId,
         phone: from,
         rawPhone: rawFrom,
         text,
+        media: v3Media,
         logEvent,
         campaignHeadline,
         legacyHydration,
+        supabase,
       });
       if (v3Try.handled) {
         v3PrimaryHandled = true;

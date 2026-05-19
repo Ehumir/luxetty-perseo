@@ -2,6 +2,8 @@
 
 const { mergeConversationState } = require('../types/conversationState');
 const { isCrmRuntimePersistentEnabled } = require('../../../config/perseoM401Flags');
+const { isCrmWorkerAsyncEnabled } = require('../../../config/perseoM402Flags');
+const { evaluateJobPoisoning } = require('./crmWorkerPoisoning');
 const { isCrmExecuteFoundationEnabled } = require('../../../config/perseoM302Flags');
 const { executeV3CrmWithFoundation } = require('../crm/crmExecuteFoundation');
 const { buildCrmIdempotencyKey } = require('../crm/crmExecuteFoundation');
@@ -52,7 +54,37 @@ async function executeV3CrmWithRuntime(input, executeCore) {
     };
   }
 
-  const job = enqueueResult.job || { id: enqueueResult.outbox_id, attempts: 0, max_attempts: 3 };
+  const job = enqueueResult.job || {
+    id: enqueueResult.outbox_id,
+    conversation_id: conversationId,
+    idempotency_key: idempotencyKey,
+    attempts: 0,
+    max_attempts: 3,
+    payload: payloadPreview,
+  };
+
+  if (isCrmWorkerAsyncEnabled()) {
+    await store.appendLog({
+      outbox_id: job.id,
+      phase: 'queued_async',
+      idempotency_key: idempotencyKey,
+      mode,
+    });
+    v3Log('crm_runtime_queued_async', { conversation_id: conversationId, outbox_id: job.id, mode });
+    return {
+      v3State: mergeConversationState(state, {
+        crmQueueStatus: 'pending_worker',
+        crmRuntimeMode: mode,
+        crmIdempotencyKey: idempotencyKey,
+        crmOutboxId: job.id,
+      }),
+      executed: false,
+      skipped: true,
+      reason: 'runtime_queued_async',
+      workerPending: true,
+    };
+  }
+
   let lastResult = null;
   let attempt = 0;
 
@@ -93,7 +125,21 @@ async function executeV3CrmWithRuntime(input, executeCore) {
       }
       if (lastResult?.failed) throw new Error(lastResult.reason || 'crm_failed');
     } catch (err) {
-      const fail = await store.markFailed(job, 'execute_error', String(err?.message || err));
+      const msg = String(err?.message || err);
+      const poison = evaluateJobPoisoning(job, msg);
+      const fail = await store.markFailed(job, poison.reason, msg, poison);
+      if (fail.frozen) {
+        return {
+          v3State: mergeConversationState(state, {
+            crmQueueStatus: 'frozen',
+            crmRuntimeMode: mode,
+            crmFreezeReason: poison.alert_reason,
+          }),
+          executed: false,
+          failed: true,
+          reason: 'runtime_frozen',
+        };
+      }
       if (fail.dead_letter) {
         return {
           v3State: mergeConversationState(state, {

@@ -29,14 +29,17 @@ function suggestScenarioCandidates(record, classification) {
   const code = `SUGGEST_${family.toUpperCase()}_${String(record?.corpus_id || 'unknown')
     .replace(/[^a-zA-Z0-9]/g, '_')
     .slice(0, 24)}`;
+  const { scoreScenarioCandidate } = require('./learningReviewQueue');
+  const confidence = scoreScenarioCandidate(record, classification);
   return {
     scenario_code: code,
     family,
     status: 'candidate',
     promoted: false,
     requires_review: true,
+    confidence,
     source_corpus_id: record?.corpus_id || null,
-    rationale: `Auto-suggested from learning runtime; classification=${family}`,
+    rationale: `Auto-suggested from learning runtime; classification=${family}; confidence=${confidence.toFixed(2)}`,
   };
 }
 

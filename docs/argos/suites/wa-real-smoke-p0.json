@@ -1,0 +1,15 @@
+{
+  "suite": "wa-real-smoke-p0",
+  "description": "M4-02 — wa-real-smoke-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "WRS_001.v1.json",
+    "WRS_002.v1.json",
+    "WRS_003.v1.json",
+    "WRS_004.v1.json",
+    "WRS_005.v1.json",
+    "WRS_006.v1.json"
+  ]
+}
