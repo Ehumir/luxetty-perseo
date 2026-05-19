@@ -6,7 +6,10 @@ const { parseMoneyAmount } = require('./moneyParser');
 const { tryParseQualificationLocation } = require('./sellLocationCapture');
 const { normalizeLocationFromUserText, isBareKnownZoneToken } = require('./locationNormalizer');
 const { shouldAcceptAsIdentityName, isNonNameUtterance } = require('./nameHeuristics');
+const { extractAffirmationName } = require('./identityNameParser');
+const { isLikelyFirstNameOnly } = require('./identityCompoundCapture');
 const { parseAdvisorContactConsent } = require('../planner/consentParser');
+const { parseOccupancyStatus } = require('./occupancyParser');
 const { isSlotFilled } = require('../state/slotFillState');
 
 /**
@@ -16,6 +19,46 @@ const { isSlotFilled } = require('../state/slotFillState');
 function resolveActiveAwaitingField(state) {
   if (state.awaitingField) return state.awaitingField;
   if (state.lastAskedField) return state.lastAskedField;
+  return null;
+}
+
+function tryCapturePendingIdentity(state, raw, patch, decision) {
+  if (state.collectedFields?.fullName) return null;
+
+  const affName = extractAffirmationName(raw);
+  if (affName && isLikelyFirstNameOnly(affName)) {
+    patch.collectedFields = { ...(patch.collectedFields || {}), fullName: affName };
+    decision.extractedEntities.fullName = affName;
+    decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
+    decision.confidence = 0.93;
+    patch.awaitingField = state.locationText ? null : 'location_text';
+    patch.lastAskedField = null;
+    decision.shouldAskName = false;
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
+  if (
+    shouldAcceptAsIdentityName(state, raw, { explicitNameMatch: false }) &&
+    !isNonNameUtterance(raw) &&
+    !isBareKnownZoneToken(raw) &&
+    !normalizeLocationFromUserText(raw)
+  ) {
+    const nameMatch = raw.match(/^(?:soy|me llamo|mi nombre es)\s+(.+)/i);
+    const nm = cleanSpaces(nameMatch ? nameMatch[1] : String(raw || '').trim());
+    if (nm && isLikelyFirstNameOnly(nm)) {
+      patch.collectedFields = { ...(patch.collectedFields || {}), fullName: nm };
+      decision.extractedEntities.fullName = nm;
+      decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
+      decision.confidence = 0.93;
+      patch.awaitingField = state.locationText ? null : 'location_text';
+      patch.lastAskedField = null;
+      decision.shouldAskName = false;
+      decision.explicitFlowSwitch = false;
+      return { patch, decision };
+    }
+  }
+
   return null;
 }
 
@@ -53,11 +96,13 @@ function tryResolveAwaitingFieldCapture(state, raw, text, patch, decision) {
     }
   }
 
+  if (field === 'location_text' || field === 'full_name') {
+    const identityCapture = tryCapturePendingIdentity(state, raw, patch, decision);
+    if (identityCapture) return identityCapture;
+  }
+
   if (field === 'location_text') {
-    const loc =
-      tryParseQualificationLocation(state, raw) ||
-      normalizeLocationFromUserText(raw) ||
-      cleanSpaces(String(raw || '')).slice(0, 120);
+    const loc = tryParseQualificationLocation(state, raw) || normalizeLocationFromUserText(raw);
     if (!loc || loc.length < 2) return null;
     decision.detectedIntent = V3_INTENT.LOCATION_CAPTURE;
     decision.confidence = 0.92;
@@ -86,33 +131,11 @@ function tryResolveAwaitingFieldCapture(state, raw, text, patch, decision) {
     return { patch, decision };
   }
 
-  if (
-    !state.collectedFields?.fullName &&
-    (field === 'full_name' || field === 'budget' || field === 'advisor_contact_consent') &&
-    !isBareKnownZoneToken(raw) &&
-    !normalizeLocationFromUserText(raw) &&
-    shouldAcceptAsIdentityName(state, raw, { explicitNameMatch: false }) &&
-    !isNonNameUtterance(raw)
-  ) {
-    const nameMatch = raw.match(/^(?:soy|me llamo|mi nombre es)\s+(.+)/i);
-    const nm = cleanSpaces(nameMatch ? nameMatch[1] : String(raw || '').trim());
-    if (nm) {
-      patch.collectedFields = { ...(patch.collectedFields || {}), fullName: nm };
-      decision.extractedEntities.fullName = nm;
-      decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
-      decision.confidence = 0.93;
-      patch.awaitingField = null;
-      patch.lastAskedField = null;
-      decision.shouldAskName = false;
-      decision.explicitFlowSwitch = false;
-      return { patch, decision };
-    }
-  }
-
   if ((field === 'budget' || field === 'expected_price') && !isSlotFilled(state, field)) {
     const amount = parseMoneyAmount(text);
     if (amount == null) return null;
     if (field === 'expected_price' || state.leadFlow === 'offer') {
+      if (amount <= 0) return null;
       decision.detectedIntent = V3_INTENT.SELLER_PRICE;
       patch.expectedPrice = amount;
       patch.budget = null;
@@ -123,6 +146,19 @@ function tryResolveAwaitingFieldCapture(state, raw, text, patch, decision) {
       decision.extractedEntities.budget = amount;
     }
     decision.confidence = 0.9;
+    patch.awaitingField = null;
+    patch.lastAskedField = null;
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
+  if (field === 'occupancy_status') {
+    const occ = parseOccupancyStatus(text);
+    if (!occ) return null;
+    patch.occupancyStatus = occ;
+    patch.collectedFields = { ...(patch.collectedFields || {}), occupancyStatus: occ };
+    decision.detectedIntent = V3_INTENT.OCCUPANCY_CAPTURE;
+    decision.confidence = 0.92;
     patch.awaitingField = null;
     patch.lastAskedField = null;
     decision.explicitFlowSwitch = false;

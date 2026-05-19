@@ -4,7 +4,18 @@ const { normalizeText } = require('../../../utils/text');
 const { CONVERSATION_STAGES, ADVISOR_CONTACT_CONSENT, CONVERSATION_GOALS } = require('../types/constants');
 const { isSellValuationUnknownRequest } = require('./sellValuationSignals');
 
-/** @typedef {'post_close_ack'|'handoff_pending_frustration'|'bot_identity'|'sell_valuation_unknown'|'frustration_not_understood'|'useless'|'curt_direct_question'|'human_request'|'commission'|'competitor_price'|'no_exclusivity'|'already_listed'} ObjectionKind */
+/** @typedef {'post_close_ack'|'handoff_pending_frustration'|'bot_identity'|'sell_valuation_unknown'|'sale_urgency_emotional'|'frustration_not_understood'|'useless'|'curt_direct_question'|'human_request'|'commission'|'competitor_price'|'no_exclusivity'|'already_listed'} ObjectionKind */
+
+function isSaleUrgencyEmotional(text) {
+  const t = normalizeText(String(text || ''));
+  const urgent =
+    /\b(?:urgente|urgencia|r[aá]pido|pronto|ya|inmediat|lo antes posible)\b/.test(t) ||
+    /\b(?:preocupad|ansios|estresad|nervios|angustiad)\w*\b/.test(t);
+  const sellRent =
+    /\b(?:vender|venta|rentar|renta|publicar)\b/.test(t) ||
+    /\b(?:mi\s+casa|mi\s+depa|mi\s+departamento|mi\s+propiedad)\b/.test(t);
+  return urgent && sellRent;
+}
 
 function isShortPostCloseAck(text) {
   const t = normalizeText(String(text || ''));
@@ -103,6 +114,10 @@ function classifyObjection(text, state) {
     return 'bot_identity';
   }
 
+  if (isSaleUrgencyEmotional(text)) {
+    return 'sale_urgency_emotional';
+  }
+
   if (
     state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY &&
     state.awaitingField === 'expected_price' &&
@@ -133,6 +148,7 @@ function classifyObjection(text, state) {
 
 module.exports = {
   classifyObjection,
+  isSaleUrgencyEmotional,
   isShortPostCloseAck,
   isPositiveHandoffAck,
   isPostHandoffTerminalState,

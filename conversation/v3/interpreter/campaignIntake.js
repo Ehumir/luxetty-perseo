@@ -15,6 +15,7 @@ function matchesSellerAcquisitionPattern(normalizedText) {
     /\bpublicar\s+(?:mi\s+)?(?:casa|propiedad|depa|departamento|inmueble)\b/.test(t) ||
     /\bvaluaci[oó]n\s+(?:de\s+)?(?:mi\s+)?(?:casa|propiedad|inmueble)\b/.test(t) ||
     /\bvaluar\s+(?:mi\s+)?(?:casa|propiedad|inmueble|terreno)\b/.test(t) ||
+    /\b(?:cu[aá]nto\s+vale|saber\s+cu[aá]nto\s+vale)\s+(?:mi\s+)?(?:casa|propiedad|inmueble)\b/.test(t) ||
     /\b(?:captaci[oó]n|captacion)\s+(?:de\s+)?vendedor/i.test(t)
   );
 }
@@ -44,8 +45,17 @@ function isThinGenericInbound(normalizedText) {
   );
 }
 
+function isRentOutOwnerPhrase(normalizedText) {
+  const t = String(normalizedText || '');
+  return (
+    /\b(?:quiero|necesito)\s+rentar\b/.test(t) &&
+    /\b(?:que\s+tengo|mi\s+casa|mi\s+depa|mi\s+departamento|mi\s+propiedad|una\s+casa\s+que)\b/.test(t)
+  );
+}
+
 function mentionsRentDemand(normalizedText) {
   const t = String(normalizedText || '');
+  if (isRentOutOwnerPhrase(t)) return false;
   if (/\b(?:poner|ponerla|rentar\s+mi|mi\s+casa\s+en\s+renta)\b/.test(t) && /\b(?:renta|rentar)\b/.test(t)) {
     return false;
   }

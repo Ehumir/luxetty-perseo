@@ -10,9 +10,14 @@ const { createArgosTrace, traceEvent, flushTrace } = require('./argosTrace');
 const {
   validateMustNotReply,
   extractListingCodes,
+  extractMoneyMentions,
   replySignature,
   questionSignature,
 } = require('./mustNotValidator');
+const { getPropertyFixture } = require('./propertyFixtures');
+const { parseSprint1StrictCommand } = require('../conversation/qaSprint1Commands');
+const { isSoftTopicDismissal } = require('../conversation/v3/interpreter/topicPivotSignals');
+const { isSaleUrgencyEmotional } = require('../conversation/v3/interpreter/objectionClassifier');
 
 function resolveSupabaseRaw(input) {
   if (input.supabaseRaw) return input.supabaseRaw;
@@ -205,11 +210,18 @@ async function runArgosScenario(input) {
   let previousReplySignature = null;
   let previousQuestionSignature = null;
   let anchorLeadFlow = null;
+  let sessionResetAtTurn = null;
+  let preResetSnapshot = null;
 
   for (let i = 0; i < messages.length; i += 1) {
     if (Date.now() - started > ARGOS_SCENARIO_TIMEOUT_MS) {
       violations.push({ code: ARGOS_ERROR_CODES.SCENARIO_TIMEOUT });
       break;
+    }
+
+    if (parseSprint1StrictCommand(messages[i]) === 'reset') {
+      sessionResetAtTurn = i + 1;
+      preResetSnapshot = lastSnapshot;
     }
 
     const result = await processInboundForArgos({
@@ -218,6 +230,7 @@ async function runArgosScenario(input) {
       text: messages[i],
       flags: input.flags,
       supabaseRaw,
+      scenarioSetup: scenario.setup,
     });
 
     if (result.error_code === ARGOS_ERROR_CODES.LOOP_DETECTED) {
@@ -235,7 +248,7 @@ async function runArgosScenario(input) {
     lastTurnDiagnostics = pickTurnDiagnostics(result.debug_trace);
     const snap = result.conversation_snapshot || {};
     if (i === 2 && snap.lead_flow) anchorLeadFlow = snap.lead_flow;
-    const facts = buildScenarioFacts(messages[i], result);
+    const facts = buildScenarioFacts(messages[i], result, scenario.setup);
     facts.previousReplySignature = previousReplySignature;
     facts.previousQuestionSignature = previousQuestionSignature;
     facts.suppressGlobalMenu = Boolean(snap.lead_flow) && i >= 2;
@@ -245,6 +258,14 @@ async function runArgosScenario(input) {
       result.debug_trace &&
       result.debug_trace.find((row) => row.type === 'parser_winner')?.payload?.explicit_flow_switch
     );
+    facts.turnIndex = i + 1;
+    facts.sessionResetAtTurn = sessionResetAtTurn;
+    if (isSoftTopicDismissal(messages[i]) && lastSnapshot?.known_name) {
+      facts.hadKnownNameBeforeDismissal = true;
+    }
+    facts.preResetZones = preResetSnapshot?.known_zone ? [String(preResetSnapshot.known_zone)] : [];
+    facts.preResetBudgets =
+      preResetSnapshot?.known_budget != null ? [Number(preResetSnapshot.known_budget)] : [];
 
     const mustNotViolations = validateMustNotReply({
       replyText: result.reply,
@@ -341,32 +362,48 @@ function isCurtUserMessage(text) {
   return /\bsolo\s+dime\b|\bsolo\s+precio\b|^(ok|no|si|sí|vale|va)$/.test(t);
 }
 
-function buildScenarioFacts(userText, turnResult) {
+function buildScenarioFacts(userText, turnResult, scenarioSetup = null) {
   const snap = turnResult?.conversation_snapshot || {};
   const codes = extractListingCodes(userText);
   const histCodes = Array.isArray(snap.property_history) ? snap.property_history : [];
+  const activeCode = snap.property_code || null;
+  const fixture = activeCode ? getPropertyFixture(activeCode) : null;
+  const fixturePrices = [];
+  const fixtureUrls = [];
+  if (fixture) {
+    if (fixture.price != null) fixturePrices.push(Number(fixture.price));
+    if (fixture.price_label) {
+      for (const n of extractMoneyMentions(fixture.price_label)) fixturePrices.push(n);
+    }
+    if (fixture.public_url) fixtureUrls.push(fixture.public_url);
+  }
   const facts = {
     knownListingCodes: codes.length
       ? codes
       : snap.property_code
         ? [snap.property_code, ...histCodes]
         : histCodes,
-    activePropertyCode: snap.property_code || null,
+    activePropertyCode: activeCode,
     userMentionedCodes: codes,
-    knownPrices: snap.known_budget != null ? [Number(snap.known_budget)] : [],
+    knownPrices: fixturePrices.length ? fixturePrices : snap.known_budget != null ? [Number(snap.known_budget)] : [],
     known_zone: snap.known_zone || null,
     known_name: snap.known_name || null,
     known_budget: snap.known_budget != null ? Number(snap.known_budget) : null,
-    propertyLookupAttempted: codes.length > 0,
+    propertyLookupAttempted: codes.length > 0 || !!activeCode,
     propertyFound: !!snap.interested_property_id,
-    available: null,
-    knownUrls: [],
+    available: fixture?.is_active === false ? false : fixture ? true : null,
+    knownUrls: fixtureUrls,
     allowedUrlHosts: null,
     qualificationIncomplete:
       snap.lead_flow === 'demand' &&
       snap.operation_type === 'sale' &&
       (!snap.known_name || !snap.known_zone || snap.known_budget == null),
+    valuationRequested: snap.valuation_requested === true,
+    priceUnknown: snap.price_unknown === true,
     userTurnWasCurt: isCurtUserMessage(userText),
+    userExpressedUrgency: isSaleUrgencyEmotional(userText),
+    userSoftTopicDismissal: isSoftTopicDismissal(userText),
+    hadKnownNameBeforeDismissal: false,
   };
   return facts;
 }

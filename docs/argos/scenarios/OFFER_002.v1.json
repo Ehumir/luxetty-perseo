@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "OFFER_002",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "offer",
+  "category": "venta_estructurada_sticky",
+  "title": "Venta — captación estructurada con consentimiento",
+  "description": "Propietario vende: zona, precio, recámaras, nombre y acepta contacto asesor; sin flip a demanda.",
+  "typology": { "corpus_ids": ["CAP-P1-002"], "rail": "offer", "block": "M1-D" },
+  "messages": [
+    "Hola",
+    "Quiero vender mi casa",
+    "Está en Cumbres",
+    "Creo que vale como 8 millones",
+    "Tiene 3 recámaras",
+    "Me llamo Jorge",
+    "Sí, puede contactarme un asesor"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "offer",
+    "operation_type": "sale",
+    "known_zone": "Cumbres",
+    "known_name": "Jorge",
+    "advisor_contact_consent": "ACCEPTED"
+  },
+  "must_not": {
+    "flow_restart": true,
+    "offer_to_demand": true,
+    "demand_to_offer": true,
+    "slot_reask_when_filled": true,
+    "robotic_response": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-19", "change": "M1-PR-08 OFFER_002 structured sell." }]
+}

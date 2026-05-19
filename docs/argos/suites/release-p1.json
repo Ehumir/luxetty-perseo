@@ -1,10 +1,18 @@
 {
   "suite": "release-p1",
-  "description": "Ola P1 demanda — refinamiento, multi-propiedad y continuidad larga (M1-D).",
+  "description": "Ola P1 — demanda, oferta, propiedad, edge y humanidad. Cierre M1-D.",
   "threshold": { "pass_rate": 1.0 },
   "scenarios": [
     "DEMAND_003.v1.json",
     "DEMAND_005.v1.json",
-    "DEMAND_006.v1.json"
+    "DEMAND_006.v1.json",
+    "OFFER_002.v1.json",
+    "OFFER_003.v1.json",
+    "OFFER_004.v1.json",
+    "PROP_001.v1.json",
+    "PROP_002.v1.json",
+    "EDGE_001.v1.json",
+    "HUMANITY_004.v1.json",
+    "HUMANITY_005.v1.json"
   ]
 }

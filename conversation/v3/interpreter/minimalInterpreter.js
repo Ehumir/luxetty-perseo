@@ -25,11 +25,12 @@ const {
 } = require('./campaignIntake');
 const { splitNameAndTail, parseChannelPreference, isLikelyFirstNameOnly } = require('./identityCompoundCapture');
 const { extractAffirmationName } = require('./identityNameParser');
-const { isSellValuationUnknownRequest } = require('./sellValuationSignals');
+const { isOfferValuationUnknownRequest, isSellValuationLeadIntent } = require('./offerValuationSignals');
 const { classifyPropertyInquiryTurn } = require('./propertyInquiryQaClassifier');
 const { parsePaymentMethod } = require('./paymentMethodParser');
 const { isSocialRapportMessage } = require('../composer/openingVariantPicker');
 const { tryParseDemandRefinement } = require('./demandRefinement');
+const { isSoftTopicDismissal, isBudgetDismissalOnly, parseTopicPivot } = require('./topicPivotSignals');
 const { appendPropertyHistory, resolvePropertyReferenceCode } = require('../property/propertyHistory');
 
 const { parseMoneyAmount } = require('./moneyParser');
@@ -100,6 +101,12 @@ function isExplicitFlowSwitchToSell(text) {
 
 function isRentOutIntent(text) {
   const t = normalizeText(text);
+  if (
+    /\b(?:quiero|necesito)\s+rentar\b/.test(t) &&
+    /\b(?:que\s+tengo|mi\s+casa|mi\s+depa|mi\s+departamento|mi\s+propiedad|una\s+casa\s+que)\b/.test(t)
+  ) {
+    return true;
+  }
   return (
     t.includes('poner en renta') ||
     t.includes('rentar mi') ||
@@ -115,6 +122,13 @@ function isOfferFlow(state) {
     state.conversationGoal === CONVERSATION_GOALS.RENT_OUT_PROPERTY ||
     state.leadFlow === 'offer'
   );
+}
+
+function sellOfferPriceSatisfied(state) {
+  if (state.expectedPrice != null) return true;
+  if (state.valuationRequested === true || state.priceUnknown === true) return true;
+  if (state.collectedFields?.valuationRequested === true) return true;
+  return false;
 }
 
 function isShortAck(text) {
@@ -158,11 +172,27 @@ function interpretUserMessage(state, text, options = {}) {
   const raw = cleanSpaces(String(text || ''));
   const decision = createEmptyDecision();
   /** @type {Partial<import('../types/conversationState').ConversationState>} */
-  const patch = { lastUserText: raw };
+  const patch = { lastUserText: raw, topicPivotTurn: false, flowSwitchAck: false };
 
   const headline = options.campaignHeadline != null ? String(options.campaignHeadline).slice(0, 400) : null;
   if (headline) {
     patch.campaignHeadline = headline;
+  }
+
+  if (
+    state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY &&
+    matchesBuyOpenSearchPattern(t, raw)
+  ) {
+    decision.detectedIntent = V3_INTENT.BUY_PROPERTY;
+    decision.confidence = 0.88;
+    decision.explicitFlowSwitch = true;
+    patch.propertyListingCode = null;
+    patch.propertySpecificIntent = false;
+    patch.propertySubMode = null;
+    patch.awaitingField = null;
+    applyBuyDemandPatch(patch, raw, decision);
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    return { patch, decision };
   }
 
   const sellFromRentLocked =
@@ -172,6 +202,42 @@ function interpretUserMessage(state, text, options = {}) {
 
   const awaitingCapture = tryResolveAwaitingFieldCapture(state, raw, text, patch, decision);
   if (awaitingCapture) return awaitingCapture;
+
+  if (
+    isOfferFlow(state) &&
+    (state.awaitingField === 'expected_price' || !sellOfferPriceSatisfied(state)) &&
+    isOfferValuationUnknownRequest(text)
+  ) {
+    patch.priceUnknown = true;
+    patch.valuationRequested = true;
+    patch.collectedFields = {
+      ...(patch.collectedFields || {}),
+      valuationRequested: true,
+    };
+    patch.awaitingField = state.collectedFields?.fullName ? 'occupancy_status' : 'full_name';
+    patch.lastAskedField = null;
+    decision.detectedIntent = V3_INTENT.UNKNOWN;
+    decision.confidence = 0.9;
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
+  const offerConsentEarly = parseAdvisorContactConsent(text);
+  if (
+    offerConsentEarly === 'ACCEPTED' &&
+    !extractAffirmationName(raw) &&
+    isOfferFlow(state) &&
+    state.collectedFields?.fullName &&
+    state.locationText &&
+    sellOfferPriceSatisfied(state)
+  ) {
+    decision.detectedIntent = V3_INTENT.ADVISOR_CONSENT_CAPTURE;
+    decision.confidence = 0.94;
+    patch.advisorContactConsent = 'ACCEPTED';
+    patch.awaitingField = null;
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
 
   if (
     state.conversationGoalLocked &&
@@ -192,6 +258,30 @@ function interpretUserMessage(state, text, options = {}) {
     }
   }
 
+  if (
+    state.conversationGoalLocked &&
+    (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY ||
+      state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY) &&
+    (isSoftTopicDismissal(raw) || isBudgetDismissalOnly(raw))
+  ) {
+    const pivot = parseTopicPivot(raw);
+    if (pivot.clearBudget) {
+      patch.budget = null;
+    }
+    if (pivot.clearZone && !pivot.newZone) {
+      patch.locationText = null;
+    }
+    if (pivot.newZone) {
+      patch.locationText = pivot.newZone;
+      decision.extractedEntities.locationText = pivot.newZone;
+    }
+    patch.topicPivotTurn = true;
+    decision.detectedIntent = pivot.newZone ? V3_INTENT.LOCATION_CAPTURE : V3_INTENT.UNKNOWN;
+    decision.confidence = 0.86;
+    decision.explicitFlowSwitch = false;
+    return { patch, decision };
+  }
+
   const demandRefinement = tryParseDemandRefinement(state, raw, text, patch, decision);
   if (demandRefinement) return demandRefinement;
 
@@ -209,7 +299,10 @@ function interpretUserMessage(state, text, options = {}) {
   }
 
   const strongSellEarly =
-    isExplicitFlowSwitchToSell(text) || matchesSellerAcquisitionPattern(t) || sellFromRentLocked;
+    isExplicitFlowSwitchToSell(text) ||
+    matchesSellerAcquisitionPattern(t) ||
+    isSellValuationLeadIntent(text) ||
+    sellFromRentLocked;
   const weakSellEarly = t.includes('vender') && t.includes('casa') && !state.conversationGoalLocked;
   if (strongSellEarly || weakSellEarly) {
     decision.detectedIntent = V3_INTENT.SELL_PROPERTY;
@@ -219,6 +312,9 @@ function interpretUserMessage(state, text, options = {}) {
       isExplicitFlowSwitchToSell(text) ||
       sellFromRentLocked ||
       matchesSellerAcquisitionPattern(t);
+    if (decision.explicitFlowSwitch && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+      patch.flowSwitchAck = true;
+    }
     patch.conversationGoal = CONVERSATION_GOALS.SELL_PROPERTY;
     patch.leadFlow = 'offer';
     patch.operationType = 'sale';
@@ -344,6 +440,13 @@ function interpretUserMessage(state, text, options = {}) {
 
   const occupancyParsed = parseOccupancyStatus(text);
   if (occupancyParsed && sellCtx) {
+    const existingOcc = state.occupancyStatus || state.collectedFields?.occupancyStatus;
+    if (existingOcc && existingOcc === occupancyParsed) {
+      decision.detectedIntent = V3_INTENT.UNKNOWN;
+      decision.confidence = 0.75;
+      decision.explicitFlowSwitch = false;
+      return { patch, decision };
+    }
     decision.detectedIntent = V3_INTENT.OCCUPANCY_CAPTURE;
     decision.confidence = 0.92;
     applyOccupancyPatch(patch, occupancyParsed);
@@ -398,6 +501,23 @@ function interpretUserMessage(state, text, options = {}) {
       decision.explicitFlowSwitch = false;
       return { patch, decision };
     }
+  }
+
+  const qaTurnEarly = classifyPropertyInquiryTurn(state, text, raw);
+  if (
+    qaTurnEarly &&
+    qaTurnEarly.kind === 'FACT' &&
+    state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY &&
+    (state.propertyListingCode || persistedCode)
+  ) {
+    decision.detectedIntent = V3_INTENT.PROPERTY_FACT_QUESTION;
+    decision.propertyInquiryFamily = qaTurnEarly.family;
+    decision.confidence = 0.84;
+    decision.explicitFlowSwitch = false;
+    if (state.collectedFields?.fullName) {
+      patch.propertySubMode = 'PROPERTY_QA';
+    }
+    return { patch, decision };
   }
 
   const qaTurn = classifyPropertyInquiryTurn(state, text, raw);
@@ -475,6 +595,18 @@ function interpretUserMessage(state, text, options = {}) {
     return { patch, decision };
   }
 
+  if (isRentOutIntent(text) && (!state.conversationGoalLocked || isExplicitFlowSwitchToRentOut(text))) {
+    decision.detectedIntent = V3_INTENT.RENT_OUT_PROPERTY;
+    decision.confidence = 0.85;
+    decision.explicitFlowSwitch = state.conversationGoalLocked ? isExplicitFlowSwitchToRentOut(text) : true;
+    patch.conversationGoal = CONVERSATION_GOALS.RENT_OUT_PROPERTY;
+    patch.leadFlow = 'offer';
+    patch.operationType = 'rent';
+    applyPropertyTypePatch(patch, parsePropertyType(text) || 'house');
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    return { patch, decision };
+  }
+
   const wantsRentPhrase =
     t.includes('rentar') || t.includes('arrendar') || (t.includes('renta') && t.includes('busco'));
   if (wantsRentPhrase && (!state.conversationGoalLocked || isExplicitFlowSwitchToRentDemand(text))) {
@@ -498,18 +630,6 @@ function interpretUserMessage(state, text, options = {}) {
     decision.confidence = 0.85;
     decision.explicitFlowSwitch = !state.conversationGoalLocked || isExplicitFlowSwitchToBuy(text);
     applyBuyDemandPatch(patch, raw, decision);
-    decision.shouldAskName = !state.collectedFields?.fullName;
-    return { patch, decision };
-  }
-
-  if (isRentOutIntent(text) && (!state.conversationGoalLocked || isExplicitFlowSwitchToRentOut(text))) {
-    decision.detectedIntent = V3_INTENT.RENT_OUT_PROPERTY;
-    decision.confidence = 0.85;
-    decision.explicitFlowSwitch = state.conversationGoalLocked ? isExplicitFlowSwitchToRentOut(text) : true;
-    patch.conversationGoal = CONVERSATION_GOALS.RENT_OUT_PROPERTY;
-    patch.leadFlow = 'offer';
-    patch.operationType = 'rent';
-    applyPropertyTypePatch(patch, parsePropertyType(text) || null);
     decision.shouldAskName = !state.collectedFields?.fullName;
     return { patch, decision };
   }
@@ -567,26 +687,15 @@ function interpretUserMessage(state, text, options = {}) {
     return { patch, decision };
   }
 
-  if (
-    isOfferFlow(state) &&
-    (state.awaitingField === 'expected_price' || !state.expectedPrice) &&
-    isSellValuationUnknownRequest(text)
-  ) {
-    patch.priceUnknown = true;
-    patch.valuationRequested = true;
-    patch.collectedFields = {
-      ...(patch.collectedFields || {}),
-      valuationRequested: true,
-    };
-    decision.detectedIntent = V3_INTENT.UNKNOWN;
-    decision.confidence = 0.9;
-    decision.explicitFlowSwitch = false;
-    return { patch, decision };
-  }
-
   const amount = parseMoneyAmount(text);
-  if (amount != null) {
+  if (amount != null && !matchesBuyOpenSearchPattern(t, raw)) {
     if (isOfferFlow(state)) {
+      if (amount <= 0) {
+        decision.detectedIntent = V3_INTENT.UNKNOWN;
+        decision.confidence = 0.25;
+        decision.explicitFlowSwitch = false;
+        return { patch, decision };
+      }
       decision.detectedIntent = V3_INTENT.SELLER_PRICE;
       patch.expectedPrice = amount;
       patch.budget = null;

@@ -25,6 +25,7 @@ const {
   mergeReplyText,
   normalizeOutboundSignature,
 } = require('../conversation/antiLoopGuardrails');
+const { resolveArgosLegacyHydration } = require('./propertyFixtures');
 
 function argosConversationId(session_id) {
   return `argos:${session_id}`;
@@ -52,6 +53,7 @@ function checkAntiLoop(session, reply) {
  *   text: string,
  *   flags?: object,
  *   supabaseRaw?: object,
+ *   scenarioSetup?: object,
  *   logEvent?: Function,
  * }} input
  */
@@ -114,11 +116,18 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
   });
 
   const conversationId = argosConversationId(session_id);
+  const priorState = getSession(conversationId);
+  const legacyHydration = resolveArgosLegacyHydration({
+    setup: input.scenarioSetup,
+    text: input.text,
+    persistedPropertyCode: priorState?.propertyListingCode || null,
+  });
   const v3Result = v3InboundBridge.tryV3PrimaryReply({
     conversationId,
     phone: input.phone_sim,
     text: input.text,
     argosMode: true,
+    legacyHydration,
     logEvent: (type, payload) => {
       traceEvent(trace, { type, phase: 'v3', payload, visibility: 'event' });
     },
