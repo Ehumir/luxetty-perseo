@@ -1,0 +1,15 @@
+{
+  "suite": "wa-telemetry-p0",
+  "description": "M4-01 — wa-telemetry-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "TEL_001.v1.json",
+    "TEL_002.v1.json",
+    "TEL_003.v1.json",
+    "TEL_004.v1.json",
+    "TEL_005.v1.json",
+    "TEL_006.v1.json"
+  ]
+}

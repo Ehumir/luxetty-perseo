@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "MRUN_005",
+  "family": "media_runtime",
+  "category": "media_runtime",
+  "title": "PDF texto simulado",
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true,
+    "crm_execute_foundation": true,
+    "media_runtime_production": true
+  },
+  "messages": [
+    {
+      "type": "pdf",
+      "simulate_text": "Escritura pendiente de revisión notarial",
+      "confidence": 0.8
+    }
+  ],
+  "expected": {
+    "logical_turn_source": "document_text"
+  },
+  "must_not": {
+    "invent_price": true
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "version": 1,
+  "effective_at": null,
+  "expires_at": null,
+  "active_zones": [],
+  "active_colonias": [],
+  "amount_rules": [],
+  "campaigns": [],
+  "temporary_rules": [],
+  "allowlists": {
+    "phones": [],
+    "conversation_ids": []
+  },
+  "languages": ["es"]
+}

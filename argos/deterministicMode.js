@@ -32,6 +32,13 @@ function applyArgosSimulationEnv(flags = {}) {
     resilience: process.env.PERSEO_RESILIENCE_V1_ENABLED,
     humanityWave2: process.env.PERSEO_HUMANITY_WAVE2_ENABLED,
     waHardening: process.env.PERSEO_WA_HARDENING_V2_ENABLED,
+    crmRuntime: process.env.PERSEO_CRM_RUNTIME_PERSISTENT_ENABLED,
+    mediaRuntime: process.env.PERSEO_MEDIA_RUNTIME_PRODUCTION_ENABLED,
+    understandingRuntime: process.env.PERSEO_UNDERSTANDING_RUNTIME_ENABLED,
+    resilienceRuntime: process.env.PERSEO_RESILIENCE_RUNTIME_ENABLED,
+    waTelemetry: process.env.PERSEO_WA_TELEMETRY_ENABLED,
+    learningRuntime: process.env.PERSEO_LEARNING_RUNTIME_ENABLED,
+    policyRuntime: process.env.PERSEO_POLICY_RUNTIME_ENABLED,
   };
   const handoffOn = flags.v3_handoff_enabled !== false;
   process.env.PERSEO_V3_HANDOFF_ENABLED = handoffOn ? 'true' : 'false';
@@ -54,6 +61,13 @@ function applyArgosSimulationEnv(flags = {}) {
   setTriFlag('PERSEO_RESILIENCE_V1_ENABLED', flags.resilience_v1);
   setTriFlag('PERSEO_HUMANITY_WAVE2_ENABLED', flags.humanity_wave2);
   setTriFlag('PERSEO_WA_HARDENING_V2_ENABLED', flags.wa_hardening_v2);
+  setTriFlag('PERSEO_CRM_RUNTIME_PERSISTENT_ENABLED', flags.crm_runtime_persistent);
+  setTriFlag('PERSEO_MEDIA_RUNTIME_PRODUCTION_ENABLED', flags.media_runtime_production);
+  setTriFlag('PERSEO_UNDERSTANDING_RUNTIME_ENABLED', flags.understanding_runtime);
+  setTriFlag('PERSEO_RESILIENCE_RUNTIME_ENABLED', flags.resilience_runtime);
+  setTriFlag('PERSEO_WA_TELEMETRY_ENABLED', flags.wa_telemetry);
+  setTriFlag('PERSEO_LEARNING_RUNTIME_ENABLED', flags.learning_runtime);
+  setTriFlag('PERSEO_POLICY_RUNTIME_ENABLED', flags.policy_runtime);
 
   return {
     handoffEnabled: handoffOn,
@@ -76,6 +90,13 @@ function applyArgosSimulationEnv(flags = {}) {
       restoreTri('PERSEO_RESILIENCE_V1_ENABLED', prev.resilience);
       restoreTri('PERSEO_HUMANITY_WAVE2_ENABLED', prev.humanityWave2);
       restoreTri('PERSEO_WA_HARDENING_V2_ENABLED', prev.waHardening);
+      restoreTri('PERSEO_CRM_RUNTIME_PERSISTENT_ENABLED', prev.crmRuntime);
+      restoreTri('PERSEO_MEDIA_RUNTIME_PRODUCTION_ENABLED', prev.mediaRuntime);
+      restoreTri('PERSEO_UNDERSTANDING_RUNTIME_ENABLED', prev.understandingRuntime);
+      restoreTri('PERSEO_RESILIENCE_RUNTIME_ENABLED', prev.resilienceRuntime);
+      restoreTri('PERSEO_WA_TELEMETRY_ENABLED', prev.waTelemetry);
+      restoreTri('PERSEO_LEARNING_RUNTIME_ENABLED', prev.learningRuntime);
+      restoreTri('PERSEO_POLICY_RUNTIME_ENABLED', prev.policyRuntime);
     },
   };
 }

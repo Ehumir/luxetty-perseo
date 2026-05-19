@@ -1,0 +1,17 @@
+{
+  "suite": "runtime-resilience-p0",
+  "description": "M4-01 — runtime-resilience-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "RESR_001.v1.json",
+    "RESR_002.v1.json",
+    "RESR_003.v1.json",
+    "RESR_004.v1.json",
+    "RESR_005.v1.json",
+    "RESR_006.v1.json",
+    "RESR_007.v1.json",
+    "RESR_008.v1.json"
+  ]
+}
