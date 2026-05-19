@@ -1,0 +1,17 @@
+{
+  "suite": "media-runtime-p0",
+  "description": "M4-01 — media-runtime-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "MRUN_001.v1.json",
+    "MRUN_002.v1.json",
+    "MRUN_003.v1.json",
+    "MRUN_004.v1.json",
+    "MRUN_005.v1.json",
+    "MRUN_006.v1.json",
+    "MRUN_007.v1.json",
+    "MRUN_008.v1.json"
+  ]
+}

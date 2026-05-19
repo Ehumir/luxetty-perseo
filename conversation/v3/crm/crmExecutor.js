@@ -10,7 +10,9 @@ const { v3Log } = require('../core/v3Logger');
 const { normalizeText } = require('../../../utils/text');
 const { isInvalidContactName } = require('../../../utils/helpers');
 const { isCrmExecuteFoundationEnabled } = require('../../../config/perseoM302Flags');
+const { isCrmRuntimePersistentEnabled } = require('../../../config/perseoM401Flags');
 const { executeV3CrmWithFoundation } = require('./crmExecuteFoundation');
+const { executeV3CrmWithRuntime } = require('../runtime/crmRuntime');
 
 /**
  * @param {string} event
@@ -360,10 +362,18 @@ async function executeV3CrmIfEligibleImpl(input) {
 }
 
 async function executeV3CrmIfEligible(input) {
-  if (isCrmExecuteFoundationEnabled()) {
-    return executeV3CrmWithFoundation(input, executeV3CrmIfEligibleImpl);
+  const enriched = {
+    ...input,
+    argosMode: input.argosMode === true,
+    crmDryRun: input.crmDryRun !== false,
+  };
+  if (isCrmRuntimePersistentEnabled()) {
+    return executeV3CrmWithRuntime(enriched, executeV3CrmIfEligibleImpl);
   }
-  return executeV3CrmIfEligibleImpl(input);
+  if (isCrmExecuteFoundationEnabled()) {
+    return executeV3CrmWithFoundation(enriched, executeV3CrmIfEligibleImpl);
+  }
+  return executeV3CrmIfEligibleImpl(enriched);
 }
 
 module.exports = {

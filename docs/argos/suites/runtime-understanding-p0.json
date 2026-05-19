@@ -1,0 +1,19 @@
+{
+  "suite": "runtime-understanding-p0",
+  "description": "M4-01 — runtime-understanding-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "UNDR_001.v1.json",
+    "UNDR_002.v1.json",
+    "UNDR_003.v1.json",
+    "UNDR_004.v1.json",
+    "UNDR_005.v1.json",
+    "UNDR_006.v1.json",
+    "UNDR_007.v1.json",
+    "UNDR_008.v1.json",
+    "UNDR_009.v1.json",
+    "UNDR_010.v1.json"
+  ]
+}

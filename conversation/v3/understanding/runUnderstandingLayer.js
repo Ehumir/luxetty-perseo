@@ -6,6 +6,7 @@ const { detectSegmentIntents } = require('./multiIntentDetector');
 const { extractAllSegmentSlots } = require('./segmentSlotExtractor');
 const { evaluatePolicy } = require('../policy/PolicyEngine');
 const { buildResponsePlan } = require('./responsePlanner');
+const { applyPolicyRuntimeOverlay } = require('../policy/policyRuntime');
 
 /**
  * @param {{
@@ -32,12 +33,26 @@ function runUnderstandingLayer(input) {
 
   let policyResult = null;
   if (policyOn) {
+    const runtimeOverlay = applyPolicyRuntimeOverlay({
+      phone: input.state?.phone,
+      language: 'es',
+      zone: input.state?.locationText || input.state?.filters?.zone,
+      colonia: input.state?.collectedFields?.colonia,
+      amount: input.state?.budget ?? input.state?.filters?.budget_max,
+    });
     policyResult = evaluatePolicy({
-      state: input.state,
+      state: {
+        ...input.state,
+        policyRuntimeOverlay: runtimeOverlay.applied ? runtimeOverlay : null,
+      },
       decision: input.decision,
       text: input.text,
       segments,
     });
+    if (runtimeOverlay.applied && policyResult) {
+      policyResult.policy_runtime_applied = true;
+      policyResult.policy_runtime_rule_id = runtimeOverlay.policy_runtime_rule_id;
+    }
   }
 
   const responsePlan =

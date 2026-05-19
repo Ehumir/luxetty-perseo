@@ -20,12 +20,20 @@ function normalizeScenarioTurn(raw) {
     const media = {
       kind: 'audio',
       transcript: cleanSpaces(raw.transcript || raw.simulate_transcript || ''),
-      confidence: raw.confidence != null ? Number(raw.confidence) : undefined,
+      confidence:
+        raw.confidence != null
+          ? Number(raw.confidence)
+          : raw.simulate_confidence != null
+            ? Number(raw.simulate_confidence)
+            : undefined,
       no_transcript: raw.no_transcript === true,
     };
     if (raw.simulate_transcript) {
       media.simulate_transcript = cleanSpaces(raw.simulate_transcript);
       media.provider = 'argos_deterministic';
+    }
+    if (raw.simulate_confidence != null) {
+      media.simulate_confidence = Number(raw.simulate_confidence);
     }
     return { text: cleanSpaces(raw.text || raw.caption || ''), media };
   }

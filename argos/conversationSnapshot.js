@@ -51,6 +51,20 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
     tracked_name: v3State?.entityTracker?.name || null,
     crm_queue_status: v3State?.crmQueueStatus || null,
     humanity_tone: v3State?.lastHumanityTone || null,
+    crm_runtime_mode: v3State?.crmRuntimeMode || null,
+    understanding_fused: !!(v3State?.understanding?.fused_turn?.fused_text),
+    understanding_thread_count: Number(v3State?.understanding?.threads?.length || 0),
+    understanding_memory_summary: v3State?.understanding?.memory_summary || null,
+    anti_loop_score: v3State?.lastResilienceRuntime?.anti_loop_score ?? null,
+    confusion_detected: v3State?.lastResilienceRuntime?.confusion_detected === true,
+    escalation_confidence: v3State?.lastResilienceRuntime?.escalation_confidence ?? null,
+    recovery_plan_action: v3State?.recoveryPlan?.action || null,
+    telemetry_recorded: v3State?.lastTelemetryRecorded === true,
+    telemetry_mode: v3State?.lastTelemetryMode || null,
+    media_runtime_provider:
+      v3State?.lastMediaIntake?.provider || v3State?.lastLogicalTurnSource || null,
+    policy_runtime_applied: v3State?.lastPolicyRuntimeApplied === true,
+    policy_runtime_rule_id: v3State?.lastPolicyRuntimeRuleId || null,
   };
 }
 

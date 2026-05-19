@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "MRUN_003",
+  "family": "media_runtime",
+  "category": "media_runtime",
+  "title": "Imagen hints no autoritativos",
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true,
+    "crm_execute_foundation": true,
+    "media_runtime_production": true
+  },
+  "messages": [
+    {
+      "type": "image",
+      "simulate_hints": [
+        "sala visible",
+        "iluminación natural"
+      ],
+      "caption": "Así está la casa"
+    }
+  ],
+  "expected": {
+    "media_intake_mode": "image_with_text"
+  },
+  "must_not": {
+    "invent_price": true,
+    "invent_address": true
+  }
+}

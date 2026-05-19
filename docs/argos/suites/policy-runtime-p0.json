@@ -1,0 +1,17 @@
+{
+  "suite": "policy-runtime-p0",
+  "description": "M4-01 — policy-runtime-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "POLR_001.v1.json",
+    "POLR_002.v1.json",
+    "POLR_003.v1.json",
+    "POLR_004.v1.json",
+    "POLR_005.v1.json",
+    "POLR_006.v1.json",
+    "POLR_007.v1.json",
+    "POLR_008.v1.json"
+  ]
+}

@@ -68,10 +68,12 @@ function tryV3PrimaryReply(input) {
       text: input.text,
       media: input.media ?? null,
       argosDeterministic: input.argosDeterministic === true || input.argosMode === true,
+      argosMode: input.argosMode === true,
       reset: cmd === 'reset',
       campaignHeadline: input.campaignHeadline ?? null,
       legacyHydration: input.legacyHydration ?? null,
       logEvent: input.logEvent,
+      supabase: input.supabase ?? null,
     });
     if (!result.ok && result.fallbackToLegacy) {
       const forced = buildForcedHandoffFromSession({

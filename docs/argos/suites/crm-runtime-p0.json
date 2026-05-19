@@ -1,0 +1,17 @@
+{
+  "suite": "crm-runtime-p0",
+  "description": "M4-01 — crm-runtime-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "CRMR_001.v1.json",
+    "CRMR_002.v1.json",
+    "CRMR_003.v1.json",
+    "CRMR_004.v1.json",
+    "CRMR_005.v1.json",
+    "CRMR_006.v1.json",
+    "CRMR_007.v1.json",
+    "CRMR_008.v1.json"
+  ]
+}

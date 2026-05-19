@@ -252,6 +252,87 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
       actual: snapshot?.crm_queue_status,
     });
   }
+  if (expected.crm_runtime_mode != null && snapshot?.crm_runtime_mode !== expected.crm_runtime_mode) {
+    violations.push({
+      code: 'expected_crm_runtime_mode_mismatch',
+      expected: expected.crm_runtime_mode,
+      actual: snapshot?.crm_runtime_mode,
+    });
+  }
+  if (expected.understanding_fused === true && snapshot?.understanding_fused !== true) {
+    violations.push({
+      code: 'expected_understanding_fused',
+      expected: true,
+      actual: snapshot?.understanding_fused,
+    });
+  }
+  if (expected.understanding_thread_count != null) {
+    const actual = Number(snapshot?.understanding_thread_count || 0);
+    if (actual < Number(expected.understanding_thread_count)) {
+      violations.push({
+        code: 'expected_understanding_thread_count',
+        expected: expected.understanding_thread_count,
+        actual,
+      });
+    }
+  }
+  if (expected.telemetry_recorded === true && snapshot?.telemetry_recorded !== true) {
+    violations.push({
+      code: 'expected_telemetry_recorded',
+      expected: true,
+      actual: snapshot?.telemetry_recorded,
+    });
+  }
+  if (expected.telemetry_mode != null && snapshot?.telemetry_mode !== expected.telemetry_mode) {
+    violations.push({
+      code: 'expected_telemetry_mode_mismatch',
+      expected: expected.telemetry_mode,
+      actual: snapshot?.telemetry_mode,
+    });
+  }
+  if (expected.anti_loop_score_min != null) {
+    const score = Number(snapshot?.anti_loop_score ?? 0);
+    if (score < Number(expected.anti_loop_score_min)) {
+      violations.push({
+        code: 'expected_anti_loop_score_min',
+        expected: expected.anti_loop_score_min,
+        actual: score,
+      });
+    }
+  }
+  if (expected.confusion_detected === true && snapshot?.confusion_detected !== true) {
+    violations.push({
+      code: 'expected_confusion_detected',
+      expected: true,
+      actual: snapshot?.confusion_detected,
+    });
+  }
+  if (expected.recovery_plan_action != null) {
+    if (snapshot?.recovery_plan_action !== expected.recovery_plan_action) {
+      violations.push({
+        code: 'expected_recovery_plan_action_mismatch',
+        expected: expected.recovery_plan_action,
+        actual: snapshot?.recovery_plan_action,
+      });
+    }
+  }
+  if (expected.media_runtime_provider != null) {
+    const provider = snapshot?.media_runtime_provider || null;
+    if (String(provider || '') !== String(expected.media_runtime_provider)) {
+      violations.push({
+        code: 'expected_media_runtime_provider_mismatch',
+        expected: expected.media_runtime_provider,
+        actual: provider,
+      });
+    }
+  }
+  if (expected.policy_runtime_applied === true && snapshot?.policy_runtime_applied !== true) {
+    violations.push({
+      code: 'expected_policy_runtime_applied',
+      expected: true,
+      actual: snapshot?.policy_runtime_applied,
+    });
+  }
 }
 
 /**

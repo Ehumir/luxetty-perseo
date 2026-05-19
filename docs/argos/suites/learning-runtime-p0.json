@@ -1,0 +1,15 @@
+{
+  "suite": "learning-runtime-p0",
+  "description": "M4-01 — learning-runtime-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "LRNG_001.v1.json",
+    "LRNG_002.v1.json",
+    "LRNG_003.v1.json",
+    "LRNG_004.v1.json",
+    "LRNG_005.v1.json",
+    "LRNG_006.v1.json"
+  ]
+}

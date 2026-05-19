@@ -26,6 +26,8 @@ const {
   normalizeOutboundSignature,
 } = require('../conversation/antiLoopGuardrails');
 const { resolveArgosLegacyHydration } = require('./propertyFixtures');
+const { executeV3CrmIfEligible } = require('../conversation/v3/crm/crmExecutor');
+const { isCrmRuntimePersistentEnabled } = require('../config/perseoM401Flags');
 
 function argosConversationId(session_id) {
   return `argos:${session_id}`;
@@ -278,6 +280,24 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
     crm_execution_eligible: crmGate.eligible,
     crm_skip_reason: crmGate.eligible ? null : crmGate.reason,
   };
+
+  let crm_runtime_out = null;
+  if (isCrmRuntimePersistentEnabled() && v3State) {
+    const supabaseRaw = input.supabaseRaw;
+    crm_runtime_out = await executeV3CrmIfEligible({
+      v3State,
+      phone: input.phone_sim,
+      conversationRow: { id: conversationId },
+      supabase: supabaseRaw ? createArgosNoWriteSupabase(supabaseRaw) : null,
+      argosMode: true,
+      crmDryRun: flags.crm_dry_run !== false,
+      logEvent: (type, payload) => traceEvent(trace, { type, phase: 'crm_runtime', payload }),
+    });
+    if (crm_runtime_out?.v3State) {
+      v3State = crm_runtime_out.v3State;
+      setSession(conversationId, v3State);
+    }
+  }
 
   let crm_dry_run = null;
   if (flags.crm_dry_run !== false && v3State && crmGate.eligible) {

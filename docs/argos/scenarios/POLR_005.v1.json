@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "POLR_005",
+  "family": "policy_runtime",
+  "category": "policy_runtime",
+  "title": "Regla temporal",
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true,
+    "crm_execute_foundation": true,
+    "policy_runtime": true
+  },
+  "messages": [
+    "Hola"
+  ],
+  "expected": {
+    "policy_runtime_applied": true
+  },
+  "must_not": {
+    "write_leads": true,
+    "write_contacts": true
+  }
+}
