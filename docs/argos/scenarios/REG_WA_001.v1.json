@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "REG_WA_001",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "whatsapp_smoke",
+  "category": "dual_intent_field",
+  "title": "WA smoke — dual intent sintético",
+  "messages": [
+    "Hola",
+    "Quiero vender mi casa en 3 millones y también busco comprar en San Pedro"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true
+  },
+  "expected": {
+    "lead_flow": "demand"
+  },
+  "must_not": {
+    "flow_restart": true,
+    "robotic_response": true,
+    "send_whatsapp": true
+  }
+}

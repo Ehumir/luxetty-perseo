@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "REG_WA_003",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "whatsapp_smoke",
+  "category": "long_message_field",
+  "title": "WA smoke — mensaje largo con slots",
+  "messages": [
+    "Hola",
+    "Soy Jorge\nBusco en Cumbres\nPresupuesto 5 millones\nQuiero comprar"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "message_planner": true
+  },
+  "expected": {
+    "lead_flow": "demand"
+  },
+  "must_not": {
+    "flow_restart": true,
+    "send_whatsapp": true
+  }
+}

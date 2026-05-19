@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "MEDIA_AUDIO_002",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "media",
+  "category": "audio_no_transcript",
+  "title": "Audio sin transcript — fallback honesto",
+  "messages": [
+    "Hola",
+    {
+      "type": "audio",
+      "no_transcript": true
+    }
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true
+  },
+  "expected": {
+    "media_intake_mode": "audio_no_transcript",
+    "logical_turn_source": "audio_no_transcript"
+  },
+  "must_not": {
+    "fake_transcript": true,
+    "media_no_fallback": true,
+    "invented_from_media": true,
+    "send_whatsapp": true
+  }
+}

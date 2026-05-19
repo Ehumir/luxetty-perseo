@@ -21,6 +21,7 @@ const { v3Log } = require('./v3Logger');
  *   logEvent?: Function,
  *   campaignHeadline?: string|null,
  *   legacyHydration?: object|null,
+ *   media?: object|null,
  * }} input
  */
 function tryV3PrimaryReply(input) {
@@ -65,6 +66,7 @@ function tryV3PrimaryReply(input) {
       conversationId: input.conversationId,
       phone: input.phone,
       text: input.text,
+      media: input.media ?? null,
       reset: cmd === 'reset',
       campaignHeadline: input.campaignHeadline ?? null,
       legacyHydration: input.legacyHydration ?? null,
@@ -116,6 +118,7 @@ function tryV3PrimaryReply(input) {
       decision: result.decision || null,
       guard: result.guard || null,
       policyCrossLayer: result.policyCrossLayer || null,
+      mediaIntake: result.mediaIntake || null,
       skipLegacyCrm: true,
     };
   } catch (err) {

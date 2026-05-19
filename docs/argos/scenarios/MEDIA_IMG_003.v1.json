@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "MEDIA_IMG_003",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "media",
+  "category": "image_hints_plus_text",
+  "title": "Imagen mapa + texto venta — texto gana",
+  "messages": [
+    "Hola",
+    {
+      "type": "image",
+      "hints": [{ "hint": "mapa", "confidence": 0.45 }]
+    },
+    "Quiero vender mi depa en San Pedro"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true
+  },
+  "expected": {
+    "lead_flow": "offer"
+  },
+  "must_not": {
+    "hallucinated_visual_detail": true,
+    "invented_from_media": true,
+    "demand_to_offer": true,
+    "send_whatsapp": true
+  }
+}
