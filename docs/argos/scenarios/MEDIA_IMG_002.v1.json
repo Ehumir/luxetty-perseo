@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "MEDIA_IMG_002",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "media",
+  "category": "image_illegible",
+  "title": "Imagen ilegible — pedir descripción",
+  "messages": [
+    "Hola",
+    {
+      "type": "image",
+      "illegible": true
+    }
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true
+  },
+  "expected": {
+    "media_intake_mode": "image_illegible",
+    "logical_turn_source": "image_illegible"
+  },
+  "must_not": {
+    "media_no_fallback": true,
+    "hallucinated_visual_detail": true,
+    "invent_price": true,
+    "send_whatsapp": true
+  }
+}

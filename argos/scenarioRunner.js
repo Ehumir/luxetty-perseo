@@ -18,6 +18,7 @@ const { getPropertyFixture } = require('./propertyFixtures');
 const { parseSprint1StrictCommand } = require('../conversation/qaSprint1Commands');
 const { isSoftTopicDismissal } = require('../conversation/v3/interpreter/topicPivotSignals');
 const { isSaleUrgencyEmotional } = require('../conversation/v3/interpreter/objectionClassifier');
+const { normalizeScenarioTurn } = require('./scenarioTurn');
 
 function resolveSupabaseRaw(input) {
   if (input.supabaseRaw) return input.supabaseRaw;
@@ -45,6 +46,7 @@ function pickTurnDiagnostics(debugTrace = []) {
     'policy_decision',
     'segments',
     'response_plan',
+    'media_intake',
   ]);
   return debugTrace.filter((row) => types.has(row.type));
 }
@@ -190,6 +192,22 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
       });
     }
   }
+  if (expected.media_intake_mode && snapshot?.media_intake_mode !== expected.media_intake_mode) {
+    violations.push({
+      code: 'expected_media_intake_mode_mismatch',
+      expected: expected.media_intake_mode,
+      actual: snapshot?.media_intake_mode ?? null,
+    });
+  }
+  if (expected.logical_turn_source) {
+    if (snapshot?.logical_turn_source !== expected.logical_turn_source) {
+      violations.push({
+        code: 'expected_logical_turn_source_mismatch',
+        expected: expected.logical_turn_source,
+        actual: snapshot?.logical_turn_source ?? null,
+      });
+    }
+  }
   if (expected.policy_rule_id) {
     const actual =
       snapshot?.policy_rule_id ||
@@ -252,7 +270,8 @@ async function runArgosScenario(input) {
       break;
     }
 
-    if (parseSprint1StrictCommand(messages[i]) === 'reset') {
+    const turn = normalizeScenarioTurn(messages[i]);
+    if (parseSprint1StrictCommand(turn.text || messages[i]) === 'reset') {
       sessionResetAtTurn = i + 1;
       preResetSnapshot = lastSnapshot;
     }
@@ -260,7 +279,8 @@ async function runArgosScenario(input) {
     const result = await processInboundForArgos({
       session_id,
       phone_sim: input.phone_sim,
-      text: messages[i],
+      text: turn.text,
+      media: turn.media,
       flags: input.flags,
       supabaseRaw,
       scenarioSetup: scenario.setup,
@@ -281,7 +301,15 @@ async function runArgosScenario(input) {
     lastTurnDiagnostics = pickTurnDiagnostics(result.debug_trace);
     const snap = result.conversation_snapshot || {};
     if (i === 2 && snap.lead_flow) anchorLeadFlow = snap.lead_flow;
-    const facts = buildScenarioFacts(messages[i], result, scenario.setup);
+    const userLabel =
+      typeof messages[i] === 'string'
+        ? messages[i]
+        : turn.text || `[media:${turn.media?.kind || 'unknown'}]`;
+    const facts = buildScenarioFacts(userLabel, result, scenario.setup);
+    if (turn.media) {
+      facts.inboundMedia = turn.media;
+      facts.mediaIntakeMode = result.conversation_snapshot?.media_intake_mode || null;
+    }
     facts.previousReplySignature = previousReplySignature;
     facts.previousQuestionSignature = previousQuestionSignature;
     facts.suppressGlobalMenu = Boolean(snap.lead_flow) && i >= 2;
@@ -293,7 +321,7 @@ async function runArgosScenario(input) {
     );
     facts.turnIndex = i + 1;
     facts.sessionResetAtTurn = sessionResetAtTurn;
-    if (isSoftTopicDismissal(messages[i]) && lastSnapshot?.known_name) {
+    if (isSoftTopicDismissal(userLabel) && lastSnapshot?.known_name) {
       facts.hadKnownNameBeforeDismissal = true;
     }
     facts.preResetZones = preResetSnapshot?.known_zone ? [String(preResetSnapshot.known_zone)] : [];
@@ -315,7 +343,7 @@ async function runArgosScenario(input) {
 
     turns.push({
       turn: i + 1,
-      user: messages[i],
+      user: userLabel,
       reply: result.reply,
       technical_panel: result.technical_panel,
       gates: result.gates,
@@ -437,6 +465,11 @@ function buildScenarioFacts(userText, turnResult, scenarioSetup = null) {
     userExpressedUrgency: isSaleUrgencyEmotional(userText),
     userSoftTopicDismissal: isSoftTopicDismissal(userText),
     hadKnownNameBeforeDismissal: false,
+    userMoneyMentions: extractMoneyMentions(userText),
+    userMentionedPrice: extractMoneyMentions(userText).length > 0,
+    userMentionedArea: /\b(m2|metros|recamaras|ba[nñ]os)\b/i.test(userText),
+    inboundMedia: null,
+    mediaIntakeMode: snap.media_intake_mode || null,
   };
   return facts;
 }

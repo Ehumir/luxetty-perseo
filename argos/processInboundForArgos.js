@@ -55,6 +55,7 @@ function checkAntiLoop(session, reply) {
  *   supabaseRaw?: object,
  *   scenarioSetup?: object,
  *   logEvent?: Function,
+ *   media?: object|null,
  * }} input
  */
 async function processInboundForArgos(input) {
@@ -126,6 +127,7 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
     conversationId,
     phone: input.phone_sim,
     text: input.text,
+    media: input.media ?? null,
     argosMode: true,
     legacyHydration,
     logEvent: (type, payload) => {
@@ -198,6 +200,14 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
       phase: 'policy',
       visibility: 'debug',
       payload: pcl.policyResult,
+    });
+  }
+  if (v3Result.mediaIntake) {
+    traceEvent(trace, {
+      type: 'media_intake',
+      phase: 'media',
+      visibility: 'debug',
+      payload: v3Result.mediaIntake,
     });
   }
 

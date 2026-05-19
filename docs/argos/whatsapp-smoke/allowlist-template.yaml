@@ -1,0 +1,24 @@
+# Plantilla allowlist — WhatsApp smoke wave 1 (M3-01)
+# Copiar a allowlist-20.yaml y completar con números internos/piloto.
+
+smoke_wave: m3-01-wave-1
+updated_at: null
+owner: qa-perseo
+
+participants:
+  - phone_e164: "+52XXXXXXXXXX"
+    label: "piloto-dual-intent"
+    scenarios: [REG_WA_001]
+  - phone_e164: "+52XXXXXXXXXX"
+    label: "piloto-policy-min"
+    scenarios: [REG_WA_002]
+  - phone_e164: "+52XXXXXXXXXX"
+    label: "piloto-long-msg"
+    scenarios: [REG_WA_003]
+  - phone_e164: "+52XXXXXXXXXX"
+    label: "piloto-media-fallback"
+    scenarios: [REG_WA_004]
+
+notes:
+  - Solo números autorizados; no clientes reales sin consentimiento.
+  - Flags prod: policy/planner según rollout; media intake según checklist.

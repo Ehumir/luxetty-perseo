@@ -461,6 +461,88 @@ function validateMustNotReply(input) {
     }
   }
 
+  if (must_not.invented_from_media) {
+    const amounts = extractMoneyMentions(reply);
+    const userAmounts = (facts.userMoneyMentions || []).map(Number).filter(Number.isFinite);
+    for (const n of amounts) {
+      if (n >= 100_000 && !userAmounts.some((u) => Math.abs(u - n) / Math.max(u, 1) < 0.15)) {
+        violations.push({
+          constraint: 'must_not.invented_from_media',
+          detail: `Price ${n} not present in user text or transcript`,
+          severity: 'critical',
+        });
+        break;
+      }
+    }
+    if (
+      /\b(\d{2,4}\s*m2|metros cuadrados|recamaras|ba[nñ]os)\b/i.test(reply) &&
+      !facts.userMentionedArea
+    ) {
+      violations.push({
+        constraint: 'must_not.invented_from_media',
+        detail: 'Structural detail from image not confirmed in user text',
+        severity: 'high',
+      });
+    }
+  }
+
+  if (must_not.fake_transcript) {
+    if (facts.mediaIntakeMode === 'audio_no_transcript') {
+      const lower = normalizeText(reply);
+      if (
+        /\b(entend[ií]|tom[eé]|anot[eé]|registr[eé]).{0,40}(millones?|cumbres|jorge|san pedro)\b/i.test(
+          lower,
+        ) &&
+        !/\b(escrito|texto|confirmas|confirmar|frase)\b/i.test(lower)
+      ) {
+        violations.push({
+          constraint: 'must_not.fake_transcript',
+          detail: 'Acted on specific slots without transcript',
+          severity: 'critical',
+        });
+      }
+    }
+  }
+
+  if (must_not.hallucinated_visual_detail) {
+    const lower = normalizeText(reply);
+    if (
+      (/\b(cuesta|vale|precio es|desde \$|usd)\b/i.test(lower) ||
+        /\b(\d{2,3}\s*mil\s*m2|\d+\s*metros)\b/i.test(lower)) &&
+      facts.inboundMedia?.kind === 'image' &&
+      !facts.userMentionedPrice &&
+      !facts.userMentionedArea
+    ) {
+      violations.push({
+        constraint: 'must_not.hallucinated_visual_detail',
+        detail: 'Invented price or area from image hints',
+        severity: 'critical',
+      });
+    }
+  }
+
+  if (must_not.media_no_fallback) {
+    const modesNeedingFallback = new Set([
+      'audio_no_transcript',
+      'audio_low_confidence',
+      'image_illegible',
+    ]);
+    if (modesNeedingFallback.has(facts.mediaIntakeMode)) {
+      const lower = normalizeText(reply);
+      const hasFallbackCue =
+        /\b(escrito|texto|confirmas|confirmar|frase|no (puedo|alcance)|referencia visual|sin descripci[oó]n|claridad)\b/i.test(
+          lower,
+        );
+      if (!hasFallbackCue) {
+        violations.push({
+          constraint: 'must_not.media_no_fallback',
+          detail: 'Missing honest media fallback language',
+          severity: 'critical',
+        });
+      }
+    }
+  }
+
   return violations;
 }
 

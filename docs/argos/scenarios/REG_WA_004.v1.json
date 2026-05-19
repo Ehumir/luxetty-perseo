@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "REG_WA_004",
+  "scenario_version": 1,
+  "priority": "P1",
+  "family": "whatsapp_smoke",
+  "category": "media_fallback_field",
+  "title": "WA smoke — audio sin transcript",
+  "messages": [
+    "Hola",
+    {
+      "type": "audio",
+      "no_transcript": true
+    }
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true
+  },
+  "expected": {
+    "media_intake_mode": "audio_no_transcript"
+  },
+  "must_not": {
+    "fake_transcript": true,
+    "media_no_fallback": true,
+    "send_whatsapp": true
+  }
+}

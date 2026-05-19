@@ -1,0 +1,16 @@
+{
+  "suite": "media-p0",
+  "description": "Media Intake v1 — audio transcript/fallback + image hints (flags ON)",
+  "threshold": { "pass_rate": 1.0 },
+  "env": {
+    "PERSEO_MEDIA_INTAKE_V1_ENABLED": "true"
+  },
+  "scenarios": [
+    "MEDIA_AUDIO_001.v1.json",
+    "MEDIA_AUDIO_002.v1.json",
+    "MEDIA_AUDIO_003.v1.json",
+    "MEDIA_IMG_001.v1.json",
+    "MEDIA_IMG_002.v1.json",
+    "MEDIA_IMG_003.v1.json"
+  ]
+}

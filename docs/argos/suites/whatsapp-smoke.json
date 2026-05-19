@@ -1,0 +1,11 @@
+{
+  "suite": "whatsapp-smoke",
+  "description": "WhatsApp Hardening wave 1 — REG_WA sintéticos",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": [
+    "REG_WA_001.v1.json",
+    "REG_WA_002.v1.json",
+    "REG_WA_003.v1.json",
+    "REG_WA_004.v1.json"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "MEDIA_IMG_001",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "media",
+  "category": "image_hints_facade",
+  "title": "Imagen fachada + caption — no inventar precio",
+  "messages": [
+    "Hola",
+    {
+      "type": "image",
+      "hints": [{ "hint": "fachada", "confidence": 0.65 }],
+      "caption": "Así se ve la fachada"
+    }
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true
+  },
+  "expected": {
+    "media_intake_mode": "image_with_text",
+    "logical_turn_source": "image_with_text"
+  },
+  "must_not": {
+    "invent_price": true,
+    "invented_from_media": true,
+    "hallucinated_visual_detail": true,
+    "send_whatsapp": true
+  }
+}

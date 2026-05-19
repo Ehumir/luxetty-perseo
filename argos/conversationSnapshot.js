@@ -41,6 +41,8 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
     occupancy_status: v3State?.occupancyStatus || v3State?.collectedFields?.occupancyStatus || null,
     policy_decision: v3State?.lastPolicyDecision || null,
     policy_rule_id: v3State?.lastPolicyRuleId || null,
+    media_intake_mode: v3State?.lastMediaIntake?.mode || null,
+    logical_turn_source: v3State?.lastLogicalTurnSource || null,
   };
 }
 
