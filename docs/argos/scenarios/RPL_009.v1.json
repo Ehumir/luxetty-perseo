@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "RPL_009",
+  "family": "replay",
+  "category": "replay",
+  "title": "Replay pack 9",
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true,
+    "crm_execute_foundation": true,
+    "crm_runtime_persistent": true,
+    "wa_telemetry": true,
+    "replay_engine": true,
+    "runtime_observability": true
+  },
+  "messages": [
+    "Hola",
+    "Busco en Cumbres",
+    "Jorge"
+  ],
+  "expected": {
+    "runtime_observability_recorded": true
+  },
+  "must_not": {
+    "write_leads": true,
+    "write_contacts": true
+  }
+}

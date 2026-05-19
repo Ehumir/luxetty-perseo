@@ -1,0 +1,27 @@
+{
+  "suite": "crm-durability-p0",
+  "description": "M4-03 — crm-durability-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "CRMD_001.v1.json",
+    "CRMD_002.v1.json",
+    "CRMD_003.v1.json",
+    "CRMD_004.v1.json",
+    "CRMD_005.v1.json",
+    "CRMD_006.v1.json",
+    "CRMD_007.v1.json",
+    "CRMD_008.v1.json",
+    "CRMD_009.v1.json",
+    "CRMD_010.v1.json",
+    "CRMD_011.v1.json",
+    "CRMD_012.v1.json",
+    "CRMD_013.v1.json",
+    "CRMD_014.v1.json",
+    "CRMD_015.v1.json",
+    "CRMD_016.v1.json",
+    "CRMD_017.v1.json",
+    "CRMD_018.v1.json"
+  ]
+}

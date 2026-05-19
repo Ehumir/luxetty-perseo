@@ -1,0 +1,21 @@
+{
+  "suite": "runtime-safety-p0",
+  "description": "M4-03 — runtime-safety-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "SAF_001.v1.json",
+    "SAF_002.v1.json",
+    "SAF_003.v1.json",
+    "SAF_004.v1.json",
+    "SAF_005.v1.json",
+    "SAF_006.v1.json",
+    "SAF_007.v1.json",
+    "SAF_008.v1.json",
+    "SAF_009.v1.json",
+    "SAF_010.v1.json",
+    "SAF_011.v1.json",
+    "SAF_012.v1.json"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "suite": "replay-regression-p0",
+  "description": "M4-03 — replay-regression-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "RPR_001.v1.json",
+    "RPR_002.v1.json",
+    "RPR_003.v1.json",
+    "RPR_004.v1.json",
+    "RPR_005.v1.json",
+    "RPR_006.v1.json",
+    "RPR_007.v1.json",
+    "RPR_008.v1.json",
+    "RPR_009.v1.json",
+    "RPR_010.v1.json",
+    "RPR_011.v1.json",
+    "RPR_012.v1.json"
+  ]
+}

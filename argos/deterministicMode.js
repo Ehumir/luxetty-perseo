@@ -41,6 +41,13 @@ function applyArgosSimulationEnv(flags = {}) {
     policyRuntime: process.env.PERSEO_POLICY_RUNTIME_ENABLED,
     crmWorkerAsync: process.env.PERSEO_CRM_WORKER_ASYNC_ENABLED,
     mediaFailOpen: process.env.PERSEO_MEDIA_RUNTIME_FAIL_OPEN_ENABLED,
+    runtimeObservability: process.env.PERSEO_RUNTIME_OBSERVABILITY_ENABLED,
+    crmDurability: process.env.PERSEO_CRM_DURABILITY_ENABLED,
+    crmReconciliation: process.env.PERSEO_CRM_RECONCILIATION_ENABLED,
+    crmReplay: process.env.PERSEO_CRM_REPLAY_ENABLED,
+    mediaHardening: process.env.PERSEO_MEDIA_HARDENING_ENABLED,
+    runtimeSafety: process.env.PERSEO_RUNTIME_SAFETY_ENABLED,
+    replayEngine: process.env.PERSEO_REPLAY_ENGINE_ENABLED,
   };
   const handoffOn = flags.v3_handoff_enabled !== false;
   process.env.PERSEO_V3_HANDOFF_ENABLED = handoffOn ? 'true' : 'false';
@@ -72,6 +79,13 @@ function applyArgosSimulationEnv(flags = {}) {
   setTriFlag('PERSEO_POLICY_RUNTIME_ENABLED', flags.policy_runtime);
   setTriFlag('PERSEO_CRM_WORKER_ASYNC_ENABLED', flags.crm_worker_async);
   setTriFlag('PERSEO_MEDIA_RUNTIME_FAIL_OPEN_ENABLED', flags.media_runtime_fail_open);
+  setTriFlag('PERSEO_RUNTIME_OBSERVABILITY_ENABLED', flags.runtime_observability);
+  setTriFlag('PERSEO_CRM_DURABILITY_ENABLED', flags.crm_durability);
+  setTriFlag('PERSEO_CRM_RECONCILIATION_ENABLED', flags.crm_reconciliation);
+  setTriFlag('PERSEO_CRM_REPLAY_ENABLED', flags.crm_replay);
+  setTriFlag('PERSEO_MEDIA_HARDENING_ENABLED', flags.media_hardening);
+  setTriFlag('PERSEO_RUNTIME_SAFETY_ENABLED', flags.runtime_safety);
+  setTriFlag('PERSEO_REPLAY_ENGINE_ENABLED', flags.replay_engine);
 
   return {
     handoffEnabled: handoffOn,
@@ -103,6 +117,13 @@ function applyArgosSimulationEnv(flags = {}) {
       restoreTri('PERSEO_POLICY_RUNTIME_ENABLED', prev.policyRuntime);
       restoreTri('PERSEO_CRM_WORKER_ASYNC_ENABLED', prev.crmWorkerAsync);
       restoreTri('PERSEO_MEDIA_RUNTIME_FAIL_OPEN_ENABLED', prev.mediaFailOpen);
+      restoreTri('PERSEO_RUNTIME_OBSERVABILITY_ENABLED', prev.runtimeObservability);
+      restoreTri('PERSEO_CRM_DURABILITY_ENABLED', prev.crmDurability);
+      restoreTri('PERSEO_CRM_RECONCILIATION_ENABLED', prev.crmReconciliation);
+      restoreTri('PERSEO_CRM_REPLAY_ENABLED', prev.crmReplay);
+      restoreTri('PERSEO_MEDIA_HARDENING_ENABLED', prev.mediaHardening);
+      restoreTri('PERSEO_RUNTIME_SAFETY_ENABLED', prev.runtimeSafety);
+      restoreTri('PERSEO_REPLAY_ENGINE_ENABLED', prev.replayEngine);
     },
   };
 }

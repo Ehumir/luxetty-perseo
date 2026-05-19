@@ -1,0 +1,15 @@
+{
+  "pack_id": "RPACK_001",
+  "title": "Demand baseline replay",
+  "phone_sim": "+5200000000001",
+  "flags": {
+    "runtime_observability": true,
+    "crm_runtime_persistent": true,
+    "crm_dry_run": true
+  },
+  "turns": [
+    { "text": "Hola", "expected": { "conversation_stage": "UNDERSTANDING" } },
+    { "text": "Busco comprar en Cumbres", "expected": {} },
+    { "text": "Jorge", "expected": { "known_name": "Jorge" } }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "suite": "crm-concurrency-p0",
+  "description": "M4-03 — crm-concurrency-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "CRMC_001.v1.json",
+    "CRMC_002.v1.json",
+    "CRMC_003.v1.json",
+    "CRMC_004.v1.json",
+    "CRMC_005.v1.json",
+    "CRMC_006.v1.json",
+    "CRMC_007.v1.json",
+    "CRMC_008.v1.json",
+    "CRMC_009.v1.json",
+    "CRMC_010.v1.json",
+    "CRMC_011.v1.json",
+    "CRMC_012.v1.json"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "suite": "replay-p0",
+  "description": "M4-03 — replay-p0",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "scenarios": [
+    "RPL_001.v1.json",
+    "RPL_002.v1.json",
+    "RPL_003.v1.json",
+    "RPL_004.v1.json",
+    "RPL_005.v1.json",
+    "RPL_006.v1.json",
+    "RPL_007.v1.json",
+    "RPL_008.v1.json",
+    "RPL_009.v1.json",
+    "RPL_010.v1.json",
+    "RPL_011.v1.json",
+    "RPL_012.v1.json"
+  ]
+}

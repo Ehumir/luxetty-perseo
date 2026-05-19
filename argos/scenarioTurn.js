@@ -39,6 +39,10 @@ function normalizeScenarioTurn(raw) {
     if (raw.media_timeout === true) media.media_timeout = true;
     if (raw.fail_open_applied === true) media.fail_open_applied = true;
     if (raw.no_transcript === true) media.no_transcript = true;
+    if (raw.corrupt_audio === true) media.corrupt_audio = true;
+    if (raw.byte_size != null) media.byte_size = Number(raw.byte_size);
+    if (raw.mime_type) media.mime_type = raw.mime_type;
+    if (raw.malformed === true) media.malformed = true;
     return { text: cleanSpaces(raw.text || raw.caption || ''), media };
   }
 

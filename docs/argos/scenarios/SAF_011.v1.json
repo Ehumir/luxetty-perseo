@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "scenario_version": 1,
+  "priority": "P0",
+  "scenario_code": "SAF_011",
+  "family": "runtime_safety",
+  "category": "runtime_safety",
+  "title": "Runtime safety 11",
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "media_intake_v1": true,
+    "policy_engine": true,
+    "message_planner": true,
+    "media_real_v1": true,
+    "resilience_v1": true,
+    "humanity_wave2": true,
+    "wa_hardening_v2": true,
+    "crm_execute_foundation": true,
+    "crm_runtime_persistent": true,
+    "wa_telemetry": true,
+    "runtime_safety": true,
+    "runtime_observability": true
+  },
+  "messages": [
+    "Hola",
+    "Hola",
+    "Hola",
+    "Hola",
+    "Hola"
+  ],
+  "expected": {
+    "runtime_observability_recorded": true
+  },
+  "must_not": {
+    "write_leads": true,
+    "write_contacts": true
+  }
+}
