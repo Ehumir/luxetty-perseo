@@ -3,6 +3,7 @@
 const { normalizeText } = require('../utils/text');
 const { isGlobalIntentMenu, replySignature } = require('../conversation/v3/composer/openingVariantPicker');
 const { FORBIDDEN_COMPOSER_PATTERNS } = require('../conversation/v3/types/constants');
+const { isLegacySearchReopenReply } = require('../conversation/v3/runtime/closureIntegrity');
 
 const DEFAULT_ALLOWED_URL_HOSTS = [
   'luxetty.com',
@@ -521,6 +522,56 @@ function validateMustNotReply(input) {
     }
   }
 
+  if (must_not.no_ask_before_close || must_not.no_more_help_before_close) {
+    const lower = normalizeText(reply);
+    if (/hay algo mas en lo que te pueda ayudar antes de cerrar/i.test(lower)) {
+      violations.push({
+        constraint: 'must_not.no_ask_before_close',
+        detail: 'Asked for more help after terminal close ack',
+        severity: 'critical',
+      });
+    }
+  }
+
+  if (must_not.no_search_reopen) {
+    if (isLegacySearchReopenReply(reply)) {
+      violations.push({
+        constraint: 'must_not.no_search_reopen',
+        detail: 'Legacy search reopen copy after post-handoff close',
+        severity: 'critical',
+      });
+    }
+  }
+
+  if (must_not.terminal_close_message && facts.userTerminalAck === true) {
+    const lower = normalizeText(reply);
+    if (
+      !/gracias por contactarnos/i.test(lower) ||
+      !/asesor de luxetty continua/i.test(lower) ||
+      !/excelente dia/i.test(lower)
+    ) {
+      violations.push({
+        constraint: 'must_not.terminal_close_message',
+        detail: 'Missing canonical terminal ack close copy',
+        severity: 'high',
+      });
+    }
+  }
+
+  if (must_not.commercial_after_terminal_close && facts.terminalAckClose === true) {
+    const lower = normalizeText(reply);
+    if (
+      /\b(busco|quiero|necesito|comprar|rentar|presupuesto|recamaras)\b/i.test(lower) &&
+      /\?/.test(reply)
+    ) {
+      violations.push({
+        constraint: 'must_not.commercial_after_terminal_close',
+        detail: 'Commercial qualification after terminal ack close',
+        severity: 'critical',
+      });
+    }
+  }
+
   if (must_not.media_no_fallback) {
     const modesNeedingFallback = new Set([
       'audio_no_transcript',
@@ -540,30 +591,6 @@ function validateMustNotReply(input) {
           severity: 'critical',
         });
       }
-    }
-  }
-
-  if (must_not.no_search_reopen) {
-    const { isLegacySearchReopenReply } = require('../conversation/v3/runtime/closureIntegrity');
-    if (isLegacySearchReopenReply(reply)) {
-      violations.push({
-        constraint: 'must_not.no_search_reopen',
-        detail: 'Post-handoff search/qualification flow reopened',
-        severity: 'critical',
-      });
-    }
-    const lower = normalizeText(reply);
-    if (
-      facts.closureActive === true &&
-      /\b(seguimos con tu b[uú]squeda|afinar\s+(?:rec[aá]maras|presupuesto|zona)|me confirmas tu presupuesto)\b/i.test(
-        lower,
-      )
-    ) {
-      violations.push({
-        constraint: 'must_not.no_search_reopen',
-        detail: 'Commercial search prompt after conversational closure',
-        severity: 'critical',
-      });
     }
   }
 

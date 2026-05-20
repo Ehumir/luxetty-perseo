@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 const {
   shouldExplicitlyReopenConversation,
   shouldTreatAsPostCloseAck,
+  isTerminalAckClose,
+  composeTerminalAckCloseReply,
 } = require('../conversation/conversationReopenPolicy');
 
 describe('conversationReopenPolicy', () => {
@@ -20,5 +22,15 @@ describe('conversationReopenPolicy', () => {
     assert.equal(shouldExplicitlyReopenConversation('ok', softClosed), false);
     assert.equal(shouldExplicitlyReopenConversation('👍', softClosed), false);
     assert.equal(shouldTreatAsPostCloseAck('perfecto'), true);
+  });
+
+  it('detects terminal ack close phrases', () => {
+    assert.equal(isTerminalAckClose('No, es todo gracias.'), true);
+    assert.equal(isTerminalAckClose('nada más'), true);
+    assert.equal(isTerminalAckClose('listo gracias'), true);
+    const msg = composeTerminalAckCloseReply({ collectedFields: { fullName: 'Jorge' } });
+    assert.match(msg, /Gracias por contactarnos/);
+    assert.match(msg, /asesor de Luxetty continuará/i);
+    assert.match(msg, /excelente día/i);
   });
 });

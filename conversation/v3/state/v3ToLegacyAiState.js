@@ -90,7 +90,9 @@ function mapV3StateToLegacyAiState(v3State) {
     property_history: Array.isArray(v3State.propertyHistory) ? v3State.propertyHistory : [],
     handoff_completed_at: v3State.handoffCompletedAt ?? null,
     handoff_waiting_final_confirmation: v3State.handoffWaitingFinalConfirmation === true,
+    soft_close_pending: v3State.softClosePending === true,
     conversation_soft_closed: v3State.conversationSoftClosed === true,
+    terminal_ack_close: v3State.terminalAckClose === true,
     last_handoff_prompt_at: v3State.lastHandoffPromptAt ?? null,
     explicit_reopen: v3State.explicitReopen === true,
   };

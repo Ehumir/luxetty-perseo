@@ -75,8 +75,11 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
     handoff_waiting_final_confirmation:
       v3State?.handoffWaitingFinalConfirmation === true ||
       legacy.handoff_waiting_final_confirmation === true,
+    soft_close_pending:
+      v3State?.softClosePending === true || legacy.soft_close_pending === true,
     conversation_soft_closed:
       v3State?.conversationSoftClosed === true || legacy.conversation_soft_closed === true,
+    terminal_ack_close: v3State?.terminalAckClose === true || legacy.terminal_ack_close === true,
     handoff_completed_at: v3State?.handoffCompletedAt || legacy.handoff_completed_at || null,
     explicit_reopen: v3State?.explicitReopen === true || legacy.explicit_reopen === true,
   };
