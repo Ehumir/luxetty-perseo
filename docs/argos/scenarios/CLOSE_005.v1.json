@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "CLOSE_005",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "closure",
+  "category": "offer_handoff_closure",
+  "title": "Oferta — handoff y cierre correcto",
+  "description": "Flujo oferta con consentimiento; mensaje de cierre con algo más.",
+  "messages": [
+    "Hola",
+    "Quiero vender mi casa",
+    "Está en Cumbres",
+    "Creo que vale como 8 millones",
+    "Tiene 3 recámaras",
+    "Me llamo Jorge",
+    "Sí, puede contactarme un asesor"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "lead_flow": "offer",
+    "known_name": "Jorge",
+    "advisor_contact_consent": "ACCEPTED",
+    "handoff_waiting_final_confirmation": true
+  },
+  "must_not": {
+    "no_search_reopen": true,
+    "offer_to_demand": true,
+    "slot_reask_when_filled": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-20", "change": "M4-04D CLOSE_005." }]
+}

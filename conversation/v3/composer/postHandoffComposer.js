@@ -58,6 +58,18 @@ function composeHandoffPendingContinuity(state) {
  * @param {string} text
  */
 function tryComposePostHandoffTurn(state, text) {
+  if (state.handoffWaitingFinalConfirmation || state.conversationSoftClosed) {
+    const { tryResolveClosureIntegrityTurn } = require('../runtime/closureIntegrity');
+    const closure = tryResolveClosureIntegrityTurn({ state, text });
+    if (closure?.handled) {
+      return {
+        responseText: closure.reply,
+        followUpQuestion: null,
+        awaitingField: null,
+        toneFlags: { consultive: true, closureIntegrity: true },
+      };
+    }
+  }
   if (isPostHandoffTerminalState(state) && isShortPostCloseAck(text)) {
     return composePostHandoffAck(state);
   }

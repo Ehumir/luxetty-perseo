@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "CLOSE_006",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "closure",
+  "category": "no_double_outbound_consent",
+  "title": "Sin doble outbound tras consentimiento",
+  "description": "Turno de consentimiento: una sola respuesta de cierre, sin repetir frase previa.",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres",
+    "5 millones",
+    "Jorge",
+    "Sí, me parece bien"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "advisor_contact_consent": "ACCEPTED",
+    "handoff_waiting_final_confirmation": true
+  },
+  "must_not": {
+    "repeated_phrase": true,
+    "no_search_reopen": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-20", "change": "M4-04D CLOSE_006." }]
+}

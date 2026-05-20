@@ -543,6 +543,30 @@ function validateMustNotReply(input) {
     }
   }
 
+  if (must_not.no_search_reopen) {
+    const { isLegacySearchReopenReply } = require('../conversation/v3/runtime/closureIntegrity');
+    if (isLegacySearchReopenReply(reply)) {
+      violations.push({
+        constraint: 'must_not.no_search_reopen',
+        detail: 'Post-handoff search/qualification flow reopened',
+        severity: 'critical',
+      });
+    }
+    const lower = normalizeText(reply);
+    if (
+      facts.closureActive === true &&
+      /\b(seguimos con tu b[uú]squeda|afinar\s+(?:rec[aá]maras|presupuesto|zona)|me confirmas tu presupuesto)\b/i.test(
+        lower,
+      )
+    ) {
+      violations.push({
+        constraint: 'must_not.no_search_reopen',
+        detail: 'Commercial search prompt after conversational closure',
+        severity: 'critical',
+      });
+    }
+  }
+
   return violations;
 }
 

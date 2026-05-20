@@ -88,6 +88,11 @@ function mapV3StateToLegacyAiState(v3State) {
     interested_property_id:
       v3State.activeProperty && v3State.activeProperty.id != null ? String(v3State.activeProperty.id) : null,
     property_history: Array.isArray(v3State.propertyHistory) ? v3State.propertyHistory : [],
+    handoff_completed_at: v3State.handoffCompletedAt ?? null,
+    handoff_waiting_final_confirmation: v3State.handoffWaitingFinalConfirmation === true,
+    conversation_soft_closed: v3State.conversationSoftClosed === true,
+    last_handoff_prompt_at: v3State.lastHandoffPromptAt ?? null,
+    explicit_reopen: v3State.explicitReopen === true,
   };
 }
 

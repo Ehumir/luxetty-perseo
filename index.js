@@ -968,23 +968,31 @@ app.post('/webhook', async (req, res) => {
         if (v3Try.v3State) {
           let v3StateForCrm = v3Try.v3State;
           let crmOut = null;
-          if (skipLegacyCrm) {
-            crmOut = await executeV3CrmIfEligible({
-              v3State: v3Try.v3State,
-              phone: from,
-              rawPhone: rawFrom,
-              conversationRow,
-              supabase,
-              property,
-              propertyId,
-              waProfileName,
-              rawPayload: req.body || null,
-              logEvent,
-              ensureContactForConversation: ensureContactForConversationCore,
-              createOrReuseLeadFromConversation,
-              saveConversationEvent,
-              updateConversationMeta,
-            });
+          const { isClosureGateActive } = require('./conversation/v3/runtime/closureIntegrity');
+          const { runWithTimeout } = require('./utils/runWithTimeout');
+          const closureGateActive = isClosureGateActive(v3Try.v3State);
+          if (skipLegacyCrm && !closureGateActive) {
+            crmOut = await runWithTimeout(
+              () =>
+                executeV3CrmIfEligible({
+                  v3State: v3Try.v3State,
+                  phone: from,
+                  rawPhone: rawFrom,
+                  conversationRow,
+                  supabase,
+                  property,
+                  propertyId,
+                  waProfileName,
+                  rawPayload: req.body || null,
+                  logEvent,
+                  ensureContactForConversation: ensureContactForConversationCore,
+                  createOrReuseLeadFromConversation,
+                  saveConversationEvent,
+                  updateConversationMeta,
+                }),
+              Number(process.env.PERSEO_CLOSURE_CRM_TIMEOUT_MS || 2500),
+              null,
+            );
             if (crmOut?.v3State) {
               v3StateForCrm = crmOut.v3State;
               setSession(conversationId, v3StateForCrm);
@@ -1010,6 +1018,45 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (!v3PrimaryHandled) {
+      const {
+        resolveLegacyClosureTurn,
+        shouldBlockLegacyCommercialReply,
+        tryResolveLegacyConsentClosure,
+      } = require('./conversation/v3/runtime/closureIntegrity');
+      const legacyConsentClosure = tryResolveLegacyConsentClosure({
+        text,
+        previousAiState,
+        nextAiState,
+      });
+      if (legacyConsentClosure?.handled) {
+        reply = legacyConsentClosure.reply;
+        Object.assign(nextAiState, legacyConsentClosure.statePatch || {});
+        responseSource = legacyConsentClosure.responseSource || 'closure_integrity_legacy_consent';
+        nameFirstHandled = true;
+        logEvent('closure_integrity_legacy_consent', { conversation_id: conversationId });
+      }
+      if (
+        !nameFirstHandled &&
+        (shouldBlockLegacyCommercialReply(previousAiState) ||
+          shouldBlockLegacyCommercialReply(nextAiState))
+      ) {
+        const legacyClosure = resolveLegacyClosureTurn({
+          text,
+          previousAiState,
+          nextAiState,
+          conversationId,
+          saveConversationEvent,
+        });
+        if (legacyClosure?.handled) {
+          reply = legacyClosure.reply;
+          Object.assign(nextAiState, legacyClosure.statePatch || {});
+          responseSource = legacyClosure.responseSource || 'closure_integrity_legacy';
+          nameFirstHandled = true;
+          logEvent('closure_integrity_legacy', { conversation_id: conversationId });
+        }
+      }
+
+      if (!nameFirstHandled) {
       const guard = nameFirstGuardrail.evaluateInboundTurn({
         text,
         previousAiState,
@@ -1058,7 +1105,7 @@ app.post('/webhook', async (req, res) => {
         logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
       }
 
-      if (!nameFirstHandled && !engineV2) {
+      if (!nameFirstHandled && !engineV2 && !shouldBlockLegacyCommercialReply(nextAiState)) {
         reply = buildConsultiveFallbackReply({
           text,
           signals: parsedSignals,
@@ -1180,6 +1227,7 @@ app.post('/webhook', async (req, res) => {
         });
       } catch (v3ShadowErr) {
         console.error('v3_shadow_fatal', v3ShadowErr);
+      }
       }
       }
 
