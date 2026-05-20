@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "FLEX_019",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "flexibility",
+  "category": "occupancy",
+  "title": "Ocupación la tengo rentada",
+  "description": "M4-05a conversational flex quick win.",
+  "messages": [
+    "Hola",
+    "Quiero vender mi casa",
+    "Cumbres",
+    "la tengo rentada",
+    "Jorge",
+    "8 millones",
+    "arre"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "conversational_flex": true
+  },
+  "expected": {
+    "lead_flow": "offer",
+    "operation_type": "sale",
+    "known_zone": "Cumbres",
+    "known_name": "Jorge",
+    "advisor_contact_consent": "ACCEPTED"
+  },
+  "must_not": {
+    "flow_restart": true,
+    "slot_reask_when_filled": true,
+    "robotic_response": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-05-20",
+      "change": "M4-05a FLEX quick win."
+    }
+  ]
+}

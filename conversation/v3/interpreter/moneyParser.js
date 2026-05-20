@@ -1,12 +1,23 @@
 'use strict';
 
 const { normalizeText } = require('../../../utils/text');
+const { isConversationalFlexEnabled } = require('../../../config/perseoM405Flags');
+const { parseFlexMoneyAmount } = require('../../flexibility/slangLexicon');
+const { recordFlexApplied } = require('../../flexibility/flexTelemetry');
 
 /**
  * @param {string} text
  * @returns {number|null}
  */
 function parseMoneyAmount(text) {
+  if (isConversationalFlexEnabled()) {
+    const flex = parseFlexMoneyAmount(text);
+    if (flex?.amount != null) {
+      recordFlexApplied('money', { confidence: flex.confidence });
+      return flex.amount;
+    }
+  }
+
   const t = normalizeText(text);
   const below = t.match(
     /(?:por\s+)?(?:debajo|menos)\s+de\s+(\d+(?:[.,]\d+)?)\s*(millones|millon|millón|m\b|mdp)?/

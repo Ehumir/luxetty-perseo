@@ -28,6 +28,9 @@ const { extractAffirmationName } = require('./identityNameParser');
 const { isOfferValuationUnknownRequest, isSellValuationLeadIntent } = require('./offerValuationSignals');
 const { classifyPropertyInquiryTurn } = require('./propertyInquiryQaClassifier');
 const { parsePaymentMethod } = require('./paymentMethodParser');
+const { isConversationalFlexEnabled } = require('../../../config/perseoM405Flags');
+const { isFlexShortAck } = require('../../flexibility/shortReplyLexicon');
+const { recordFlexApplied } = require('../../flexibility/flexTelemetry');
 const { isSocialRapportMessage } = require('../composer/openingVariantPicker');
 const { tryParseDemandRefinement } = require('./demandRefinement');
 const { isSoftTopicDismissal, isBudgetDismissalOnly, parseTopicPivot } = require('./topicPivotSignals');
@@ -132,6 +135,10 @@ function sellOfferPriceSatisfied(state) {
 }
 
 function isShortAck(text) {
+  if (isConversationalFlexEnabled() && isFlexShortAck(text)) {
+    recordFlexApplied('short_ack');
+    return true;
+  }
   const t = normalizeText(text);
   return (
     t === 'si' ||
