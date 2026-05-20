@@ -948,13 +948,14 @@ app.post('/webhook', async (req, res) => {
         }
       }
 
-      const v3Try = v3InboundBridge.tryV3PrimaryReply({
+      const v3Try = await v3InboundBridge.tryV3PrimaryReply({
         conversationId,
         phone: from,
         rawPhone: rawFrom,
         text,
         media: v3Media,
         logEvent,
+        saveConversationEvent,
         campaignHeadline,
         legacyHydration,
         supabase,

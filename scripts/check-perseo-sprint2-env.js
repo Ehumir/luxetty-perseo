@@ -10,8 +10,18 @@
 
 require('dotenv').config();
 
+const os = require('os');
 const { getPerseoEngineRuntime } = require('../config/perseoEngine');
-const { getPerseoV3Config, shouldRouteInboundToV3Core } = require('../config/perseoV3Flags');
+const {
+  getPerseoV3Config,
+  evaluateV3PrimaryGate,
+} = require('../config/perseoV3Flags');
+const { buildDeploymentHint } = require('../conversation/v3/core/v3GateTelemetry');
+
+const probePhone =
+  process.argv[2] ||
+  process.env.PERSEO_V3_PROBE_PHONE ||
+  '5218181877351';
 
 const url = String(process.env.SUPABASE_URL || '').trim();
 let projectRef = null;
@@ -31,6 +41,7 @@ const v3EnabledRaw = process.env.PERSEO_V3_ENABLED;
 const v3ShadowRaw = process.env.PERSEO_V3_SHADOW_MODE;
 const engineRt = getPerseoEngineRuntime();
 const v3Cfg = getPerseoV3Config();
+const gateProbe = evaluateV3PrimaryGate({ phone: probePhone });
 
 const out = {
   PERSEO_POLICY_V2_ENABLED_raw: v2Raw === undefined || v2Raw === '' ? '(unset)' : v2Raw,
@@ -49,7 +60,13 @@ const out = {
   perseo_v3_enabled: v3Cfg.enabled,
   perseo_v3_shadow_mode: v3Cfg.shadowMode,
   perseo_v3_qa_allowlist_count: v3Cfg.qaAllowlist.length,
-  perseo_v3_inbound_route_would_activate: shouldRouteInboundToV3Core(),
+  probe_phone: probePhone,
+  perseo_v3_inbound_route_would_activate: gateProbe.v3_primary_allowed === true,
+  perseo_v3_gate_block_reason: gateProbe.v3_primary_block_reason,
+  perseo_v3_allowlist_match: gateProbe.allowlist_match === true,
+  deployment_hint: buildDeploymentHint(),
+  hostname: os.hostname(),
+  railway_service: process.env.RAILWAY_SERVICE_NAME || process.env.RAILWAY_SERVICE_ID || null,
   SUPABASE_URL_set: Boolean(url),
   supabase_project_ref_from_url: projectRef || '(no se pudo derivar; revisa formato https://<ref>.supabase.co)',
   SUPABASE_SERVICE_ROLE_KEY_set: Boolean(key && String(key).length > 20),

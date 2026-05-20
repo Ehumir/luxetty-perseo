@@ -15,6 +15,7 @@
     "corpus-validate": "node scripts/corpus-validate.js",
     "validate:graph-outbound": "node scripts/validate-graph-outbound.js",
     "check:sprint2-env": "node scripts/check-perseo-sprint2-env.js",
+    "staging:query-v3-gate": "node scripts/staging-query-v3-gate.js",
     "gate:no-regression": "bash scripts/gate-no-regression.sh",
     "smoke:referral-persist": "node scripts/smoke-referral-persist.js",
     "staging:verify-db": "node scripts/staging-verify-db.js",
