@@ -35,23 +35,33 @@ async function main() {
   const health = buildRuntimeHealthSnapshot();
 
   let dbInsert = { skipped: true, reason: 'dry-run or not confirmed' };
+  let dbRead = { skipped: true };
   if (process.env.PERSEO_STAGING_CONFIRMED === 'true' && !args.dryRun) {
     const row = {
-      conversation_id: '00000000-0000-0000-0000-staging00000001',
+      conversation_id: '00000000-0000-0000-0000-000000000099',
       channel: 'staging_smoke',
       fallback_reason: 'staging_telemetry_smoke',
-      metadata: { smoke: true },
+      metadata: { smoke: true, at: new Date().toISOString() },
     };
     const { data, error } = await supabase.from('wa_operational_telemetry').insert(row).select('id').maybeSingle();
     dbInsert = error ? { ok: false, error: error.message } : { ok: true, id: data?.id };
 
     if (data?.id) {
+      const { data: readBack, error: readErr } = await supabase
+        .from('wa_operational_telemetry')
+        .select('id, channel, fallback_reason')
+        .eq('id', data.id)
+        .maybeSingle();
+      dbRead = readErr
+        ? { ok: false, error: readErr.message }
+        : { ok: !!readBack, channel: readBack?.channel };
       await supabase.from('wa_operational_telemetry').delete().eq('id', data.id);
     }
   }
 
+  const dbOk = dbInsert.ok !== false && dbRead.ok !== false;
   const result = {
-    ok: mem.recorded === true && health.enabled !== false,
+    ok: mem.recorded === true && health.enabled !== false && dbOk,
     details: {
       host: maskUrl(SUPABASE_URL),
       staging_guard: safe,
@@ -59,6 +69,7 @@ async function main() {
       memory_rows: getMemoryTelemetry().length,
       runtime_health: health,
       db_insert: dbInsert,
+      db_read: dbRead,
     },
   };
 

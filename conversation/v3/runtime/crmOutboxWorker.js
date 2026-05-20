@@ -185,13 +185,16 @@ async function runCrmOutboxWorkerBatch(options = {}) {
   const workerMs = Date.now() - workerStart;
   recordMetric('worker_latency', { ms: workerMs });
   const starvation = checkWorkerStarvation(processed, jobs.length, batchSize);
-  recordWorkerHeartbeat({
-    worker_id: ctx.workerId,
-    claimed: jobs.length,
-    processed,
-    latency_ms: workerMs,
-    starved: starvation.starved,
-  });
+  await recordWorkerHeartbeat(
+    {
+      worker_id: ctx.workerId,
+      claimed: jobs.length,
+      processed,
+      latency_ms: workerMs,
+      starved: starvation.starved,
+    },
+    { supabase: ctx.supabase },
+  );
 
   v3Log('crm_worker_batch', {
     worker_id: ctx.workerId,

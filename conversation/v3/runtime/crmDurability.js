@@ -129,9 +129,36 @@ async function reconcileCrmOutbox(store, ctx = {}) {
   return { ...report, skipped: true, reason: 'no_store_data' };
 }
 
-function recordWorkerHeartbeat(payload) {
+async function persistWorkerHeartbeatToDb(supabase, payload) {
+  if (!supabase?.from || !payload?.worker_id) return { persisted: false, reason: 'no_client' };
+  try {
+    const { error } = await supabase.from('crm_worker_heartbeats').upsert({
+      worker_id: String(payload.worker_id),
+      last_seen_at: new Date().toISOString(),
+      metadata: {
+        claimed: payload.claimed ?? null,
+        processed: payload.processed ?? null,
+        latency_ms: payload.latency_ms ?? null,
+        starved: payload.starved ?? null,
+      },
+    });
+    if (error) {
+      v3Log('crm_worker_heartbeat_db_failed', { error: error.message });
+      return { persisted: false, error: error.message };
+    }
+    return { persisted: true };
+  } catch (err) {
+    return { persisted: false, error: String(err?.message || err) };
+  }
+}
+
+async function recordWorkerHeartbeat(payload, ctx = {}) {
   recordMetric('worker_heartbeat', payload);
   v3Log('crm_worker_heartbeat', payload);
+  if (ctx.supabase) {
+    return persistWorkerHeartbeatToDb(ctx.supabase, payload);
+  }
+  return { persisted: false, reason: 'no_supabase' };
 }
 
 function buildDlqExportSnapshot(store) {
@@ -150,5 +177,6 @@ module.exports = {
   recoverStuckJobs,
   reconcileCrmOutbox,
   recordWorkerHeartbeat,
+  persistWorkerHeartbeatToDb,
   buildDlqExportSnapshot,
 };
