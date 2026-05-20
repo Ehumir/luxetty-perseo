@@ -11,6 +11,23 @@ const { runV3ShadowPass } = require('./shadowRuntime');
 const { clearSession } = require('./sessionStore');
 const { parseSprint1StrictCommand } = require('../../qaSprint1Commands');
 const { v3Log } = require('./v3Logger');
+const { persistV3PrimaryGateEvent } = require('./v3GateTelemetry');
+
+/**
+ * @param {object} input
+ * @param {ReturnType<typeof evaluateV3PrimaryGate>} gate
+ * @param {object} result
+ */
+async function finishV3PrimaryAttempt(input, gate, result) {
+  await persistV3PrimaryGateEvent(input, gate, result.handled === true, {
+    blockReason: result.blockReason ?? null,
+    responseSource: result.responseSource ?? null,
+    forcedHandoffReason: result.forcedHandoffReason ?? null,
+    fallback: result.fallback === true,
+    reason: result.reason ?? null,
+  });
+  return result;
+}
 
 /**
  * @param {{
@@ -19,12 +36,16 @@ const { v3Log } = require('./v3Logger');
  *   rawPhone?: string,
  *   text: string,
  *   logEvent?: Function,
+ *   saveConversationEvent?: Function,
+ *   supabase?: object|null,
  *   campaignHeadline?: string|null,
  *   legacyHydration?: object|null,
  *   media?: object|null,
+ *   argosMode?: boolean,
+ *   argosDeterministic?: boolean,
  * }} input
  */
-function tryV3PrimaryReply(input) {
+async function tryV3PrimaryReply(input) {
   const gate = evaluateV3PrimaryGate({
     phone: input.phone,
     rawPhone: input.rawPhone,
@@ -40,20 +61,13 @@ function tryV3PrimaryReply(input) {
     allowlist_matched_entry: gate.allowlist_matched_entry || null,
   });
 
-  if (typeof input.logEvent === 'function') {
-    input.logEvent('v3_primary_gate', {
-      conversation_id: input.conversationId,
-      ...gate,
-    });
-  }
-
   if (!gate.v3_primary_allowed || gate.route !== 'v3_primary') {
-    return {
+    return finishV3PrimaryAttempt(input, gate, {
       handled: false,
       route: gate.route,
       gate,
       blockReason: gate.v3_primary_block_reason,
-    };
+    });
   }
 
   const cmd = parseSprint1StrictCommand(input.text);
@@ -82,7 +96,7 @@ function tryV3PrimaryReply(input) {
         reason: 'rule_guard_violation',
         legacyHydration: input.legacyHydration ?? null,
       });
-      return {
+      return finishV3PrimaryAttempt(input, gate, {
         handled: true,
         route: 'v3_primary',
         gate,
@@ -91,7 +105,7 @@ function tryV3PrimaryReply(input) {
         v3State: forced.state,
         skipLegacyCrm: true,
         forcedHandoffReason: 'rule_guard_violation',
-      };
+      });
     }
     if (!result.ok || !result.reply) {
       const forced = buildForcedHandoffFromSession({
@@ -100,7 +114,7 @@ function tryV3PrimaryReply(input) {
         reason: result.forcedHandoffReason || 'runtime_error',
         legacyHydration: input.legacyHydration ?? null,
       });
-      return {
+      return finishV3PrimaryAttempt(input, gate, {
         handled: true,
         route: 'v3_primary',
         gate,
@@ -109,9 +123,9 @@ function tryV3PrimaryReply(input) {
         v3State: forced.state,
         skipLegacyCrm: true,
         forcedHandoffReason: result.forcedHandoffReason || 'runtime_error',
-      };
+      });
     }
-    return {
+    return finishV3PrimaryAttempt(input, gate, {
       handled: true,
       route: 'v3_primary',
       gate,
@@ -123,7 +137,7 @@ function tryV3PrimaryReply(input) {
       policyCrossLayer: result.policyCrossLayer || null,
       mediaIntake: result.mediaIntake || null,
       skipLegacyCrm: true,
-    };
+    });
   } catch (err) {
     console.error('v3_primary_fatal', err);
     try {
@@ -133,7 +147,7 @@ function tryV3PrimaryReply(input) {
         reason: 'runtime_error',
         legacyHydration: input.legacyHydration ?? null,
       });
-      return {
+      return finishV3PrimaryAttempt(input, gate, {
         handled: true,
         route: 'v3_primary',
         gate,
@@ -142,17 +156,17 @@ function tryV3PrimaryReply(input) {
         v3State: forced.state,
         skipLegacyCrm: true,
         forcedHandoffReason: 'runtime_error',
-      };
+      });
     } catch (forcedErr) {
       console.error('v3_forced_handoff_fatal', forcedErr);
-      return {
+      return finishV3PrimaryAttempt(input, gate, {
         handled: false,
         route: 'v3_primary',
         gate,
         fallback: true,
         reason: 'exception',
         blockReason: 'v3_turn_exception',
-      };
+      });
     }
   }
 }

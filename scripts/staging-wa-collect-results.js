@@ -15,10 +15,12 @@ const { validateAllowlist, normalizeMxWa } = require('./staging/stagingAllowlist
 const { evaluateWaSmoke } = require('./staging/stagingWaCriteria');
 const { parseArgs, assertStagingSafe, printResult, exitCode } = require('./staging/stagingLib');
 
-const RUN_MD = path.join(
-  __dirname,
-  '../docs/argos/whatsapp-smoke/m4-02/runs/M4-04-STAGING-20260520.md',
-);
+const RUNS_DIR = path.join(__dirname, '../docs/argos/whatsapp-smoke/m4-02/runs');
+const RUN_MD = path.join(RUNS_DIR, 'M4-04-STAGING-20260520.md');
+
+function evidenceJsonPath(tierKey) {
+  return path.join(RUNS_DIR, tierKey === 'b1' ? 'M4-04-B1-evidence.json' : 'M4-04-B2-evidence.json');
+}
 
 async function fetchPilotEvidence(phoneNorm, sinceIso) {
   const { data: contacts } = await supabase
@@ -158,8 +160,34 @@ async function main() {
 
   const evaluation = evaluateWaSmoke(pilots, tierKey);
 
+  const evidencePayload = {
+    collected_at: new Date().toISOString(),
+    tier: tierKey,
+    since: sinceIso,
+    evaluation,
+    pilots: pilots.map((p) => ({
+      id: p.id,
+      carril: p.carril,
+      objetivo: p.objetivo,
+      phone_masked: `${p.phone_normalized?.slice(0, 5)}***${p.phone_normalized?.slice(-4)}`,
+      evidence: p.evidence,
+      humanity_pass_proxy:
+        p.evidence.avg_humanity_score != null && p.evidence.avg_humanity_score >= 0.8,
+      pilot_verdict_auto:
+        p.evidence.message_count > 0 &&
+        !p.evidence.duplicate_leads &&
+        !p.evidence.loop_signal &&
+        !p.evidence.critical_invention &&
+        p.evidence.avg_humanity_score != null &&
+        p.evidence.avg_humanity_score >= 0.8
+          ? 'PASS'
+          : 'REVIEW',
+    })),
+  };
+
   if (!args.dryRun) {
     appendRunMarkdown(pilots, sinceIso, tierKey);
+    fs.writeFileSync(evidenceJsonPath(tierKey), `${JSON.stringify(evidencePayload, null, 2)}\n`);
   }
 
   const result = {
@@ -169,6 +197,8 @@ async function main() {
       evaluation,
       pilots,
       run_log: RUN_MD,
+      evidence_json: evidenceJsonPath(tierKey),
+      evidence_written: !args.dryRun,
     },
   };
 

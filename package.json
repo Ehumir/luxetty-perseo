@@ -15,6 +15,7 @@
     "corpus-validate": "node scripts/corpus-validate.js",
     "validate:graph-outbound": "node scripts/validate-graph-outbound.js",
     "check:sprint2-env": "node scripts/check-perseo-sprint2-env.js",
+    "staging:query-v3-gate": "node scripts/staging-query-v3-gate.js",
     "gate:no-regression": "bash scripts/gate-no-regression.sh",
     "smoke:referral-persist": "node scripts/smoke-referral-persist.js",
     "staging:verify-db": "node scripts/staging-verify-db.js",
@@ -34,7 +35,8 @@
     "staging:close": "node scripts/staging-close-m4-04.js",
     "staging:close:technical": "node scripts/staging-close-technical.js",
     "staging:close:wa-b1": "node scripts/staging-close-wa-b1.js",
-    "staging:close:wa-b2": "node scripts/staging-close-wa-b2.js"
+    "staging:close:wa-b2": "node scripts/staging-close-wa-b2.js",
+    "staging:wa-b1-prep": "node scripts/staging-wa-b1-prep.js"
   },
   "keywords": [],
   "author": "",

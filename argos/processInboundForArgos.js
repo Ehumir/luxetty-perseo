@@ -125,7 +125,7 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
     text: input.text,
     persistedPropertyCode: priorState?.propertyListingCode || null,
   });
-  const v3Result = v3InboundBridge.tryV3PrimaryReply({
+  const v3Result = await v3InboundBridge.tryV3PrimaryReply({
     conversationId,
     phone: input.phone_sim,
     text: input.text,

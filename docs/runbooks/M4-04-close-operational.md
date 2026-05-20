@@ -4,8 +4,8 @@
 
 | Carril | Comando | Teléfonos |
 |--------|---------|-----------|
-| **04A Technical** | `npm run staging:close:technical` | 0 |
-| **04B WA B1** | `npm run staging:close:wa-b1` | 3 |
+| **04A Technical** | `npm run staging:close:technical` | 0 | **GO** |
+| **04B WA B1** | `npm run staging:wa-b1-prep` → pilotos → `staging:wa-collect` → `staging:close:wa-b1` | 3 |
 | **04C WA B2** | `npm run staging:close:wa-b2` | 10 |
 | Full | `npm run staging:close` | 10 |
 
