@@ -1,0 +1,26 @@
+# B1 — 3 teléfonos QA mínimos (copiar → allowlist-b1.local.yaml, gitignored)
+# Casos: demanda larga | oferta/policy | media/audio o interrupción
+
+version: 1
+environment: staging
+meta:
+  owner: qa
+  sprint: M4-04B
+  tier: b1
+
+conversations:
+  - id: B1_DEMAND_LONG
+    phone: "+5281XXXXXXX1"
+    carril: demand
+    objetivo: Comprador — mensaje largo compuesto (zona + presupuesto + nombre separado)
+    media_cases: []
+  - id: B1_OFFER_POLICY
+    phone: "+5281XXXXXXX2"
+    carril: offer
+    objetivo: Propietario — oferta con policy/valoración
+    media_cases: []
+  - id: B1_MEDIA_FALLBACK
+    phone: "+5281XXXXXXX3"
+    carril: demand
+    objetivo: Audio o imagen + interrupción / fallback graceful
+    media_cases: [audio]

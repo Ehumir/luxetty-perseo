@@ -2,8 +2,8 @@
 'use strict';
 
 /**
- * M4-04 — After manual WA pilots, pull Supabase evidence per allowlist phone.
- * Usage: PERSEO_STAGING_CONFIRMED=true node scripts/staging-wa-collect-results.js [--json]
+ * M4-04 — Pull Supabase evidence per allowlist phone after manual WA pilots.
+ * B1: --min=3 | B2: default 10
  */
 
 require('dotenv').config();
@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { supabase } = require('../services/supabaseService');
 const { validateAllowlist, normalizeMxWa } = require('./staging/stagingAllowlist');
+const { evaluateWaSmoke } = require('./staging/stagingWaCriteria');
 const { parseArgs, assertStagingSafe, printResult, exitCode } = require('./staging/stagingLib');
 
 const RUN_MD = path.join(
@@ -84,6 +85,9 @@ async function fetchPilotEvidence(phoneNorm, sinceIso) {
       : null;
 
   const loopMeta = telemetry.some((t) => Number(t.metadata?.loop_score || 0) > 0.85);
+  const criticalInvention = telemetry.some((t) =>
+    String(t.metadata?.critical_invention || t.drop_reason || '').includes('invention'),
+  );
 
   return {
     phone_norm: phoneNorm,
@@ -95,6 +99,7 @@ async function fetchPilotEvidence(phoneNorm, sinceIso) {
     leads_created_in_window: leads.length,
     duplicate_leads: leads.length > 1,
     loop_signal: loopMeta,
+    critical_invention: criticalInvention,
     last_fallback: telemetry[0]?.fallback_reason || null,
     last_policy_hit: telemetry[0]?.policy_hit || null,
     transcript_preview: messages.slice(-6).map((m) => ({
@@ -105,23 +110,20 @@ async function fetchPilotEvidence(phoneNorm, sinceIso) {
   };
 }
 
-function appendRunMarkdown(pilots, sinceIso) {
+function appendRunMarkdown(pilots, sinceIso, tierKey) {
   const lines = [
     '',
-    `## Auto-collect ${new Date().toISOString()}`,
+    `## Auto-collect ${tierKey.toUpperCase()} — ${new Date().toISOString()}`,
     `Window since: ${sinceIso}`,
     '',
-    '| ID | Msgs | Tel events | Humanity avg | Leads | Dup | Loop | Fallback | Verdict |',
-    '|----|------|------------|--------------|-------|-----|------|----------|---------|',
+    '| ID | Msgs | Tel | Humanity | Leads | Dup | Loop | Fallback | Verdict |',
+    '|----|------|-----|----------|-------|-----|------|----------|---------|',
   ];
   for (const p of pilots) {
     const v = p.evidence;
     const humanityOk = v.avg_humanity_score != null && v.avg_humanity_score >= 0.8;
     const pass =
-      v.message_count > 0 &&
-      !v.duplicate_leads &&
-      !v.loop_signal &&
-      humanityOk;
+      v.message_count > 0 && !v.duplicate_leads && !v.loop_signal && !v.critical_invention && humanityOk;
     lines.push(
       `| ${p.id} | ${v.message_count} | ${v.telemetry_events} | ${v.avg_humanity_score ?? 'n/a'} | ${v.leads_created_in_window} | ${v.duplicate_leads ? 'Y' : 'N'} | ${v.loop_signal ? 'Y' : 'N'} | ${v.last_fallback || '—'} | ${pass ? 'PASS' : 'REVIEW'} |`,
     );
@@ -133,9 +135,13 @@ async function main() {
   const args = parseArgs();
   assertStagingSafe(args);
 
-  const allowlist = validateAllowlist();
+  const tierKey = args.minPilots <= 3 ? 'b1' : 'b2';
+  const allowlist = validateAllowlist({ minPilots: args.minPilots });
   if (!allowlist.ok) {
-    const result = { ok: false, details: { errors: allowlist.errors, file: allowlist.filePath } };
+    const result = {
+      ok: false,
+      details: { tier: tierKey, errors: allowlist.errors, file: allowlist.filePath },
+    };
     printResult('staging-wa-collect-results', result, args.json);
     exitCode(result);
     return;
@@ -150,31 +156,17 @@ async function main() {
     pilots.push({ ...p, evidence });
   }
 
-  const humanityPass = pilots.filter(
-    (p) => p.evidence.avg_humanity_score != null && p.evidence.avg_humanity_score >= 0.8,
-  ).length;
-  const dupes = pilots.filter((p) => p.evidence.duplicate_leads).length;
-  const loops = pilots.filter((p) => p.evidence.loop_signal).length;
-  const withMsgs = pilots.filter((p) => p.evidence.message_count > 0).length;
-
-  const ok =
-    withMsgs >= 10 &&
-    humanityPass >= 8 &&
-    dupes === 0 &&
-    loops === 0;
+  const evaluation = evaluateWaSmoke(pilots, tierKey);
 
   if (!args.dryRun) {
-    appendRunMarkdown(pilots, sinceIso);
+    appendRunMarkdown(pilots, sinceIso, tierKey);
   }
 
   const result = {
-    ok,
+    ok: evaluation.ok,
     details: {
       since: sinceIso,
-      pilots_with_messages: withMsgs,
-      humanity_pass_4of5_proxy: humanityPass,
-      duplicate_pilots: dupes,
-      loop_pilots: loops,
+      evaluation,
       pilots,
       run_log: RUN_MD,
     },

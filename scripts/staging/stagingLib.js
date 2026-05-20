@@ -17,14 +17,27 @@ const CRM_OUTBOX_INDEXES = [
   'idx_crm_outbox_worker_poll',
 ];
 
+function parseMinArg(argv = process.argv.slice(2)) {
+  const minFlag = argv.find((a) => a.startsWith('--min='));
+  if (minFlag) {
+    const n = Number(minFlag.split('=')[1]);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const envMin = Number(process.env.M4_WA_ALLOWLIST_MIN);
+  if (Number.isFinite(envMin) && envMin > 0) return envMin;
+  return 10;
+}
+
 function parseArgs(argv = process.argv.slice(2)) {
   const flags = new Set(argv.filter((a) => a.startsWith('--')));
-  const positional = argv.filter((a) => !a.startsWith('--'));
+  const positional = argv.filter((a) => !a.startsWith('--') && !a.startsWith('--min='));
   return {
     dryRun: flags.has('--dry-run'),
     json: flags.has('--json'),
     force: flags.has('--force'),
     stagingConfirmed: flags.has('--staging-confirmed'),
+    minPilots: parseMinArg(argv),
+    tier: process.env.M4_WA_SMOKE_TIER || (parseMinArg(argv) <= 3 ? 'b1' : 'b2'),
     positional,
   };
 }
@@ -78,6 +91,7 @@ module.exports = {
   REQUIRED_TABLES,
   CRM_OUTBOX_INDEXES,
   parseArgs,
+  parseMinArg,
   maskUrl,
   assertStagingSafe,
   printResult,

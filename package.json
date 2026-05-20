@@ -31,7 +31,10 @@
     "staging:railway": "node scripts/staging-railway-check.js",
     "staging:wa-allowlist": "node scripts/staging-wa-allowlist-validate.js",
     "staging:wa-collect": "node scripts/staging-wa-collect-results.js",
-    "staging:close": "node scripts/staging-close-m4-04.js"
+    "staging:close": "node scripts/staging-close-m4-04.js",
+    "staging:close:technical": "node scripts/staging-close-technical.js",
+    "staging:close:wa-b1": "node scripts/staging-close-wa-b1.js",
+    "staging:close:wa-b2": "node scripts/staging-close-wa-b2.js"
   },
   "keywords": [],
   "author": "",

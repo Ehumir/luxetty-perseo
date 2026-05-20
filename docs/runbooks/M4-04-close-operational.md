@@ -1,6 +1,15 @@
-# M4-04 — Cierre operativo completo
+# M4-04 — Cierre operativo (carriles A / B1 / B2)
 
-**Estado objetivo:** GO operativo M4-04 (no M4-05, no prod).
+**Prod:** OFF. **M4-05:** solo tras 04A + 04B GO mínimo; prod candidate tras 04A + 04C.
+
+| Carril | Comando | Teléfonos |
+|--------|---------|-----------|
+| **04A Technical** | `npm run staging:close:technical` | 0 |
+| **04B WA B1** | `npm run staging:close:wa-b1` | 3 |
+| **04C WA B2** | `npm run staging:close:wa-b2` | 10 |
+| Full | `npm run staging:close` | 10 |
+
+Allowlist parcial: `M4_WA_ALLOWLIST_MIN=3` o `npm run staging:wa-allowlist -- --min=3`
 
 ---
 

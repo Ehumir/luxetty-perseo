@@ -1,278 +1,143 @@
 # Staging Activation Report — M4-04
 
 **Entorno:** Supabase staging (`project_ref: pjoxytwsvbeoivppczdx`)  
-**Período:** 2026-05-19 → 2026-05-20  
-**Operador:** M4-04 automated staging run + revisión humana pendiente (WA / Railway)  
 **Rama:** `feat/m4-04-staging-activation-runtime-verification`  
-**Evidencia JSON:** `docs/argos/evidence/m4-04/`
+**Prod:** **OFF** (sin variables ni flags en prod)
 
 ---
 
-## 1. Resumen ejecutivo
+## Criterios GO por carril
 
-| Área | Estado | Notas |
-|------|--------|-------|
-| Migraciones DB | **PASS** | 7/7 tablas; RLS write OK; heartbeat PK `worker_id` |
-| `staging-verify-db` | **PASS** | Tras fix probe (ver §2) |
-| Fases 0–4 scripts | **PASS** | `staging-execute-phases.js --phase=all` → `ok: true` |
-| CRM DB pipeline | **PASS** | enqueue → claim → process → idempotency |
-| Worker heartbeat DB | **PASS** | `crm_worker_heartbeats` upsert + read |
-| Telemetry DB | **PASS** | insert + read + delete probe |
-| Media / replay | **PASS** | local deterministic |
-| Railway deploy | **PENDIENTE** | No `PERSEO_BASE_URL` staging en `.env` local |
-| WA smoke 10 | **BLOQUEADO** | allowlist sin teléfonos reales |
-| **Decisión M4-04 completa** | **NO-GO** | Infra staging OK; falta WA + Railway confirm |
-| **Prod** | **OFF** | Sin cambios prod |
+| Nivel | Significado | Comando cierre |
+|-------|-------------|----------------|
+| **M4-04A Technical GO** | DB + Railway + worker heartbeat + telemetry + replay + duplicates | `npm run staging:close:technical` |
+| **M4-04B WA B1 GO** | 3 pilotos QA reales OK | `npm run staging:close:wa-b1` |
+| **M4-04C WA B2 GO** | 10 pilotos QA reales OK | `npm run staging:close:wa-b2` |
+| **M4-05 candidato** | Solo tras **04A + 04C** GO | — |
+| **M4-05 inicio mínimo** | **04A + 04B** GO | — |
 
 ---
 
-## 2. Diagnóstico `staging-verify-db` (resuelto)
+## M4-04A — Technical Staging
 
-### Síntoma inicial
+**Objetivo:** validar infraestructura real sin depender de 10 teléfonos WA.
 
-```txt
-FAIL — 7 tablas ausentes / crm_worker_heartbeats exists: false
-```
+### Checklist
 
-### Causa raíz (confirmada, no schema cache stale)
+| # | Check | Script | Estado |
+|---|-------|--------|--------|
+| 1 | DB 7 tablas + RLS + heartbeat PK | `npm run staging:verify-db` | **PASS** |
+| 2 | Railway webhook | `npm run staging:railway` | **PENDIENTE** — `PERSEO_BASE_URL_STAGING` vacía |
+| 3 | Worker heartbeat DB (15m) | `staging:railway` + Railway worker | **PENDIENTE** |
+| 4 | Fases 0–4 flags | `npm run staging:phases` | **PASS** |
+| 5 | CRM outbox DB | incluido en phases | **PASS** |
+| 6 | Telemetry DB | incluido en phases | **PASS** |
+| 7 | Replay RPACK_001 | incluido en phases | **PASS** |
+| 8 | Duplicate check ventana activación | `npm run staging:duplicates` | **PASS** |
 
-| Hipótesis | Resultado |
-|-----------|-----------|
-| Schema cache stale | **Descartada** — tras SQL, 6 tablas respondían HEAD; solo heartbeats fallaba |
-| Project mismatch | **Descartada** — mismo ref antes/después migración |
-| Service role | **OK** — RLS write probe PASS |
-| **Lectura incorrecta** | **CONFIRMADA** — probe usaba `select('id')` pero `crm_worker_heartbeats` tiene PK `worker_id`, no `id` |
-
-Error PostgREST exacto:
-
-```txt
-column crm_worker_heartbeats.id does not exist
-```
-
-### Fix aplicado
-
-1. `probeTable` / `probeTableDetailed` → `select('*', { count: 'exact', head: true })` (agnóstico de PK).
-2. `staging-verify-db` → probes RLS, heartbeat upsert, outbox insert/poll.
-3. **Bug adicional encontrado:** `isArgosOrDryContext` trataba `crmDryRun:true` como modo memoria → worker Railway no usaba DB. **Corregido** (solo `argosMode` / `PERSEO_ARGOS_ENABLED`).
-
-### Re-run
+### Comando
 
 ```bash
-PERSEO_STAGING_CONFIRMED=true npm run staging:verify-db
-# exit 0 — 7/7 tablas, rls_telemetry_write.ok, heartbeat_table.ok, crm_outbox_poll.ok
+M4_RAILWAY_REQUIRE_HEARTBEAT=true npm run staging:close:technical
 ```
 
----
+### Veredicto M4-04A
 
-## 3. Migraciones aplicadas
+| | |
+|--|--|
+| **Technical GO** | **NO-GO** (bloqueado por Railway URL + heartbeat remoto) |
+| **Infra DB/scripts** | **GO** (local contra Supabase staging) |
 
-| Archivo | Estado | Verificado |
-|---------|--------|------------|
-| `20260519121000_m4_wa_operational_telemetry.sql` | Aplicada | `wa_operational_telemetry` count probe |
-| `20260520000000_m4_02_crm_runtime_hardened.sql` | Aplicada | `crm_outbox` + índices |
-| `20260521120000_m4_03_runtime_metrics.sql` | Aplicada | `runtime_metrics_rollup`, `crm_worker_heartbeats` |
-
----
-
-## 4. Flags activados (ejecución por fases)
-
-Scripts ejecutados con env acumulativo por fase (`staging-execute-phases.js`).
-
-### Fase 1 — Observability
+**Desbloqueo:** setear en `.env`:
 
 ```env
-PERSEO_RUNTIME_OBSERVABILITY_ENABLED=true
-PERSEO_WA_TELEMETRY_ENABLED=true
+PERSEO_BASE_URL_STAGING=https://<webhook-staging>.up.railway.app
 ```
 
-| Check | Resultado |
-|-------|-----------|
-| `staging-telemetry-smoke` | PASS — memory + DB insert/read |
-| `staging-runtime-health` | PASS — p95 webhook 42ms (probe) |
+Deploy worker: `node workers/crmOutboxRailwayWorker.js` → re-run `staging:close:technical`.
 
-### Fase 2 — CRM
+---
 
-```env
-PERSEO_CRM_DURABILITY_ENABLED=true
-PERSEO_CRM_RUNTIME_PERSISTENT_ENABLED=true
-PERSEO_CRM_WORKER_ASYNC_ENABLED=true
-PERSEO_CRM_WORKER_PROCESS_ENABLED=true
-PERSEO_V3_CRM_EXECUTE=false
+## M4-04B — WhatsApp Smoke B1 (3 pilotos)
+
+**Meta B1:**
+
+| Criterio | Umbral |
+|----------|--------|
+| Pilotos con conversación | 3/3 |
+| Humanity ≥4/5 (proxy ≥0.8) | ≥2/3 |
+| Inventos críticos | 0 |
+| Duplicados CRM | 0 |
+| Loops | 0 |
+
+### Casos mínimos
+
+1. **B1_DEMAND_LONG** — comprador, mensaje largo  
+2. **B1_OFFER_POLICY** — propietario, policy/valor  
+3. **B1_MEDIA_FALLBACK** — audio/media o interrupción + fallback  
+
+### Setup
+
+```bash
+cp docs/argos/whatsapp-smoke/m4-02/allowlist-b1.local.yaml.example \
+   docs/argos/whatsapp-smoke/m4-02/allowlist-b1.local.yaml
+# 3 teléfonos reales
+
+M4_WA_ALLOWLIST_MIN=3 npm run staging:wa-allowlist
+# Ejecutar 3 conversaciones WA manualmente
+npm run staging:close:wa-b1
 ```
 
-| Check | Resultado |
-|-------|-----------|
-| `staging-crm-db-smoke` | PASS — mode `db`, claimed 1, processed 1 |
-| `staging-worker-tick` | PASS — mode `db`, heartbeat persisted |
-| `staging-duplicate-check` | PASS — 0 idempotency dupes; 0 lead dupes en ventana 48h |
-| DLQ | 0 |
-| Outbox pending | 0 post-smoke |
+### Veredicto M4-04B
 
-**Evidencia CRM DB (extracto):**
+| | |
+|--|--|
+| **WA B1 GO** | **NO-GO** — allowlist B1 sin teléfonos reales |
 
-```json
-{
-  "mode": "db",
-  "enqueue": { "enqueued": true },
-  "worker_batch": { "claimed": 1, "processed": 1 },
-  "heartbeat_db": { "metadata": { "claimed": 1, "processed": 1, "latency_ms": 1024 } },
-  "outbox_pending_after": 0,
-  "idempotency_rows": 1
-}
+---
+
+## M4-04C — WhatsApp Smoke B2 (10 pilotos)
+
+**Meta B2:** ≥8/10 humanity ≥4/5, 0 inventos, 0 dupes, 0 loops, 0 media sin fallback, 0 jobs perdidos.
+
+```bash
+# allowlist-10.local.yaml — 10 teléfonos
+npm run staging:close:wa-b2
 ```
 
-### Fase 3 — Media
+### Veredicto M4-04C
 
-```env
-PERSEO_MEDIA_RUNTIME_PRODUCTION_ENABLED=true
-PERSEO_MEDIA_HARDENING_ENABLED=true
-PERSEO_MEDIA_RUNTIME_FAIL_OPEN_ENABLED=true
-```
-
-| Check | Resultado |
-|-------|-----------|
-| `staging-media-smoke` | PASS — oversized, bad_mime, corrupt_audio, timeout |
-
-### Fase 4 — Safety + replay
-
-```env
-PERSEO_RUNTIME_SAFETY_ENABLED=true
-PERSEO_REPLAY_ENGINE_ENABLED=true
-```
-
-| Check | Resultado |
-|-------|-----------|
-| `staging-replay-smoke` | PASS — RPACK_001, 3 turns, 0 violations |
-| Flood (unit) | PASS — `m4RuntimeStabilization.test.js` |
+| | |
+|--|--|
+| **WA B2 GO** | **NO-GO** — pendiente B1 + expansión a 10 |
 
 ---
 
-## 5. Worker Railway
+## Resumen ejecutivo
 
-| Métrica | Valor | Fuente |
-|---------|-------|--------|
-| Lógica worker | OK | `staging-worker-tick.js` = mismo path que `workers/crmOutboxRailwayWorker.js` |
-| Store mode | `db` | Tras fix `isArgosOrDryContext` |
-| Heartbeat DB | OK | `crm_worker_heartbeats` row con `worker_id`, `last_seen_at` |
-| Polling Railway | **No verificado** | Falta URL/logs Railway staging |
-| Restart safety | **No verificado** | Requiere redeploy manual |
-
-**Acción humana:** deploy servicio `node workers/crmOutboxRailwayWorker.js` en Railway staging con env Fase 2; confirmar logs `crm_worker_tick`.
-
----
-
-## 6. WhatsApp smoke — 10 pilotos
-
-**Estado: BLOQUEADO**
-
-`docs/argos/whatsapp-smoke/m4-02/allowlist-10.yaml` contiene placeholders `+52XXXXXXXXXX`.
-
-Run log: `docs/argos/whatsapp-smoke/m4-02/runs/M4-04-STAGING-20260520.md`
-
-| Criterio | Resultado |
-|----------|-----------|
-| ≥8/10 humanity ≥4/5 | N/A |
-| 0 inventos críticos | N/A |
-| 0 duplicados piloto | N/A (ventana activación limpia en SQL) |
-| 0 loops / jobs perdidos | N/A |
-
-**Sustituto técnico:** ARGOS 60/60 + RPACK_001 — no reemplaza smoke WA.
-
----
-
-## 7. Duplicados CRM
-
-| Check | Ventana | Resultado |
-|-------|---------|-----------|
-| Idempotency keys duplicadas | all | **0** |
-| Leads duplicados | 48h activación | **0** |
-| Leads duplicados | 7d histórico | **1 contacto ×5** (pre-existente staging; no bloquea M4 pipeline) |
-| DLQ | all | **0** |
-| Outbox stuck | pending+processing | **0** post-run |
-
----
-
-## 8. Bugs encontrados y fixes
-
-| Bug | Severidad | Fix |
-|-----|-----------|-----|
-| Probe asumía columna `id` en todas las tablas | Alta (falso FAIL) | HEAD count probe |
-| `crmDryRun` forzaba memory store en worker | **Crítica** | `isArgosOrDryContext` sin `crmDryRun` |
-| Heartbeat DB fire-and-forget | Media | `await persistWorkerHeartbeatToDb` |
-| `staging-crm-db-smoke` pasaba `crmDryRun:true` al resolver store | Alta | `crmDryRun:false` + `PERSEO_ARGOS_ENABLED=false` |
-
----
-
-## 9. Riesgos
-
-| Riesgo | Severidad | Mitigación |
-|--------|-----------|------------|
-| WA smoke no ejecutado | **Alta** | Completar allowlist + 10 conversaciones |
-| Railway worker no desplegado/verificado | **Media** | Deploy staging + logs 24h |
-| Duplicados históricos staging (leads) | Baja | No en ventana 48h; limpiar datos QA si molesta |
-| `PERSEO_V3_CRM_EXECUTE=false` | Esperado | Mantener hasta M4-05 |
-
----
-
-## 10. Decisión GO / NO-GO
-
-### Criterios técnicos staging (automatizados)
-
-| Criterio | OK |
-|----------|-----|
-| Migraciones staging | ☑ |
-| verify-db PASS | ☑ |
-| Worker DB mode + heartbeat | ☑ |
-| Telemetry DB | ☑ |
-| Replay | ☑ |
-| Media fallback (script) | ☑ |
-| Duplicate check (M4 window) | ☑ |
-| Fases 0–4 scripts | ☑ |
-
-### Criterios operativos completos M4-04
-
-| Criterio | OK |
-|----------|-----|
-| Railway worker logs 24h | ☐ |
-| WA 10 pilotos ≥8/10 | ☐ |
-| Sin degradación grave observada | ☑ (scripts) |
-
-### **Decisión: NO-GO** (cierre M4-04 operativo)
-
-**Motivo:** smoke WA bloqueado; Railway staging no confirmado desde este entorno.
-
-### **Decisión parcial: GO infra staging**
-
-Migraciones + CRM durable + telemetry + scripts PASS — listo para completar WA/Railway y preparar **M4-05 Controlled Production Rollout**.
-
-**Prod:** permanece **OFF**.
-
----
-
-## 11. Cierre operativo (en curso)
-
-**Runbook:** `docs/runbooks/M4-04-close-operational.md`
-
-| Paso | Comando | Estado |
-|------|---------|--------|
-| Allowlist 10 reales | `npm run staging:wa-allowlist` | **BLOQUEADO** — sin `allowlist-10.local.yaml` |
-| Railway staging | `npm run staging:railway` | **BLOQUEADO** — falta `PERSEO_BASE_URL_STAGING` |
-| WA pilotos + collect | `npm run staging:wa-collect` | **BLOQUEADO** — tras pilotos manuales |
-| Cierre automatizado | `npm run staging:close` | **BLOQUEADO** — pasos anteriores |
-
-### Inputs requeridos del operador
-
-1. `PERSEO_BASE_URL_STAGING` — URL webhook Railway staging.
-2. `allowlist-10.local.yaml` — 10 teléfonos QA (plantilla: `allowlist-10.local.yaml.example`, gitignored).
-3. Deploy worker Railway: `node workers/crmOutboxRailwayWorker.js` con flags Fase 2.
-4. Ejecutar conversaciones WA; luego `npm run staging:wa-collect`.
-
-### Decisión vigente
-
-| Nivel | Veredicto |
-|-------|-----------|
-| Infra staging (DB + scripts) | **GO** |
-| M4-04 operativo completo | **NO-GO** |
+| Carril | Veredicto |
+|--------|-----------|
+| M4-04A Technical | **NO-GO** (Railway pendiente) / DB **GO** |
+| M4-04B WA B1 | **NO-GO** |
+| M4-04C WA B2 | **NO-GO** |
+| M4-04 completo | **NO-GO** |
 | Prod | **OFF** |
 
-**No iniciar M4-05** hasta GO operativo completo.
+---
+
+## Evidencia técnica (local → staging Supabase)
+
+- `staging:phases` → `ok: true` (verify-db, telemetry, crm-db, media, replay)
+- `staging:duplicates` → 0 idempotency dupes; ventana 48h limpia
+- Fix crítico: `crmDryRun` ya no fuerza memory store en worker Railway
+
+---
+
+## Próximos pasos (orden)
+
+1. `PERSEO_BASE_URL_STAGING` → `npm run staging:close:technical` → **M4-04A GO**  
+2. `allowlist-b1.local.yaml` (3 teléfonos) → pilotos → `npm run staging:close:wa-b1` → **M4-04B GO**  
+3. `allowlist-10.local.yaml` → `npm run staging:close:wa-b2` → **M4-04C GO**  
+4. Entonces diseñar **M4-05 Controlled Production Rollout** (prod sigue OFF hasta aviso explícito)
+
+**Runbook:** `docs/runbooks/M4-04-close-operational.md`

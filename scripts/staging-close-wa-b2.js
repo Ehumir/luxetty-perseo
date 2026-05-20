@@ -2,13 +2,13 @@
 'use strict';
 
 /**
- * M4-04 — Full close: Technical (04A) + WA B2 (04C).
+ * M4-04C — WA smoke B2 close (10 QA phones).
  */
 
 require('dotenv').config();
 
-const { closeFull } = require('./staging/stagingClose');
+const { closeWa } = require('./staging/stagingClose');
 
-const report = closeFull();
+const report = closeWa(10);
 console.log(JSON.stringify(report, null, 2));
 process.exit(report.ok ? 0 : 1);

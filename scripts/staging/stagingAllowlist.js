@@ -11,10 +11,20 @@ const LOCAL_ALLOWLIST = path.join(
   __dirname,
   '../../docs/argos/whatsapp-smoke/m4-02/allowlist-10.local.yaml',
 );
+const LOCAL_ALLOWLIST_B1 = path.join(
+  __dirname,
+  '../../docs/argos/whatsapp-smoke/m4-02/allowlist-b1.local.yaml',
+);
 
-function resolveAllowlistPath(custom) {
+function getDefaultMinPilots() {
+  const envMin = Number(process.env.M4_WA_ALLOWLIST_MIN);
+  return Number.isFinite(envMin) && envMin > 0 ? envMin : 10;
+}
+
+function resolveAllowlistPath(custom, minPilots = getDefaultMinPilots()) {
   if (custom) return path.resolve(custom);
   if (process.env.M4_WA_ALLOWLIST_PATH) return path.resolve(process.env.M4_WA_ALLOWLIST_PATH);
+  if (minPilots <= 3 && fs.existsSync(LOCAL_ALLOWLIST_B1)) return LOCAL_ALLOWLIST_B1;
   if (fs.existsSync(LOCAL_ALLOWLIST)) return LOCAL_ALLOWLIST;
   return DEFAULT_ALLOWLIST;
 }
@@ -47,7 +57,7 @@ function parseSimpleYamlPhones(content) {
 
 function isPlaceholderPhone(phone) {
   const p = String(phone || '');
-  return /X{3,}/i.test(p) || p.includes('0000000') && p.length < 14;
+  return /X{3,}/i.test(p) || (p.includes('0000000') && p.length < 14);
 }
 
 function normalizeMxWa(phone) {
@@ -59,32 +69,57 @@ function normalizeMxWa(phone) {
 }
 
 function loadAllowlist(opts = {}) {
-  const filePath = resolveAllowlistPath(opts.path);
+  const minPilots = opts.minPilots ?? getDefaultMinPilots();
+  const filePath = resolveAllowlistPath(opts.path, minPilots);
   const content = fs.readFileSync(filePath, 'utf8');
   const pilots = parseSimpleYamlPhones(content);
-  return { filePath, pilots };
+  return { filePath, pilots, minPilots };
 }
 
 function validateAllowlist(opts = {}) {
-  const { filePath, pilots } = loadAllowlist(opts);
+  const minPilots = opts.minPilots ?? getDefaultMinPilots();
+  const maxPilots = opts.maxPilots ?? 10;
+  const { filePath, pilots } = loadAllowlist({ ...opts, minPilots });
+
   const errors = [];
-  if (pilots.length !== 10) {
-    errors.push(`expected 10 pilots, found ${pilots.length}`);
-  }
+  const valid = [];
   const phones = new Set();
+
   for (const p of pilots) {
     if (isPlaceholderPhone(p.phone)) {
       errors.push(`${p.id}: placeholder phone ${p.phone}`);
+      continue;
     }
     const norm = normalizeMxWa(p.phone);
-    if (phones.has(norm)) errors.push(`${p.id}: duplicate phone ${norm}`);
+    if (norm.length < 12) {
+      errors.push(`${p.id}: invalid phone length ${p.phone}`);
+      continue;
+    }
+    if (phones.has(norm)) {
+      errors.push(`${p.id}: duplicate phone ${norm}`);
+      continue;
+    }
     phones.add(norm);
-    p.phone_normalized = norm;
+    valid.push({ ...p, phone_normalized: norm });
   }
+
+  if (valid.length < minPilots) {
+    errors.push(`need at least ${minPilots} valid pilots, found ${valid.length}`);
+  }
+  if (valid.length > maxPilots) {
+    errors.push(`max ${maxPilots} pilots allowed, found ${valid.length}`);
+  }
+
+  const tier = minPilots <= 3 ? 'b1' : 'b2';
+
   return {
     ok: errors.length === 0,
     filePath,
-    pilots,
+    pilots: valid.slice(0, maxPilots),
+    all_parsed: pilots.length,
+    valid_count: valid.length,
+    min_required: minPilots,
+    tier,
     errors,
   };
 }
@@ -92,6 +127,8 @@ function validateAllowlist(opts = {}) {
 module.exports = {
   DEFAULT_ALLOWLIST,
   LOCAL_ALLOWLIST,
+  LOCAL_ALLOWLIST_B1,
+  getDefaultMinPilots,
   resolveAllowlistPath,
   loadAllowlist,
   validateAllowlist,
