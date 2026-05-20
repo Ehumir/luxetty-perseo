@@ -2,6 +2,9 @@
 
 const { normalizeText } = require('../../../utils/text');
 const { CONVERSATION_STAGES, ADVISOR_CONTACT_CONSENT } = require('../types/constants');
+const { isConversationalFlexEnabled } = require('../../../config/perseoM405Flags');
+const { isFlexConsentAccept } = require('../../flexibility/shortReplyLexicon');
+const { recordFlexApplied } = require('../../flexibility/flexTelemetry');
 
 /**
  * @param {string} text
@@ -22,6 +25,11 @@ function parseAdvisorContactConsent(text) {
     t.includes('no me contact') ||
     t.includes('sin asesor');
   if (decline) return 'DECLINED';
+
+  if (isConversationalFlexEnabled() && isFlexConsentAccept(text)) {
+    recordFlexApplied('consent');
+    return 'ACCEPTED';
+  }
 
   const accept =
     /^(si|sí|claro|vale|ok|va|esta bien|está bien|de acuerdo|adelante|por favor)\b/.test(t) ||

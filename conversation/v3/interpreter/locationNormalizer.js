@@ -1,6 +1,9 @@
 'use strict';
 
 const { cleanSpaces, normalizeText } = require('../../../utils/text');
+const { isConversationalFlexEnabled } = require('../../../config/perseoM405Flags');
+const { fuzzyResolveZone, isFuzzyKnownZoneToken } = require('../../flexibility/typoTolerance');
+const { recordFlexApplied } = require('../../flexibility/flexTelemetry');
 
 /**
  * Extrae zona/colonia desde frases tipo "Está en San Pedro".
@@ -16,6 +19,14 @@ function normalizeLocationFromUserText(raw) {
 
   const lower = normalizeText(t);
   let explicitLocation = false;
+
+  if (isConversationalFlexEnabled()) {
+    const fuzzy = fuzzyResolveZone(t);
+    if (fuzzy) {
+      recordFlexApplied('zone', { canonical: fuzzy });
+      return fuzzy;
+    }
+  }
   /** Preguntas sin ancla de lugar no son colonia (evita contaminar `location_text` en flujos mixtos). */
   if (
     /\?/.test(t) &&
@@ -80,9 +91,15 @@ function normalizeLocationFromUserText(raw) {
 function isBareKnownZoneToken(raw) {
   const t = normalizeText(String(raw || ''));
   if (!t || t.split(/\s+/).length > 3) return false;
-  return /^(cumbres|san pedro|garcia|garcía|carretera nacional|monterrey|valle oriente|san nicolas|san nicolás)$/.test(
-    t,
-  );
+  if (
+    /^(cumbres|san pedro|garcia|garcía|carretera nacional|monterrey|valle oriente|san nicolas|san nicolás)$/.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (isConversationalFlexEnabled() && isFuzzyKnownZoneToken(raw)) return true;
+  return false;
 }
 
 module.exports = {

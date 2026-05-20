@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "FLEX_014",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "flexibility",
+  "category": "short_ack",
+  "title": "Consent jalo",
+  "description": "M4-05a conversational flex quick win.",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres",
+    "5 millones",
+    "Pedro",
+    "jalo"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "conversational_flex": true
+  },
+  "expected": {
+    "lead_flow": "demand",
+    "known_zone": "Cumbres",
+    "known_budget": 5000000,
+    "known_name": "Pedro",
+    "advisor_contact_consent": "ACCEPTED"
+  },
+  "must_not": {
+    "flow_restart": true,
+    "slot_reask_when_filled": true,
+    "robotic_response": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-05-20",
+      "change": "M4-05a FLEX quick win."
+    }
+  ]
+}

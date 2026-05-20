@@ -1,0 +1,27 @@
+{
+  "suite": "conversation-flexibility-p0",
+  "description": "M4-05a — quick wins flexibilidad conversacional (zonas fuzzy, slang dinero, ack MX, ocupación).",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": [
+    "FLEX_001.v1.json",
+    "FLEX_002.v1.json",
+    "FLEX_003.v1.json",
+    "FLEX_004.v1.json",
+    "FLEX_005.v1.json",
+    "FLEX_006.v1.json",
+    "FLEX_007.v1.json",
+    "FLEX_008.v1.json",
+    "FLEX_009.v1.json",
+    "FLEX_010.v1.json",
+    "FLEX_011.v1.json",
+    "FLEX_012.v1.json",
+    "FLEX_013.v1.json",
+    "FLEX_014.v1.json",
+    "FLEX_015.v1.json",
+    "FLEX_016.v1.json",
+    "FLEX_017.v1.json",
+    "FLEX_018.v1.json",
+    "FLEX_019.v1.json",
+    "FLEX_020.v1.json"
+  ]
+}

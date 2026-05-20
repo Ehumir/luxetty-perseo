@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "FLEX_005",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "flexibility",
+  "category": "zone_typo",
+  "title": "Zona san pedro garza garca",
+  "description": "M4-05a conversational flex quick win.",
+  "messages": [
+    "Hola",
+    "Busco casa en san pedro garza garca",
+    "10 millones",
+    "Maria",
+    "Sí"
+  ],
+  "flags": {
+    "deterministic_mode": true,
+    "crm_dry_run": true,
+    "conversational_flex": true
+  },
+  "expected": {
+    "lead_flow": "demand",
+    "known_zone": "San Pedro",
+    "known_budget": 10000000,
+    "known_name": "Maria",
+    "advisor_contact_consent": "ACCEPTED"
+  },
+  "must_not": {
+    "flow_restart": true,
+    "slot_reask_when_filled": true,
+    "robotic_response": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [
+    {
+      "version": 1,
+      "date": "2026-05-20",
+      "change": "M4-05a FLEX quick win."
+    }
+  ]
+}

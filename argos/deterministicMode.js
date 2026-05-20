@@ -48,6 +48,7 @@ function applyArgosSimulationEnv(flags = {}) {
     mediaHardening: process.env.PERSEO_MEDIA_HARDENING_ENABLED,
     runtimeSafety: process.env.PERSEO_RUNTIME_SAFETY_ENABLED,
     replayEngine: process.env.PERSEO_REPLAY_ENGINE_ENABLED,
+    conversationalFlex: process.env.PERSEO_CONVERSATIONAL_FLEX_ENABLED,
   };
   const handoffOn = flags.v3_handoff_enabled !== false;
   process.env.PERSEO_V3_HANDOFF_ENABLED = handoffOn ? 'true' : 'false';
@@ -87,6 +88,9 @@ function applyArgosSimulationEnv(flags = {}) {
   setTriFlag('PERSEO_RUNTIME_SAFETY_ENABLED', flags.runtime_safety);
   setTriFlag('PERSEO_REPLAY_ENGINE_ENABLED', flags.replay_engine);
 
+  if (flags.conversational_flex === true) process.env.PERSEO_CONVERSATIONAL_FLEX_ENABLED = 'true';
+  else if (flags.conversational_flex === false) process.env.PERSEO_CONVERSATIONAL_FLEX_ENABLED = 'false';
+
   return {
     handoffEnabled: handoffOn,
     mediaIntakeEnabled: mediaOn,
@@ -124,6 +128,8 @@ function applyArgosSimulationEnv(flags = {}) {
       restoreTri('PERSEO_MEDIA_HARDENING_ENABLED', prev.mediaHardening);
       restoreTri('PERSEO_RUNTIME_SAFETY_ENABLED', prev.runtimeSafety);
       restoreTri('PERSEO_REPLAY_ENGINE_ENABLED', prev.replayEngine);
+      if (prev.conversationalFlex === undefined) delete process.env.PERSEO_CONVERSATIONAL_FLEX_ENABLED;
+      else process.env.PERSEO_CONVERSATIONAL_FLEX_ENABLED = prev.conversationalFlex;
     },
   };
 }
