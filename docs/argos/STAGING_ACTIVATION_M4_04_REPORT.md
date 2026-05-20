@@ -2,114 +2,140 @@
 
 **Entorno:** Supabase staging (`project_ref: pjoxytwsvbeoivppczdx`)  
 **Rama:** `feat/m4-04-staging-activation-runtime-verification`  
-**Prod:** **OFF** (sin variables ni flags en prod)
+**Última actualización:** 2026-05-20  
+**Prod:** **OFF**
 
 ---
 
 ## Criterios GO por carril
 
-| Nivel | Significado | Comando cierre |
-|-------|-------------|----------------|
-| **M4-04A Technical GO** | DB + Railway + worker heartbeat + telemetry + replay + duplicates | `npm run staging:close:technical` |
-| **M4-04B WA B1 GO** | 3 pilotos QA reales OK | `npm run staging:close:wa-b1` |
-| **M4-04C WA B2 GO** | 10 pilotos QA reales OK | `npm run staging:close:wa-b2` |
-| **M4-05 candidato** | Solo tras **04A + 04C** GO | — |
-| **M4-05 inicio mínimo** | **04A + 04B** GO | — |
+| Nivel | Significado | Comando cierre | Estado |
+|-------|-------------|----------------|--------|
+| **M4-04A Technical GO** | DB + Railway worker `mode=db` + scripts | `npm run staging:close:technical` | **GO** |
+| **M4-04B WA B1 GO** | 3 pilotos QA | `npm run staging:close:wa-b1` | **PENDIENTE** |
+| **M4-04C WA B2 GO** | 10 pilotos QA | `npm run staging:close:wa-b2` | **PENDIENTE** |
+| **M4-05 inicio** | 04A + 04B GO | — | Bloqueado hasta 04B |
+| **Prod candidate** | 04A + 04C GO | — | — |
 
 ---
 
-## M4-04A — Technical Staging
+## M4-04A — Technical Staging — **GO**
 
-**Objetivo:** validar infraestructura real sin depender de 10 teléfonos WA.
+**Cerrado:** 2026-05-20. M4 runtime persistent operativo en Railway QA.
 
-### Checklist
+### Evidencia Railway QA worker
 
-| # | Check | Script | Estado |
-|---|-------|--------|--------|
-| 1 | DB 7 tablas + RLS + heartbeat PK | `npm run staging:verify-db` | **PASS** |
-| 2 | Railway webhook | `npm run staging:railway` | **PENDIENTE** — `PERSEO_BASE_URL_STAGING` vacía |
-| 3 | Worker heartbeat DB (15m) | `staging:railway` + Railway worker | **PENDIENTE** |
-| 4 | Fases 0–4 flags | `npm run staging:phases` | **PASS** |
-| 5 | CRM outbox DB | incluido en phases | **PASS** |
-| 6 | Telemetry DB | incluido en phases | **PASS** |
-| 7 | Replay RPACK_001 | incluido en phases | **PASS** |
-| 8 | Duplicate check ventana activación | `npm run staging:duplicates` | **PASS** |
+```txt
+event=crm_worker_startup
+selectedStoreMode=db
+memoryFallbackReason=null
 
-### Comando
-
-```bash
-M4_RAILWAY_REQUIRE_HEARTBEAT=true npm run staging:close:technical
+event=crm_worker_batch
+mode=db
 ```
 
-### Veredicto M4-04A
+### Checklist técnico
+
+| # | Check | Estado |
+|---|-------|--------|
+| 1 | DB 7 tablas + RLS + heartbeat | **PASS** |
+| 2 | Worker Railway `mode=db` | **PASS** (confirmado QA) |
+| 3 | Probe cache fix (`ea7af86`) | **PASS** — ya no pinnea `memory` |
+| 4 | `staging:phases` (0–4) | **PASS** |
+| 5 | CRM outbox DB enqueue/process | **PASS** |
+| 6 | Telemetry DB insert/read | **PASS** |
+| 7 | Replay RPACK_001 | **PASS** |
+| 8 | Duplicate check (ventana 48h) | **PASS** |
+
+### Fixes relevantes en rama
+
+| Commit | Tema |
+|--------|------|
+| `ea7af86` | Probe negativo no cacheado; worker bootstrap `mode=db` |
+| `a8d6f72` | Carriles A/B1/B2 + close scripts |
+| `132702a` | verify-db probe PK `worker_id` |
+
+### Veredicto
 
 | | |
 |--|--|
-| **Technical GO** | **NO-GO** (bloqueado por Railway URL + heartbeat remoto) |
-| **Infra DB/scripts** | **GO** (local contra Supabase staging) |
-
-**Desbloqueo:** setear en `.env`:
-
-```env
-PERSEO_BASE_URL_STAGING=https://<webhook-staging>.up.railway.app
-```
-
-Deploy worker: `node workers/crmOutboxRailwayWorker.js` → re-run `staging:close:technical`.
+| **M4-04A Technical GO** | **GO** |
+| **Prod** | **OFF** |
 
 ---
 
-## M4-04B — WhatsApp Smoke B1 (3 pilotos)
+## M4-04B — WhatsApp Smoke B1 (3 pilotos) — **PENDIENTE**
 
-**Meta B1:**
+**Checklist humano (30–45 min):** `docs/runbooks/M4-04B-wa-pilot-checklist.md`
+
+### Meta B1
 
 | Criterio | Umbral |
 |----------|--------|
-| Pilotos con conversación | 3/3 |
-| Humanity ≥4/5 (proxy ≥0.8) | ≥2/3 |
-| Inventos críticos | 0 |
-| Duplicados CRM | 0 |
-| Loops | 0 |
+| Pilotos con mensajes | **3/3** |
+| Humanity ≥4/5 | **≥2/3** (manual o proxy telemetry ≥0.8) |
+| Inventos críticos | **0** |
+| Loops | **0** |
+| Duplicados CRM | **0** |
 
-### Casos mínimos
+### Flujo mínimo (sin fricción)
 
-1. **B1_DEMAND_LONG** — comprador, mensaje largo  
-2. **B1_OFFER_POLICY** — propietario, policy/valor  
-3. **B1_MEDIA_FALLBACK** — audio/media o interrupción + fallback  
+```bash
+# Prep (valida allowlist + imprime guía)
+npm run staging:wa-b1-prep
 
-### Setup
+# Tras 3 conversaciones WA en staging:
+npm run staging:wa-collect      # → runs/M4-04-B1-evidence.json + markdown
+npm run staging:close:wa-b1     # → exit 0 = M4-04B GO
+```
+
+### Setup allowlist
 
 ```bash
 cp docs/argos/whatsapp-smoke/m4-02/allowlist-b1.local.yaml.example \
    docs/argos/whatsapp-smoke/m4-02/allowlist-b1.local.yaml
-# 3 teléfonos reales
-
-M4_WA_ALLOWLIST_MIN=3 npm run staging:wa-allowlist
-# Ejecutar 3 conversaciones WA manualmente
-npm run staging:close:wa-b1
+# 3 teléfonos reales (gitignored)
 ```
+
+Railway webhook: mismos 3 números en `PERSEO_V3_QA_ALLOWLIST` (`521…` sin `+`).
+
+### Tres casos
+
+| ID | Qué hacer |
+|----|-----------|
+| B1_DEMAND_LONG | Comprador, mensaje largo + nombre aparte |
+| B1_OFFER_POLICY | Propietario, venta + policy/valor |
+| B1_MEDIA_FALLBACK | Audio/imagen → fallback graceful si falla |
+
+### Cómo medir (resumen)
+
+- **Humanity:** escala 1–5 por piloto; B1 pasa con ≥2 pilotos ≥4/5. Ver checklist § "Cómo medir".
+- **Invento crítico:** precio/dirección/propiedad inventados sin dato usuario → FAIL.
+- **Loop:** misma pregunta 3× sin avance → FAIL.
+- **Duplicados / telemetry:** automático vía `staging:wa-collect`.
+
+### Evidencia auto-generada
+
+| Archivo | Contenido |
+|---------|-----------|
+| `runs/M4-04-STAGING-20260520.md` | Tabla por piloto |
+| `runs/M4-04-B1-evidence.json` | Transcript preview, telemetry, verdicts |
 
 ### Veredicto M4-04B
 
 | | |
 |--|--|
-| **WA B1 GO** | **NO-GO** — allowlist B1 sin teléfonos reales |
+| **WA B1 GO** | **PENDIENTE** — ejecutar 3 pilotos + `staging:close:wa-b1` |
 
 ---
 
-## M4-04C — WhatsApp Smoke B2 (10 pilotos)
+## M4-04C — WhatsApp Smoke B2 (10 pilotos) — **PENDIENTE**
 
-**Meta B2:** ≥8/10 humanity ≥4/5, 0 inventos, 0 dupes, 0 loops, 0 media sin fallback, 0 jobs perdidos.
-
-```bash
-# allowlist-10.local.yaml — 10 teléfonos
-npm run staging:close:wa-b2
-```
-
-### Veredicto M4-04C
+Tras **04B GO**. Misma mecánica con `allowlist-10.local.yaml` y `npm run staging:close:wa-b2`.
 
 | | |
 |--|--|
-| **WA B2 GO** | **NO-GO** — pendiente B1 + expansión a 10 |
+| **WA B2 GO** | **PENDIENTE** |
 
 ---
 
@@ -117,27 +143,20 @@ npm run staging:close:wa-b2
 
 | Carril | Veredicto |
 |--------|-----------|
-| M4-04A Technical | **NO-GO** (Railway pendiente) / DB **GO** |
-| M4-04B WA B1 | **NO-GO** |
-| M4-04C WA B2 | **NO-GO** |
-| M4-04 completo | **NO-GO** |
-| Prod | **OFF** |
+| **M4-04A Technical** | **GO** |
+| **M4-04B WA B1** | **PENDIENTE** |
+| **M4-04C WA B2** | **PENDIENTE** |
+| **M4-04 completo** | **PENDIENTE** (A cerrado; falta B) |
+| **Prod** | **OFF** |
 
 ---
 
-## Evidencia técnica (local → staging Supabase)
+## Próximo paso inmediato
 
-- `staging:phases` → `ok: true` (verify-db, telemetry, crm-db, media, replay)
-- `staging:duplicates` → 0 idempotency dupes; ventana 48h limpia
-- Fix crítico: `crmDryRun` ya no fuerza memory store en worker Railway
+1. `allowlist-b1.local.yaml` con 3 teléfonos  
+2. `npm run staging:wa-b1-prep` → 3 chats WA  
+3. `npm run staging:wa-collect` + `npm run staging:close:wa-b1`  
+4. Actualizar este reporte → **M4-04B GO**  
+5. Luego escalar a 10 pilotos (04C) antes de M4-05 prod candidate
 
----
-
-## Próximos pasos (orden)
-
-1. `PERSEO_BASE_URL_STAGING` → `npm run staging:close:technical` → **M4-04A GO**  
-2. `allowlist-b1.local.yaml` (3 teléfonos) → pilotos → `npm run staging:close:wa-b1` → **M4-04B GO**  
-3. `allowlist-10.local.yaml` → `npm run staging:close:wa-b2` → **M4-04C GO**  
-4. Entonces diseñar **M4-05 Controlled Production Rollout** (prod sigue OFF hasta aviso explícito)
-
-**Runbook:** `docs/runbooks/M4-04-close-operational.md`
+**Runbooks:** `docs/runbooks/M4-04-close-operational.md` · `docs/runbooks/M4-04B-wa-pilot-checklist.md`
