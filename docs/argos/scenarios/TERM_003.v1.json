@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "TERM_003",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "closure",
+  "category": "terminal_ack_no_gracias",
+  "title": "Ack terminal — no gracias",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres presupuesto 6 millones",
+    "Jorge",
+    "Sí, me parece bien",
+    "no gracias"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "terminal_ack_close": true,
+    "conversation_soft_closed": true
+  },
+  "must_not": {
+    "no_ask_before_close": true,
+    "terminal_close_message": true,
+    "send_whatsapp": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-20", "change": "TERM_003." }]
+}

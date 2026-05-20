@@ -1,0 +1,13 @@
+{
+  "suite": "closure-terminal-ack-p0",
+  "description": "M4-04D — cierre terminal post-handoff (sin re-preguntar algo más).",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": [
+    "TERM_001.v1.json",
+    "TERM_002.v1.json",
+    "TERM_003.v1.json",
+    "TERM_004.v1.json",
+    "TERM_005.v1.json",
+    "TERM_006.v1.json"
+  ]
+}

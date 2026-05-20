@@ -13,21 +13,61 @@ const COMMERCIAL_INTENT =
 /**
  * @param {object} aiState — V3 state or legacy ai_state shape
  */
+function stripClosurePunct(text) {
+  return normalizeText(String(text || ''))
+    .replace(/[¿?¡!.,;:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function readClosureContext(aiState) {
   const s = aiState && typeof aiState === 'object' ? aiState : {};
   return {
     handoffWaitingFinalConfirmation:
       s.handoffWaitingFinalConfirmation === true || s.handoff_waiting_final_confirmation === true,
+    softClosePending: s.softClosePending === true || s.soft_close_pending === true,
     conversationSoftClosed: s.conversationSoftClosed === true || s.conversation_soft_closed === true,
+    terminalAckClose: s.terminalAckClose === true || s.terminal_ack_close === true,
     explicitReopen: s.explicitReopen === true || s.explicit_reopen === true,
+    advisorContactConsent: s.advisorContactConsent || s.advisor_contact_consent || null,
     locationText: s.locationText || s.location_text || null,
     fullName: s.collectedFields?.fullName || s.full_name || null,
   };
 }
 
+function isAdvisorConsentAccepted(aiState) {
+  const c = readClosureContext(aiState).advisorContactConsent;
+  return c === 'ACCEPTED' || c === 'accepted';
+}
+
 function isClosureGateActive(aiState) {
   const ctx = readClosureContext(aiState);
-  return ctx.handoffWaitingFinalConfirmation || ctx.conversationSoftClosed;
+  return (
+    ctx.handoffWaitingFinalConfirmation ||
+    ctx.softClosePending ||
+    ctx.conversationSoftClosed ||
+    ctx.terminalAckClose
+  );
+}
+
+/**
+ * Ack terminal tras handoff aceptado: cierra sin volver a preguntar "algo más".
+ */
+function isTerminalAckClose(message) {
+  if (detectCommercialReopenIntent(message)) return false;
+  const t = stripClosurePunct(message);
+  if (!t) return false;
+  if (NO_REOPEN_ACK.test(t)) return true;
+  if (isShortPostCloseAck(message)) return true;
+  if (/^(?:no\s+gracias|no\s+por\s+ahora|no\s+nada)$/i.test(t)) return true;
+  if (/^(?:no,?\s*)?es\s+todo(?:\s+gracias)?$/i.test(t)) return true;
+  if (/^nada\s+mas$/i.test(t)) return true;
+  if (/^(?:listo|ya\s+no|todo\s+bien)$/i.test(t)) return true;
+  if (/^(?:perfecto|listo)\s+gracias$/i.test(t)) return true;
+  if (/\bes\s+todo\b/.test(t) && (/\bgracias\b/.test(t) || t.length <= 32)) return true;
+  if (/\bnada\s+mas\b/.test(t)) return true;
+  if (shouldTreatAsPostCloseAck(message)) return true;
+  return false;
 }
 
 function detectCommercialReopenIntent(message) {
@@ -76,8 +116,12 @@ function buildExplicitReopenStatePatch() {
   return {
     handoffWaitingFinalConfirmation: false,
     handoff_waiting_final_confirmation: false,
+    softClosePending: false,
+    soft_close_pending: false,
     conversationSoftClosed: false,
     conversation_soft_closed: false,
+    terminalAckClose: false,
+    terminal_ack_close: false,
     explicitReopen: true,
     explicit_reopen: true,
     awaitingField: null,
@@ -91,6 +135,8 @@ function buildSoftCloseStatePatch() {
   return {
     handoffWaitingFinalConfirmation: false,
     handoff_waiting_final_confirmation: false,
+    softClosePending: false,
+    soft_close_pending: false,
     conversationSoftClosed: true,
     conversation_soft_closed: true,
     explicitReopen: false,
@@ -102,6 +148,14 @@ function buildSoftCloseStatePatch() {
   };
 }
 
+function buildTerminalAckCloseStatePatch() {
+  return {
+    ...buildSoftCloseStatePatch(),
+    terminalAckClose: true,
+    terminal_ack_close: true,
+  };
+}
+
 function buildConsentWaitingPatch(nowIso) {
   const ts = nowIso || new Date().toISOString();
   return {
@@ -109,8 +163,12 @@ function buildConsentWaitingPatch(nowIso) {
     handoff_completed_at: ts,
     handoffWaitingFinalConfirmation: true,
     handoff_waiting_final_confirmation: true,
+    softClosePending: true,
+    soft_close_pending: true,
     conversationSoftClosed: false,
     conversation_soft_closed: false,
+    terminalAckClose: false,
+    terminal_ack_close: false,
     lastHandoffPromptAt: ts,
     last_handoff_prompt_at: ts,
     explicitReopen: false,
@@ -135,6 +193,15 @@ function composeExplicitReopenReply(aiState, message) {
 
 function composeSoftCloseReply() {
   return 'Con gusto. Si más adelante necesitas revisar opciones o apoyo con alguna propiedad, aquí estaré para ayudarte.';
+}
+
+function composeTerminalAckCloseReply(aiState) {
+  const nm = firstNameFromState(aiState) || 'perfecto';
+  return `Perfecto, ${nm}. Gracias por contactarnos.\nUn asesor de Luxetty continuará contigo por este medio.\nQue tengas excelente día.`;
+}
+
+function composeTerminalAckHoldReply() {
+  return 'Con gusto. Que tengas excelente día.';
 }
 
 function composeWaitingMoreHelpReply(aiState) {
@@ -174,15 +241,20 @@ async function recordConversationReopened(input) {
 module.exports = {
   readClosureContext,
   isClosureGateActive,
+  isAdvisorConsentAccepted,
+  isTerminalAckClose,
   detectCommercialReopenIntent,
   shouldExplicitlyReopenConversation,
   isExplicitCommercialReopen,
   shouldTreatAsPostCloseAck,
   buildExplicitReopenStatePatch,
   buildSoftCloseStatePatch,
+  buildTerminalAckCloseStatePatch,
   buildConsentWaitingPatch,
   composeExplicitReopenReply,
   composeSoftCloseReply,
+  composeTerminalAckCloseReply,
+  composeTerminalAckHoldReply,
   composeWaitingMoreHelpReply,
   composeConsentAcceptedReply,
   recordConversationReopened,

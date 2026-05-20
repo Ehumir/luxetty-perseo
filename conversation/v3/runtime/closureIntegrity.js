@@ -5,13 +5,18 @@ const { parseAdvisorContactConsent } = require('../planner/consentParser');
 const { isPositiveHandoffAck } = require('../interpreter/objectionClassifier');
 const {
   isClosureGateActive,
+  isAdvisorConsentAccepted,
+  isTerminalAckClose,
   shouldExplicitlyReopenConversation,
   shouldTreatAsPostCloseAck,
   buildExplicitReopenStatePatch,
   buildSoftCloseStatePatch,
+  buildTerminalAckCloseStatePatch,
   buildConsentWaitingPatch,
   composeExplicitReopenReply,
   composeSoftCloseReply,
+  composeTerminalAckCloseReply,
+  composeTerminalAckHoldReply,
   composeWaitingMoreHelpReply,
   composeConsentAcceptedReply,
   recordConversationReopened,
@@ -74,6 +79,8 @@ function mapClosurePatchToLegacy(patch) {
     conversation_soft_closed: p.conversationSoftClosed === true || p.conversation_soft_closed === true,
     last_handoff_prompt_at: p.lastHandoffPromptAt || p.last_handoff_prompt_at || nowIso(),
     explicit_reopen: p.explicitReopen === true || p.explicit_reopen === true,
+    soft_close_pending: p.softClosePending === true || p.soft_close_pending === true,
+    terminal_ack_close: p.terminalAckClose === true || p.terminal_ack_close === true,
     advisor_contact_consent: p.advisorContactConsent || 'ACCEPTED',
     awaiting_field: null,
     last_asked_field: null,
@@ -89,6 +96,8 @@ function mergeV3Patch(patch) {
     'conversationSoftClosed',
     'lastHandoffPromptAt',
     'explicitReopen',
+    'softClosePending',
+    'terminalAckClose',
     'advisorContactConsent',
     'handoffStage',
     'conversationStage',
@@ -129,17 +138,28 @@ function tryResolveClosureIntegrityTurn(input) {
   }
 
   const ctx = readClosureContext(state);
+  const handoffAccepted = isAdvisorConsentAccepted(state);
+  const pendingClose = ctx.handoffWaitingFinalConfirmation || ctx.softClosePending;
 
-  if (ctx.handoffWaitingFinalConfirmation && !ctx.conversationSoftClosed) {
-    if (shouldTreatAsPostCloseAck(text)) {
+  if (ctx.terminalAckClose) {
+    return {
+      handled: true,
+      reply: composeTerminalAckHoldReply(),
+      statePatch: {},
+      responseSource: 'v3_closure_terminal_ack_hold',
+    };
+  }
+
+  if (pendingClose && !ctx.conversationSoftClosed) {
+    if (handoffAccepted && (isTerminalAckClose(text) || shouldTreatAsPostCloseAck(text))) {
       return {
         handled: true,
-        reply: composeSoftCloseReply(),
-        statePatch: mergeV3Patch(buildSoftCloseStatePatch()),
-        responseSource: 'v3_closure_soft_close',
+        reply: composeTerminalAckCloseReply(state),
+        statePatch: mergeV3Patch(buildTerminalAckCloseStatePatch()),
+        responseSource: 'v3_closure_terminal_ack_close',
       };
     }
-    if (!isPositiveHandoffAck(text)) {
+    if (!isPositiveHandoffAck(text) && !isTerminalAckClose(text)) {
       return {
         handled: true,
         reply: composeWaitingMoreHelpReply(state),
@@ -150,12 +170,12 @@ function tryResolveClosureIntegrityTurn(input) {
   }
 
   if (ctx.conversationSoftClosed) {
-    if (shouldTreatAsPostCloseAck(text)) {
+    if (handoffAccepted && (isTerminalAckClose(text) || shouldTreatAsPostCloseAck(text))) {
       return {
         handled: true,
-        reply: composeSoftCloseReply(),
-        statePatch: {},
-        responseSource: 'v3_closure_soft_close_ack',
+        reply: composeTerminalAckCloseReply(state),
+        statePatch: mergeV3Patch(buildTerminalAckCloseStatePatch()),
+        responseSource: 'v3_closure_terminal_ack_close',
       };
     }
     return {
@@ -205,6 +225,31 @@ function resolveLegacyClosureTurn({ text, previousAiState, nextAiState, conversa
     };
   }
 
+  const ctx = readClosureContext(merged);
+  const handoffAccepted = isAdvisorConsentAccepted(merged);
+
+  if (ctx.terminalAckClose) {
+    return {
+      handled: true,
+      reply: [composeTerminalAckHoldReply()],
+      statePatch: {},
+      responseSource: 'closure_integrity_terminal_hold',
+    };
+  }
+
+  if (
+    (ctx.handoffWaitingFinalConfirmation || ctx.softClosePending) &&
+    handoffAccepted &&
+    (isTerminalAckClose(text) || shouldTreatAsPostCloseAck(text))
+  ) {
+    return {
+      handled: true,
+      reply: [composeTerminalAckCloseReply(merged)],
+      statePatch: buildTerminalAckCloseStatePatch(),
+      responseSource: 'closure_integrity_terminal_ack_close',
+    };
+  }
+
   if (shouldTreatAsPostCloseAck(text)) {
     return {
       handled: true,
@@ -214,8 +259,7 @@ function resolveLegacyClosureTurn({ text, previousAiState, nextAiState, conversa
     };
   }
 
-  const ctx = readClosureContext(merged);
-  if (ctx.handoffWaitingFinalConfirmation) {
+  if (ctx.handoffWaitingFinalConfirmation || ctx.softClosePending) {
     return {
       handled: true,
       reply: [composeWaitingMoreHelpReply(merged)],

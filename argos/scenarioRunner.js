@@ -18,6 +18,7 @@ const { getPropertyFixture } = require('./propertyFixtures');
 const { parseSprint1StrictCommand } = require('../conversation/qaSprint1Commands');
 const { isSoftTopicDismissal } = require('../conversation/v3/interpreter/topicPivotSignals');
 const { isSaleUrgencyEmotional } = require('../conversation/v3/interpreter/objectionClassifier');
+const { isTerminalAckClose } = require('../conversation/conversationReopenPolicy');
 const { normalizeScenarioTurn } = require('./scenarioTurn');
 const { buildConversationSnapshot } = require('./conversationSnapshot');
 const { getSession: getArgosSession } = require('./argosSessionStore');
@@ -158,6 +159,27 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
       code: 'expected_explicit_reopen',
       expected: true,
       actual: snapshot?.explicit_reopen,
+    });
+  }
+  if (expected.terminal_ack_close === true && snapshot?.terminal_ack_close !== true) {
+    violations.push({
+      code: 'expected_terminal_ack_close',
+      expected: true,
+      actual: snapshot?.terminal_ack_close,
+    });
+  }
+  if (expected.terminal_ack_close === false && snapshot?.terminal_ack_close !== false) {
+    violations.push({
+      code: 'expected_terminal_ack_not_closed',
+      expected: false,
+      actual: snapshot?.terminal_ack_close,
+    });
+  }
+  if (expected.soft_close_pending === true && snapshot?.soft_close_pending !== true) {
+    violations.push({
+      code: 'expected_soft_close_pending',
+      expected: true,
+      actual: snapshot?.soft_close_pending,
     });
   }
   if (expected.known_name != null) {
@@ -694,7 +716,12 @@ function buildScenarioFacts(userText, turnResult, scenarioSetup = null) {
     inboundMedia: null,
     mediaIntakeMode: snap.media_intake_mode || null,
     closureActive:
-      snap.handoff_waiting_final_confirmation === true || snap.conversation_soft_closed === true,
+      snap.handoff_waiting_final_confirmation === true ||
+      snap.soft_close_pending === true ||
+      snap.conversation_soft_closed === true ||
+      snap.terminal_ack_close === true,
+    terminalAckClose: snap.terminal_ack_close === true,
+    userTerminalAck: isTerminalAckClose(userText),
   };
   return facts;
 }

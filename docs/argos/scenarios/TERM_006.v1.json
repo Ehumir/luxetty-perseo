@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "TERM_006",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "closure",
+  "category": "terminal_ack_then_commercial_reopen",
+  "title": "Tras cierre terminal — intención comercial reabre",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres presupuesto 6 millones",
+    "Jorge",
+    "Sí, me parece bien",
+    "listo gracias",
+    "También quiero revisar García"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "conversation_soft_closed": false,
+    "terminal_ack_close": false,
+    "explicit_reopen": true
+  },
+  "must_not": {
+    "no_ask_before_close": true,
+    "no_search_reopen": true,
+    "send_whatsapp": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-20", "change": "TERM_006." }]
+}

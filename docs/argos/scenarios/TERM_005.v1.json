@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "TERM_005",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "closure",
+  "category": "terminal_ack_followup_ok_hold",
+  "title": "Tras cierre terminal — ok no re-pregunta",
+  "messages": [
+    "Hola",
+    "Busco casa en Cumbres presupuesto 6 millones",
+    "Jorge",
+    "Sí, me parece bien",
+    "perfecto gracias",
+    "ok"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true },
+  "expected": {
+    "terminal_ack_close": true,
+    "conversation_soft_closed": true,
+    "explicit_reopen": false
+  },
+  "must_not": {
+    "no_ask_before_close": true,
+    "no_search_reopen": true,
+    "flow_restart": true,
+    "send_whatsapp": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-20", "change": "TERM_005." }]
+}
