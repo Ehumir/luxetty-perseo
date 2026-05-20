@@ -81,8 +81,29 @@ function clearAllSessionsForTests() {
   sessions.clear();
 }
 
+/** ARGOS tests / noop verify — sesión determinista por `session_id`. */
+function seedSession({ session_id, phone_sim, flags = {} }) {
+  const row = {
+    session_id,
+    phone_sim,
+    flags: { ...flags },
+    turn_count: 0,
+    assistant_replies_consecutive: 0,
+    transcript: [],
+    legacy_ai_state: getDefaultAiState(),
+    contact_id: null,
+    lead_id: null,
+    qa_crm_force_new_lead: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  sessions.set(session_id, row);
+  return row;
+}
+
 module.exports = {
   createSession,
+  seedSession,
   getSession,
   updateSession,
   appendTranscript,
