@@ -63,17 +63,20 @@ async function probeTableDetailed(supabase, tableName) {
 async function areCrmRuntimeTablesAvailable(supabase, ctx = {}) {
   if (!isCrmRuntimePersistentEnabled()) return false;
   if (isArgosOrDryContext(ctx)) return false;
-  if (probeCache.crm !== null) return probeCache.crm;
-  probeCache.crm = await probeTable(supabase, 'crm_outbox');
-  return probeCache.crm;
+  // Only cache positive probes — a transient failure must not pin memory mode for process lifetime.
+  if (probeCache.crm === true) return true;
+  const ok = await probeTable(supabase, 'crm_outbox');
+  if (ok) probeCache.crm = true;
+  return ok;
 }
 
 async function isWaTelemetryTableAvailable(supabase, ctx = {}) {
   if (!isWaTelemetryEnabled()) return false;
   if (isArgosOrDryContext(ctx)) return false;
-  if (probeCache.telemetry !== null) return probeCache.telemetry;
-  probeCache.telemetry = await probeTable(supabase, 'wa_operational_telemetry');
-  return probeCache.telemetry;
+  if (probeCache.telemetry === true) return true;
+  const ok = await probeTable(supabase, 'wa_operational_telemetry');
+  if (ok) probeCache.telemetry = true;
+  return ok;
 }
 
 function resetRuntimeTableProbeCache() {

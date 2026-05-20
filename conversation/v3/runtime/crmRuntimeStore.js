@@ -1,7 +1,7 @@
 'use strict';
 
 const { buildCrmIdempotencyKey } = require('../crm/crmExecuteFoundation');
-const { areCrmRuntimeTablesAvailable, isArgosOrDryContext } = require('./runtimeTableProbe');
+const { areCrmRuntimeTablesAvailable, isArgosOrDryContext, probeTableDetailed } = require('./runtimeTableProbe');
 const { isCrmRuntimePersistentEnabled } = require('../../../config/perseoM401Flags');
 const { computeCrmBackoffMs } = require('./crmWorkerPoisoning');
 
@@ -296,16 +296,41 @@ class DbCrmRuntimeStore {
  */
 async function resolveCrmRuntimeStore(supabase, conversationId, ctx = {}) {
   if (!isCrmRuntimePersistentEnabled()) {
-    return { store: null, mode: 'disabled' };
+    return {
+      store: null,
+      mode: 'disabled',
+      memoryFallbackReason: 'PERSEO_CRM_RUNTIME_PERSISTENT_ENABLED_not_true',
+    };
   }
   if (isArgosOrDryContext(ctx)) {
-    return { store: new MemoryCrmRuntimeStore(conversationId), mode: 'memory_argos' };
+    const reason = process.env.PERSEO_ARGOS_ENABLED === 'true' ? 'PERSEO_ARGOS_ENABLED' : 'argos_context';
+    return {
+      store: new MemoryCrmRuntimeStore(conversationId),
+      mode: 'memory_argos',
+      memoryFallbackReason: reason,
+    };
+  }
+  if (!supabase?.from) {
+    return {
+      store: new MemoryCrmRuntimeStore(conversationId),
+      mode: 'memory',
+      memoryFallbackReason: 'no_supabase_client',
+    };
   }
   const dbOk = await areCrmRuntimeTablesAvailable(supabase, ctx);
   if (dbOk) {
-    return { store: new DbCrmRuntimeStore(supabase, conversationId), mode: 'db' };
+    return {
+      store: new DbCrmRuntimeStore(supabase, conversationId),
+      mode: 'db',
+      memoryFallbackReason: null,
+    };
   }
-  return { store: new MemoryCrmRuntimeStore(conversationId), mode: 'memory' };
+  const probe = await probeTableDetailed(supabase, 'crm_outbox');
+  return {
+    store: new MemoryCrmRuntimeStore(conversationId),
+    mode: 'memory',
+    memoryFallbackReason: probe.exists ? 'crm_probe_inconsistent' : `crm_outbox_unavailable:${probe.error}`,
+  };
 }
 
 module.exports = {
