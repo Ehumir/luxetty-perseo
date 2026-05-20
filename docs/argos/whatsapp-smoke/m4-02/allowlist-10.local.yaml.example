@@ -1,0 +1,61 @@
+# Copiar a allowlist-10.local.yaml (gitignored) con 10 teléfonos QA reales.
+# Formato MX WhatsApp: +52 81 … o 52181… (13 dígitos sin +)
+
+version: 1
+environment: staging
+meta:
+  owner: qa
+  sprint: M4-04
+  target_date: 2026-05-20
+
+conversations:
+  - id: PILOT_001
+    phone: "+5281XXXXXXX1"
+    carril: demand
+    objetivo: Compra zona conocida + nombre en mensajes separados
+    media_cases: []
+  - id: PILOT_002
+    phone: "+5281XXXXXXX2"
+    carril: offer
+    objetivo: Venta con mensaje largo compuesto
+    media_cases: []
+  - id: PILOT_003
+    phone: "+5281XXXXXXX3"
+    carril: demand
+    objetivo: Audio con transcript esperado
+    media_cases: [audio]
+  - id: PILOT_004
+    phone: "+5281XXXXXXX4"
+    carril: demand
+    objetivo: Imagen con caption
+    media_cases: [image]
+  - id: PILOT_005
+    phone: "+5281XXXXXXX5"
+    carril: demand
+    objetivo: PDF/documento
+    media_cases: [document]
+  - id: PILOT_006
+    phone: "+5281XXXXXXX6"
+    carril: demand
+    objetivo: Frustración / confusión
+    media_cases: []
+  - id: PILOT_007
+    phone: "+5281XXXXXXX7"
+    carril: demand
+    objetivo: Handoff asesor
+    media_cases: []
+  - id: PILOT_008
+    phone: "+5281XXXXXXX8"
+    carril: cross
+    objetivo: Multi-intent en un mensaje
+    media_cases: []
+  - id: PILOT_009
+    phone: "+5281XXXXXXX9"
+    carril: demand
+    objetivo: Policy zona / monto
+    media_cases: []
+  - id: PILOT_010
+    phone: "+5281XXXXXXX0"
+    carril: demand
+    objetivo: CRM path hasta consent (dry-run si execute OFF)
+    media_cases: []

@@ -27,7 +27,11 @@
     "staging:all": "node scripts/staging-run-all.js",
     "staging:crm-db": "node scripts/staging-crm-db-smoke.js",
     "staging:worker-tick": "node scripts/staging-worker-tick.js",
-    "staging:phases": "node scripts/staging-execute-phases.js"
+    "staging:phases": "node scripts/staging-execute-phases.js",
+    "staging:railway": "node scripts/staging-railway-check.js",
+    "staging:wa-allowlist": "node scripts/staging-wa-allowlist-validate.js",
+    "staging:wa-collect": "node scripts/staging-wa-collect-results.js",
+    "staging:close": "node scripts/staging-close-m4-04.js"
   },
   "keywords": [],
   "author": "",

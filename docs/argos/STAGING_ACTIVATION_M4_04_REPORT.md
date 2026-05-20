@@ -249,10 +249,30 @@ Migraciones + CRM durable + telemetry + scripts PASS — listo para completar WA
 
 ---
 
-## 11. Próximos pasos
+## 11. Cierre operativo (en curso)
 
-1. Completar `allowlist-10.yaml` con teléfonos staging autorizados.
-2. Ejecutar 10 pilotos WA; actualizar §6 y run log.
-3. Deploy Railway staging (webhook + worker) con flags por fase del checklist.
-4. Re-ejecutar: `PERSEO_STAGING_CONFIRMED=true npm run staging:phases`
-5. Si todo PASS → abrir diseño **M4-05 — Controlled Production Rollout**.
+**Runbook:** `docs/runbooks/M4-04-close-operational.md`
+
+| Paso | Comando | Estado |
+|------|---------|--------|
+| Allowlist 10 reales | `npm run staging:wa-allowlist` | **BLOQUEADO** — sin `allowlist-10.local.yaml` |
+| Railway staging | `npm run staging:railway` | **BLOQUEADO** — falta `PERSEO_BASE_URL_STAGING` |
+| WA pilotos + collect | `npm run staging:wa-collect` | **BLOQUEADO** — tras pilotos manuales |
+| Cierre automatizado | `npm run staging:close` | **BLOQUEADO** — pasos anteriores |
+
+### Inputs requeridos del operador
+
+1. `PERSEO_BASE_URL_STAGING` — URL webhook Railway staging.
+2. `allowlist-10.local.yaml` — 10 teléfonos QA (plantilla: `allowlist-10.local.yaml.example`, gitignored).
+3. Deploy worker Railway: `node workers/crmOutboxRailwayWorker.js` con flags Fase 2.
+4. Ejecutar conversaciones WA; luego `npm run staging:wa-collect`.
+
+### Decisión vigente
+
+| Nivel | Veredicto |
+|-------|-----------|
+| Infra staging (DB + scripts) | **GO** |
+| M4-04 operativo completo | **NO-GO** |
+| Prod | **OFF** |
+
+**No iniciar M4-05** hasta GO operativo completo.
