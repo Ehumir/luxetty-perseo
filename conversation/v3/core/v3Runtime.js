@@ -248,7 +248,16 @@ function processV3Turn(input) {
   }
 
   if (shouldBlockCommercialPipeline(fromV3State(state))) {
-    const closure = tryResolveClosureIntegrityTurn({ state, text: effectiveText });
+    const closure = tryResolveClosureIntegrityTurn({
+      state,
+      text: effectiveText,
+      conversationId,
+      pipeline: 'v3',
+      saveConversationEvent:
+        typeof input.logEvent === 'function'
+          ? (cid, type, payload) => input.logEvent(type, { conversation_id: cid, ...payload })
+          : undefined,
+    });
     if (closure?.handled) {
       const closedState = mergeConversationState(state, closure.statePatch || {});
       const fin = finalizeAssistantTurn(closedState, closure.reply, effectiveText, {

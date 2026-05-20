@@ -968,23 +968,31 @@ app.post('/webhook', async (req, res) => {
         if (v3Try.v3State) {
           let v3StateForCrm = v3Try.v3State;
           let crmOut = null;
-          if (skipLegacyCrm) {
-            crmOut = await executeV3CrmIfEligible({
-              v3State: v3Try.v3State,
-              phone: from,
-              rawPhone: rawFrom,
-              conversationRow,
-              supabase,
-              property,
-              propertyId,
-              waProfileName,
-              rawPayload: req.body || null,
-              logEvent,
-              ensureContactForConversation: ensureContactForConversationCore,
-              createOrReuseLeadFromConversation,
-              saveConversationEvent,
-              updateConversationMeta,
-            });
+          const { isClosureGateActive } = require('./conversation/v3/runtime/closureIntegrity');
+          const { runWithTimeout } = require('./utils/runWithTimeout');
+          const closureGateActive = isClosureGateActive(v3Try.v3State);
+          if (skipLegacyCrm && !closureGateActive) {
+            crmOut = await runWithTimeout(
+              () =>
+                executeV3CrmIfEligible({
+                  v3State: v3Try.v3State,
+                  phone: from,
+                  rawPhone: rawFrom,
+                  conversationRow,
+                  supabase,
+                  property,
+                  propertyId,
+                  waProfileName,
+                  rawPayload: req.body || null,
+                  logEvent,
+                  ensureContactForConversation: ensureContactForConversationCore,
+                  createOrReuseLeadFromConversation,
+                  saveConversationEvent,
+                  updateConversationMeta,
+                }),
+              Number(process.env.PERSEO_CLOSURE_CRM_TIMEOUT_MS || 2500),
+              null,
+            );
             if (crmOut?.v3State) {
               v3StateForCrm = crmOut.v3State;
               setSession(conversationId, v3StateForCrm);
@@ -1036,6 +1044,8 @@ app.post('/webhook', async (req, res) => {
           text,
           previousAiState,
           nextAiState,
+          conversationId,
+          saveConversationEvent,
         });
         if (legacyClosure?.handled) {
           reply = legacyClosure.reply;
