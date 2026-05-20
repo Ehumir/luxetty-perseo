@@ -1010,6 +1010,43 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (!v3PrimaryHandled) {
+      const {
+        resolveLegacyClosureTurn,
+        shouldBlockLegacyCommercialReply,
+        tryResolveLegacyConsentClosure,
+      } = require('./conversation/v3/runtime/closureIntegrity');
+      const legacyConsentClosure = tryResolveLegacyConsentClosure({
+        text,
+        previousAiState,
+        nextAiState,
+      });
+      if (legacyConsentClosure?.handled) {
+        reply = legacyConsentClosure.reply;
+        Object.assign(nextAiState, legacyConsentClosure.statePatch || {});
+        responseSource = legacyConsentClosure.responseSource || 'closure_integrity_legacy_consent';
+        nameFirstHandled = true;
+        logEvent('closure_integrity_legacy_consent', { conversation_id: conversationId });
+      }
+      if (
+        !nameFirstHandled &&
+        (shouldBlockLegacyCommercialReply(previousAiState) ||
+          shouldBlockLegacyCommercialReply(nextAiState))
+      ) {
+        const legacyClosure = resolveLegacyClosureTurn({
+          text,
+          previousAiState,
+          nextAiState,
+        });
+        if (legacyClosure?.handled) {
+          reply = legacyClosure.reply;
+          Object.assign(nextAiState, legacyClosure.statePatch || {});
+          responseSource = legacyClosure.responseSource || 'closure_integrity_legacy';
+          nameFirstHandled = true;
+          logEvent('closure_integrity_legacy', { conversation_id: conversationId });
+        }
+      }
+
+      if (!nameFirstHandled) {
       const guard = nameFirstGuardrail.evaluateInboundTurn({
         text,
         previousAiState,
@@ -1058,7 +1095,7 @@ app.post('/webhook', async (req, res) => {
         logEvent('advisor_reply_generated', { response_source: responseSource, engine_v2_used: true });
       }
 
-      if (!nameFirstHandled && !engineV2) {
+      if (!nameFirstHandled && !engineV2 && !shouldBlockLegacyCommercialReply(nextAiState)) {
         reply = buildConsultiveFallbackReply({
           text,
           signals: parsedSignals,
@@ -1180,6 +1217,7 @@ app.post('/webhook', async (req, res) => {
         });
       } catch (v3ShadowErr) {
         console.error('v3_shadow_fatal', v3ShadowErr);
+      }
       }
       }
 

@@ -22,6 +22,7 @@ const {
 const { tryComposeF4PlannerTurn } = require('../composer/f4TurnComposer');
 const { getPerseoV3Config } = require('../../../config/perseoV3Flags');
 const { v3Log } = require('./v3Logger');
+const { buildConsentAcceptedClosurePatch } = require('../runtime/closureIntegrity');
 
 /**
  * @param {{ state: import('../types/conversationState').ConversationState, decision: object, text: string }} input
@@ -36,6 +37,9 @@ function runF3Pipeline(input) {
 
   const handoffOut = processHandoff(next, text, decision, plannerOut);
   next = mergeConversationState(next, handoffOut.patch);
+  if (handoffOut.action === 'CONSENT_ACCEPTED') {
+    next = mergeConversationState(next, buildConsentAcceptedClosurePatch());
+  }
 
   if (plannerOut.qualificationComplete && !handoffOut.patch.conversationStage) {
     next = mergeConversationState(next, {
@@ -73,7 +77,12 @@ function runF3Pipeline(input) {
         intent: payload.intent,
         advisor_contact_consent: payload.advisor_contact_consent,
       });
-    } else if (!plannerOut.qualificationComplete && plannerOut.missingSlots?.length) {
+    } else if (
+      !next.handoffWaitingFinalConfirmation &&
+      !next.conversationSoftClosed &&
+      !plannerOut.qualificationComplete &&
+      plannerOut.missingSlots?.length
+    ) {
       const nextSlot = plannerOut.nextSlot || plannerOut.missingSlots[0];
       const awaitingField =
         nextSlot === 'full_name'

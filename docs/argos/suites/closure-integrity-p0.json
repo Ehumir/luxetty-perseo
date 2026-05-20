@@ -1,0 +1,15 @@
+{
+  "suite": "closure-integrity-p0",
+  "description": "M4-04D — integridad de cierre post-handoff (no reabrir búsqueda tras consentimiento).",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": [
+    "CLOSE_001.v1.json",
+    "CLOSE_002.v1.json",
+    "CLOSE_003.v1.json",
+    "CLOSE_004.v1.json",
+    "CLOSE_005.v1.json",
+    "CLOSE_006.v1.json",
+    "CLOSE_007.v1.json",
+    "CLOSE_008.v1.json"
+  ]
+}

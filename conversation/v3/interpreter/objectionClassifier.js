@@ -59,6 +59,9 @@ function isHandoffFlowActive(state) {
 
 function isPostHandoffTerminalState(state) {
   if (!state || typeof state !== 'object') return false;
+  if (state.handoffWaitingFinalConfirmation === true || state.conversationSoftClosed === true) {
+    return true;
+  }
   const stage = state.conversationStage;
   return stage === CONVERSATION_STAGES.CRM_READY || stage === CONVERSATION_STAGES.HANDOFF_READY;
 }

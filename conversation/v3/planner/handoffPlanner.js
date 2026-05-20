@@ -9,6 +9,13 @@ const {
 const { HUMAN_ESCALATION_REASONS } = require('../types/forcedHandoffReasons');
 const { classifyObjection } = require('../interpreter/objectionClassifier');
 const { isHumanityDeferHandoffKind } = require('../composer/humanityHandoffComposer');
+const {
+  buildConsentAcceptedClosurePatch,
+  buildExplicitReopenPatch,
+  shouldBlockCommercialPipeline,
+  fromV3State,
+  isExplicitCommercialReopen,
+} = require('../runtime/closureIntegrity');
 
 /**
  * @typedef {'CONTINUE_QUALIFICATION'|'OFFER_HANDOFF'|'CONSENT_ACCEPTED'|'CONSENT_DECLINED'|'HANDOFF_COMPLETE'|'PROPERTY_QA_ENTRY'|'PROPERTY_QA_CONTINUE'|'FORCE_HANDOFF'|'FORCE_HANDOFF_READY'|'FORCE_HANDOFF_ESCALATION'} HandoffAction
@@ -80,6 +87,13 @@ function processHandoff(state, text, decision, plannerOut) {
   const patch = {};
   let action = /** @type {HandoffAction} */ ('CONTINUE_QUALIFICATION');
 
+  if (shouldBlockCommercialPipeline(fromV3State(state))) {
+    if (isExplicitCommercialReopen(text)) {
+      return { patch: buildExplicitReopenPatch(), action: 'HANDOFF_COMPLETE' };
+    }
+    return { patch: {}, action: 'HANDOFF_COMPLETE' };
+  }
+
   const humanityKind = classifyObjection(text, state);
   if (isHumanityDeferHandoffKind(humanityKind)) {
     return { patch, action };
@@ -88,9 +102,7 @@ function processHandoff(state, text, decision, plannerOut) {
   if (decision.detectedIntent === V3_INTENT.ADVISOR_CONSENT_CAPTURE) {
     const consent = state.advisorContactConsent;
     if (consent === ADVISOR_CONTACT_CONSENT.ACCEPTED) {
-      patch.awaitingField = null;
-      patch.handoffStage = CONVERSATION_STAGES.HANDOFF_READY;
-      patch.conversationStage = CONVERSATION_STAGES.HANDOFF_READY;
+      Object.assign(patch, buildConsentAcceptedClosurePatch());
       action = 'CONSENT_ACCEPTED';
       return { patch, action };
     }

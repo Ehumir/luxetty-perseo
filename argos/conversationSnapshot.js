@@ -72,6 +72,13 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
     runtime_observability_recorded: v3State?.runtimeObservabilityRecorded === true,
     runtime_escalation_triggered: v3State?.runtimeEscalationTriggered === true,
     media_reject_reason: v3State?.lastMediaFallbackReason || null,
+    handoff_waiting_final_confirmation:
+      v3State?.handoffWaitingFinalConfirmation === true ||
+      legacy.handoff_waiting_final_confirmation === true,
+    conversation_soft_closed:
+      v3State?.conversationSoftClosed === true || legacy.conversation_soft_closed === true,
+    handoff_completed_at: v3State?.handoffCompletedAt || legacy.handoff_completed_at || null,
+    explicit_reopen: v3State?.explicitReopen === true || legacy.explicit_reopen === true,
   };
 }
 

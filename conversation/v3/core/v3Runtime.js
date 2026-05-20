@@ -34,6 +34,11 @@ const { runResilienceRuntime } = require('../runtime/resilienceRuntime');
 const { recordOperationalEvent, buildTelemetryFromTurn } = require('../runtime/waTelemetry');
 const { applyM403RuntimeFinishing } = require('../runtime/applyM403Finishing');
 const { applyMediaHardeningToMedia } = require('../runtime/mediaHardening');
+const {
+  tryResolveClosureIntegrityTurn,
+  shouldBlockCommercialPipeline,
+  fromV3State,
+} = require('../runtime/closureIntegrity');
 
 function finalizeAssistantTurn(state, replyText, effectiveText, decision) {
   const reply = applyHumanityWave2Reply({ state, replyText, text: effectiveText, decision });
@@ -240,6 +245,38 @@ function processV3Turn(input) {
   const fr = detectFrustration(effectiveText);
   if (fr.isFrustrated) {
     v3Log('frustration_detected', { conversation_id: conversationId, level: fr.level });
+  }
+
+  if (shouldBlockCommercialPipeline(fromV3State(state))) {
+    const closure = tryResolveClosureIntegrityTurn({ state, text: effectiveText });
+    if (closure?.handled) {
+      const closedState = mergeConversationState(state, closure.statePatch || {});
+      const fin = finalizeAssistantTurn(closedState, closure.reply, effectiveText, {
+        detectedIntent: 'closure_integrity',
+      });
+      const closureFin = applyM4RuntimeFinishing(fin.state, {
+        effectiveText,
+        replyText: fin.reply,
+        decision: { detectedIntent: 'closure_integrity' },
+        resolvedMedia,
+        input,
+      });
+      setSession(conversationId, closureFin.state);
+      v3Log('closure_integrity_turn', {
+        conversation_id: conversationId,
+        response_source: closure.responseSource,
+        soft_closed: closureFin.state.conversationSoftClosed === true,
+      });
+      return {
+        ok: true,
+        reply: fin.reply,
+        state: closureFin.state,
+        responseSource: closure.responseSource || 'v3_closure_integrity',
+        fallbackToLegacy: false,
+        resilienceRuntime: closureFin.resilienceRuntime,
+        telemetryResult: closureFin.telemetryResult,
+      };
+    }
   }
 
   const headline =

@@ -399,12 +399,12 @@ function composeHandoffBuyDemand(state) {
 }
 
 function composeConsentAccepted(state) {
-  const nm = firstName(state) || 'perfecto';
+  const { composeConsentAcceptedMessage } = require('../runtime/closureIntegrity');
   return {
-    responseText: `Listo, ${nm}. Ya dejé anotado que un asesor de Luxetty te contacte para seguir contigo. En breve te escriben por este mismo canal.`,
+    responseText: composeConsentAcceptedMessage(state),
     followUpQuestion: null,
     awaitingField: null,
-    toneFlags: { consultive: true, handoff: true },
+    toneFlags: { consultive: true, handoff: true, closureIntegrity: true },
   };
 }
 

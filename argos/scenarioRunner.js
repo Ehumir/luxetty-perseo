@@ -132,6 +132,34 @@ function collectExpectedViolations(expected, snapshot, panel, crm, violations, t
       actual: snapshot?.advisor_contact_consent,
     });
   }
+  if (expected.handoff_waiting_final_confirmation === true && snapshot?.handoff_waiting_final_confirmation !== true) {
+    violations.push({
+      code: 'expected_handoff_waiting_final_confirmation',
+      expected: true,
+      actual: snapshot?.handoff_waiting_final_confirmation,
+    });
+  }
+  if (expected.conversation_soft_closed === true && snapshot?.conversation_soft_closed !== true) {
+    violations.push({
+      code: 'expected_conversation_soft_closed',
+      expected: true,
+      actual: snapshot?.conversation_soft_closed,
+    });
+  }
+  if (expected.conversation_soft_closed === false && snapshot?.conversation_soft_closed !== false) {
+    violations.push({
+      code: 'expected_conversation_not_soft_closed',
+      expected: false,
+      actual: snapshot?.conversation_soft_closed,
+    });
+  }
+  if (expected.explicit_reopen === true && snapshot?.explicit_reopen !== true) {
+    violations.push({
+      code: 'expected_explicit_reopen',
+      expected: true,
+      actual: snapshot?.explicit_reopen,
+    });
+  }
   if (expected.known_name != null) {
     const actualName = snapshot?.known_name || null;
     if (String(actualName || '').toLowerCase() !== String(expected.known_name).toLowerCase()) {
@@ -665,6 +693,8 @@ function buildScenarioFacts(userText, turnResult, scenarioSetup = null) {
     userMentionedArea: /\b(m2|metros|recamaras|ba[nñ]os)\b/i.test(userText),
     inboundMedia: null,
     mediaIntakeMode: snap.media_intake_mode || null,
+    closureActive:
+      snap.handoff_waiting_final_confirmation === true || snap.conversation_soft_closed === true,
   };
   return facts;
 }
