@@ -122,7 +122,7 @@ function processV3Turn(input) {
     const st0 = resetSession(conversationId, { phone });
     return {
       ok: true,
-      reply: 'Listo, reiniciamos la conversación. ¿Qué necesitas revisar ahora?',
+      reply: require('../composer/humanCopyV1').RESET_CONVERSATION_REPLY,
       state: st0,
       responseSource: 'v3_reset',
     };

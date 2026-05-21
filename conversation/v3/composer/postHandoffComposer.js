@@ -21,7 +21,7 @@ function composePostHandoffAck(state) {
   const nm = firstName(state);
   const head = nm ? `Con gusto, ${nm}.` : 'Con gusto.';
   return {
-    responseText: `${head} Ya quedó anotado; en breve te escribe un asesor de Luxetty por aquí. Si surge algo más, me avisas.`,
+    responseText: `${head} Un asesor de Luxetty continuará contigo por este medio. Si surge algo más, me avisas.`,
     followUpQuestion: null,
     awaitingField: null,
     toneFlags: { consultive: true, postClose: true },
@@ -46,7 +46,7 @@ function composeHandoffPendingContinuity(state) {
   const nm = firstName(state);
   const head = nm ? `Lamento la confusión, ${nm}.` : 'Lamento la confusión.';
   return {
-    responseText: `${head} Ya tengo anotada la canalización con un asesor de Luxetty; en breve te contactan por WhatsApp. Si te parece bien el contacto, un “sí” me ayuda a confirmarlo.`,
+    responseText: `${head} Un asesor de Luxetty continuará contigo por este medio. Si te parece bien el contacto, un “sí” me ayuda a confirmarlo.`,
     followUpQuestion: null,
     awaitingField: state.awaitingField === 'advisor_contact_consent' ? 'advisor_contact_consent' : null,
     toneFlags: { consultive: true, handoffContinuity: true },

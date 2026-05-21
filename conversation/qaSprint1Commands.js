@@ -23,7 +23,7 @@ function maskPhoneForLog(phone) {
   return `***${value.slice(-4)}`;
 }
 
-const REPLY_RESET = 'Listo, reiniciamos la conversación. ¿Qué necesitas revisar ahora?';
+const { RESET_CONVERSATION_REPLY: REPLY_RESET } = require('./v3/composer/humanCopyV1');
 const REPLY_CLOSE = 'Listo, cerré esta conversación de prueba.';
 
 /**

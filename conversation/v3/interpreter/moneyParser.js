@@ -10,12 +10,12 @@ const { recordFlexApplied } = require('../../flexibility/flexTelemetry');
  * @returns {number|null}
  */
 function parseMoneyAmount(text) {
-  if (isConversationalFlexEnabled()) {
-    const flex = parseFlexMoneyAmount(text);
-    if (flex?.amount != null) {
+  const flex = parseFlexMoneyAmount(text);
+  if (flex?.amount != null) {
+    if (isConversationalFlexEnabled()) {
       recordFlexApplied('money', { confidence: flex.confidence });
-      return flex.amount;
     }
+    return flex.amount;
   }
 
   const t = normalizeText(text);

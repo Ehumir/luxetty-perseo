@@ -7,6 +7,12 @@ const {
   FORBIDDEN_COMPOSER_PATTERNS,
 } = require('../types/constants');
 const { occupancyStatusLabel } = require('../interpreter/occupancyParser');
+const {
+  acknowledgedZone,
+  acknowledgedPrice,
+  askExpectedPrice,
+  SLOT_COPY,
+} = require('./humanCopyV1');
 
 function formatMoneyMx(amount) {
   const n = Number(amount);
@@ -76,7 +82,7 @@ function composeSellQualificationComplete(state) {
   const zone = state.locationText || 'esa zona';
   const occ = occupancyStatusLabel(getOccupancyStatus(state));
   return {
-    responseText: `Perfecto, ${nm}. Tomé que la propiedad está ${occ}. Ya tengo registrados los datos principales de tu venta en ${zone}.`,
+    responseText: `Perfecto, ${nm}. La propiedad está ${occ}. Con lo que tengo de tu venta en ${zone}, un asesor puede continuar contigo.`,
     followUpQuestion: null,
     awaitingField: null,
     toneFlags: { consultive: true },
@@ -141,7 +147,7 @@ function composeHumanResponse(input) {
     if (sell) {
       if (state.locationText) {
         return {
-          responseText: `Claro, ${nm}. Tomé la zona (${state.locationText}). ¿Tienes un precio esperado de venta?`,
+          responseText: `Claro, ${nm}. ${acknowledgedZone(state.locationText)} ¿Qué precio tienes pensado manejar?`,
           followUpQuestion: '¿Tienes un precio esperado de venta?',
           toneFlags: { consultive: true },
         };
@@ -179,7 +185,7 @@ function composeHumanResponse(input) {
       };
     }
     return {
-      responseText: `Tomé la zona (${zone}). Para seguir con la venta, ¿me compartes tu nombre?`,
+      responseText: `${acknowledgedZone(zone)} ${SLOT_COPY.sell_capture_name[0]}`,
       followUpQuestion: '¿Me compartes tu nombre?',
       toneFlags: { consultive: true },
     };
@@ -193,7 +199,7 @@ function composeHumanResponse(input) {
       return composeSellQualificationComplete(state);
     }
     return {
-      responseText: `Perfecto, ${nm}. Tomé que es casa. ¿En qué zona está la propiedad?`,
+      responseText: `Perfecto, ${nm}. Es casa. ¿En qué zona está la propiedad?`,
       followUpQuestion: null,
       toneFlags: { consultive: true },
     };
@@ -216,7 +222,7 @@ function composeHumanResponse(input) {
       };
     }
     return {
-      responseText: `Tomé el precio esperado (${pres}). Para seguir con la venta, ¿me compartes tu nombre?`,
+      responseText: `${acknowledgedPrice(pres)} ¿Me compartes tu nombre?`,
       followUpQuestion: '¿Me compartes tu nombre?',
       toneFlags: { consultive: true },
     };
@@ -262,7 +268,7 @@ function composeHumanResponse(input) {
       };
     }
     return {
-      responseText: `Tomé tu presupuesto en ${zone}. ¿Me compartes tu nombre?`,
+      responseText: `${acknowledgedZone(zone)} ¿Me compartes tu nombre?`,
       followUpQuestion: '¿Me compartes tu nombre?',
       toneFlags: { consultive: true },
     };
@@ -295,7 +301,7 @@ function composeHumanResponse(input) {
     }
     if (state.expectedPrice == null) {
       return {
-        responseText: `Perfecto, ${nm}. Tomé la zona (${state.locationText}). ¿Tienes un precio esperado de venta?`,
+        responseText: `Perfecto, ${nm}. ${acknowledgedZone(state.locationText)} ¿Qué precio tienes pensado manejar?`,
         followUpQuestion: null,
         toneFlags: { consultive: true },
       };

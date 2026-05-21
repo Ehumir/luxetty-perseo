@@ -216,7 +216,8 @@ function composeWaitingMoreHelpReply(aiState) {
 
 function composeConsentAcceptedReply(aiState) {
   const nm = firstNameFromState(aiState) || 'perfecto';
-  return `Perfecto, ${nm}. Ya dejé anotado que un asesor de Luxetty te contacte por este mismo medio.\n\nAntes de cerrar por ahora, ¿hay algo más en lo que te pueda ayudar?`;
+  const { consentAcceptedHandoff } = require('./v3/composer/humanCopyV1');
+  return consentAcceptedHandoff(nm === 'perfecto' ? null : nm);
 }
 
 /**
