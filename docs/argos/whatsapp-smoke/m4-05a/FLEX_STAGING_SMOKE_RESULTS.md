@@ -1,8 +1,15 @@
 # M4-05a — Resultados smoke WA staging
 
 **Piloto:** `5218181877351` (o el de allowlist QA)  
-**Flag:** `PERSEO_CONVERSATIONAL_FLEX_ENABLED=true`  
-**Fecha:** _pendiente ejecución manual_
+**Flag:** `PERSEO_CONVERSATIONAL_FLEX_ENABLED=true` (solo QA/staging; prod default OFF)  
+**Fecha:** 2026-05-20
+
+| Smoke | WA real | Notas |
+|-------|---------|-------|
+| FLEX1 | **PASS** | typo zona, slang, sin IVR, consent, terminal close |
+| FLEX2 | **PASS** | (incluido en flujo FLEX1) consent MX compuesto |
+| FLEX3 | _pendiente / local OK_ | ver abajo |
+| FLEX4 | _pendiente WA audio_ | proxy texto OK local |
 
 ---
 
@@ -75,5 +82,8 @@ node scripts/staging-wa-flex-smoke-check.js <phone> FLEX1
 
 ## Veredicto
 
-- [ ] GO merge M4-05a → `main`
-- [ ] NO-GO — bloqueador: ___
+- [x] FLEX1 PASS WA
+- [x] FLEX2 PASS WA (consent + cierre)
+- [ ] FLEX3 PASS WA
+- [ ] FLEX4 PASS WA
+- [x] GO merge M4-05a → `main` (FLEX1/2 aprobados; FLEX3/4 sin bloqueo crítico en ARGOS local)
