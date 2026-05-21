@@ -8,13 +8,7 @@ const { isStickyContextActive } = require('../ownership/stickyContext');
 const GLOBAL_INTENT_MENU_RE =
   /¿\s*buscas\s+vender|vender,\s*poner\s+en\s+renta,\s*comprar\s+o\s+rentar|vender,\s*comprar\s+o\s+rentar/i;
 
-const GLOBAL_OPENING_VARIANTS = Object.freeze([
-  'Hola, soy el asesor IA de Luxetty. Con gusto te ayudo. ¿Buscas vender, poner en renta, comprar o rentar una propiedad?',
-  'Hola, qué gusto saludarte. Soy el asesor IA de Luxetty. Cuéntame si buscas vender, rentar, comprar o publicar una propiedad.',
-  'Hola, con gusto te atiendo desde Luxetty. ¿Qué te gustaría hacer: vender, poner en renta, comprar o rentar?',
-  'Buen día. Soy el asesor IA de Luxetty. ¿Te apoyo con venta, renta, compra o búsqueda de departamento/casa?',
-  'Hola. Estoy para ayudarte con inmuebles en Luxetty. ¿Buscas vender, comprar o rentar?',
-]);
+const { GLOBAL_OPENING_VARIANTS } = require('./humanCopyV1');
 
 const SOCIAL_RAPPORT_VARIANTS = Object.freeze([
   'Muy bien, gracias. Cuéntame cuando quieras qué tipo de propiedad te interesa y te ayudo paso a paso.',
@@ -91,7 +85,7 @@ function getBuyDemandContinuityVariants(state) {
   const variants = [
     `Seguimos con tu búsqueda de compra${zone}${budget}. ¿Quieres afinar zona, presupuesto, recámaras o algún detalle (patio, etc.)?`,
     'Perfecto, sigo contigo en la compra. Cuéntame qué criterio quieres ajustar sin reiniciar.',
-    'Tomé el contexto de tu búsqueda. ¿Afinamos zona, presupuesto o tamaño de la propiedad?',
+    'Sigo con tu búsqueda. ¿Afinamos zona, presupuesto o tamaño de la propiedad?',
     'De acuerdo, continuamos con opciones de compra. ¿Qué dato quieres precisar ahora?',
     'Gracias por el mensaje. Sigo con tu compra: dime si movemos zona, presupuesto o algún detalle.',
     'Entendido. Mantengo tu búsqueda activa; ¿qué quieres afinar ahora?',
@@ -117,7 +111,7 @@ function getSellOfferContinuityVariants(state) {
   const variants = [
     `Seguimos con la captación de tu propiedad${zone}. ¿Qué dato quieres completar (precio, ocupación o tipo)?`,
     'Perfecto, continúo contigo en la venta. Dime el siguiente dato de tu inmueble.',
-    'Tomé el contexto de tu propiedad. ¿Afinamos precio esperado, ocupación o algún detalle?',
+    'Sigo con tu propiedad. ¿Afinamos precio, ocupación o algún detalle?',
     'De acuerdo, vamos con la venta. ¿Qué información te falta registrar?',
   ];
   if (!state.collectedFields?.fullName) {
@@ -136,7 +130,7 @@ function getRentOfferContinuityVariants(state) {
   const variants = [
     `Seguimos con poner tu propiedad en renta${zone}. ¿Qué dato quieres completar (renta esperada, ocupación)?`,
     'Perfecto, continúo contigo en la captación para renta. Dime el siguiente dato.',
-    'Tomé que quieres rentar tu propiedad. ¿Afinamos ocupación o renta esperada?',
+    'Seguimos con poner tu propiedad en renta. ¿Afinamos ocupación o renta esperada?',
     'De acuerdo, vamos con la renta de tu inmueble. ¿Qué te gustaría precisar ahora?',
   ];
   if (!state.collectedFields?.fullName) {
@@ -156,7 +150,7 @@ function getRentDemandContinuityVariants(state) {
   const zone = state.locationText ? ` en ${state.locationText}` : '';
   const variants = [
     'Perfecto, seguimos con tu búsqueda de renta. Cuéntame qué dato quieres afinar (zona, presupuesto o recámaras).',
-    `Tomé que buscas renta${zone}. ¿Qué presupuesto mensual manejas aproximadamente?`,
+    `Perfecto, buscas renta${zone}. ¿Qué presupuesto mensual manejas aproximadamente?`,
     'De acuerdo, vamos con la renta. ¿En qué zona te gustaría enfocar la búsqueda?',
     'Gracias por el dato. Sigo contigo en la renta: ¿qué presupuesto aproximado tienes en mente?',
     'Entendido. Para afinar opciones de renta, ¿me compartes zona o presupuesto que manejas?',
