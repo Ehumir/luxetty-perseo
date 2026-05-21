@@ -18,10 +18,8 @@ function isSaleUrgencyEmotional(text) {
 }
 
 function isShortPostCloseAck(text) {
-  const t = normalizeText(String(text || ''));
-  return /^(?:gracias|muchas\s+gracias|ok|vale|perfecto|excelente|genial|va|listo|de\s+acuerdo|bien|si|sí)(?:\s+gracias)?$/i.test(
-    t,
-  );
+  const { isHumanShortAck } = require('./humanTextRobustness');
+  return isHumanShortAck(text);
 }
 
 function isPositiveHandoffAck(text) {

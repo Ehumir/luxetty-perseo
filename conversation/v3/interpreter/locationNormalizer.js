@@ -20,12 +20,12 @@ function normalizeLocationFromUserText(raw) {
   const lower = normalizeText(t);
   let explicitLocation = false;
 
-  if (isConversationalFlexEnabled()) {
-    const fuzzy = fuzzyResolveZone(t);
-    if (fuzzy) {
+  const fuzzy = fuzzyResolveZone(t);
+  if (fuzzy) {
+    if (isConversationalFlexEnabled()) {
       recordFlexApplied('zone', { canonical: fuzzy });
-      return fuzzy;
     }
+    return fuzzy;
   }
   /** Preguntas sin ancla de lugar no son colonia (evita contaminar `location_text` en flujos mixtos). */
   if (

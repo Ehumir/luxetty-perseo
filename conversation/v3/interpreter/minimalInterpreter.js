@@ -37,6 +37,7 @@ const { isSoftTopicDismissal, isBudgetDismissalOnly, parseTopicPivot } = require
 const { appendPropertyHistory, resolvePropertyReferenceCode } = require('../property/propertyHistory');
 
 const { parseMoneyAmount } = require('./moneyParser');
+const { normalizeConversationalTypos, isHumanShortAck } = require('./humanTextRobustness');
 
 function isBareBuyMenuReply(t) {
   return /^(comprar|compra|quiero comprar|busco comprar)$/.test(t);
@@ -150,22 +151,14 @@ function sellOfferPriceSatisfied(state) {
 }
 
 function isShortAck(text) {
-  if (isConversationalFlexEnabled() && isFlexShortAck(text)) {
-    recordFlexApplied('short_ack');
+  if (isHumanShortAck(text)) {
+    if (isConversationalFlexEnabled() && isFlexShortAck(text)) {
+      recordFlexApplied('short_ack');
+    }
     return true;
   }
   const t = normalizeText(text);
-  return (
-    t === 'si' ||
-    t === 'sí' ||
-    t === 'ok' ||
-    t === 'vale' ||
-    t === 'claro' ||
-    t === 'nada' ||
-    t === 'no' ||
-    t === 'ya' ||
-    t === 'bueno'
-  );
+  return t === 'nada' || t === 'no' || t === 'ya';
 }
 
 /** Mensaje de usuario que indica solo preferencia por WhatsApp (texto ya normalizado o mixto). */
@@ -190,8 +183,8 @@ function applyOccupancyPatch(patch, status) {
  * @param {{ campaignHeadline?: string|null }} [options]
  */
 function interpretUserMessage(state, text, options = {}) {
-  const t = normalizeText(String(text || ''));
-  const raw = cleanSpaces(String(text || ''));
+  const raw = cleanSpaces(normalizeConversationalTypos(String(text || '')));
+  const t = normalizeText(raw);
   const decision = createEmptyDecision();
   /** @type {Partial<import('../types/conversationState').ConversationState>} */
   const patch = { lastUserText: raw, topicPivotTurn: false, flowSwitchAck: false };
