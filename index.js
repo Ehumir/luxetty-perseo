@@ -1001,6 +1001,7 @@ app.post('/webhook', async (req, res) => {
           const {
             shouldAllowCrmExecuteForInbound,
             logCrmExecuteGate,
+            persistCrmExecuteGateEvent,
           } = require('./config/crmExecuteInboundGate');
           const crmExecuteGate = shouldAllowCrmExecuteForInbound({
             phone: from,
@@ -1010,6 +1011,7 @@ app.post('/webhook', async (req, res) => {
             selectedPipeline: 'v3',
           });
           logCrmExecuteGate(logEvent, crmExecuteGate);
+          await persistCrmExecuteGateEvent(saveConversationEvent, conversationId, crmExecuteGate);
 
           if (skipLegacyCrm && !closureGateActive && crmExecuteGate.crm_execute_allowed) {
             crmOut = await runWithTimeout(
@@ -1299,6 +1301,7 @@ app.post('/webhook', async (req, res) => {
     const {
       shouldAllowCrmExecuteForInbound,
       logCrmExecuteGate,
+      persistCrmExecuteGateEvent,
     } = require('./config/crmExecuteInboundGate');
     const crmExecuteGate = shouldAllowCrmExecuteForInbound({
       phone: from,
@@ -1308,6 +1311,7 @@ app.post('/webhook', async (req, res) => {
       selectedPipeline,
     });
     logCrmExecuteGate(logEvent, crmExecuteGate);
+    await persistCrmExecuteGateEvent(saveConversationEvent, conversationId, crmExecuteGate);
 
     if (!skipLegacyCrm && crmExecuteGate.crm_execute_allowed) {
       await runCleanOrchestratorCrmPhase({

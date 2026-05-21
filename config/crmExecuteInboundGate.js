@@ -91,8 +91,9 @@ function shouldAllowCrmExecuteForInbound(input) {
  * @param {Function|null|undefined} logEvent
  * @param {ReturnType<typeof shouldAllowCrmExecuteForInbound>} gateResult
  */
-function logCrmExecuteGate(logEvent, gateResult) {
-  const payload = {
+function buildCrmExecuteGatePayload(gateResult) {
+  return {
+    event: 'crm_execute_gate',
     phone: gateResult.phone,
     conversation_id: gateResult.conversation_id,
     allowlist_count: gateResult.allowlist_count,
@@ -103,14 +104,36 @@ function logCrmExecuteGate(logEvent, gateResult) {
     block_reason: gateResult.block_reason,
     v3_primary_allowed: gateResult.v3_primary_allowed,
     v3_enabled: gateResult.v3_enabled,
+    allowlist_block_reason: gateResult.allowlist_block_reason ?? null,
   };
+}
+
+function logCrmExecuteGate(logEvent, gateResult) {
+  const payload = buildCrmExecuteGatePayload(gateResult);
   if (typeof logEvent === 'function') {
     logEvent('crm_execute_gate', payload);
+  }
+}
+
+/**
+ * @param {(id: string, type: string, payload: object) => Promise<void>|void} saveConversationEvent
+ * @param {string|null|undefined} conversationId
+ * @param {ReturnType<typeof shouldAllowCrmExecuteForInbound>} gateResult
+ */
+async function persistCrmExecuteGateEvent(saveConversationEvent, conversationId, gateResult) {
+  const id = String(conversationId || '').trim();
+  if (!id || typeof saveConversationEvent !== 'function') return;
+  try {
+    await saveConversationEvent(id, 'crm_execute_gate', buildCrmExecuteGatePayload(gateResult));
+  } catch (err) {
+    console.error('crm_execute_gate_persist_fatal', err);
   }
 }
 
 module.exports = {
   shouldAllowCrmExecuteForInbound,
   logCrmExecuteGate,
+  persistCrmExecuteGateEvent,
+  buildCrmExecuteGatePayload,
   V3_PIPELINES,
 };
