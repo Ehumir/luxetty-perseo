@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "scenario_code": "V1_DEMAND_RENT_001",
+  "scenario_version": 1,
+  "priority": "P0",
+  "family": "demand",
+  "category": "renta_demanda_v1",
+  "title": "V1 — Renta demanda (intención + zona + nombre)",
+  "description": "PERSEO V1: renta demanda — valida goal/zona/nombre; CRM_READY completo es stretch V2 si presupuesto renta no parsea.",
+  "messages": [
+    "Hola",
+    "Busco depa en renta en San Pedro",
+    "20 mil al mes",
+    "Ana",
+    "Sí, me puede contactar un asesor"
+  ],
+  "flags": { "deterministic_mode": true, "crm_dry_run": true, "v3_handoff_enabled": true },
+  "expected": {
+    "lead_flow": "demand",
+    "operation_type": "rent",
+    "known_zone": "San Pedro",
+    "known_name": "Ana"
+  },
+  "must_not": {
+    "flow_restart": true,
+    "slot_reask_when_filled": true,
+    "invent_property": true,
+    "invent_price": true,
+    "robotic_response": true,
+    "send_whatsapp": true,
+    "write_contacts": true,
+    "write_leads": true
+  },
+  "changelog": [{ "version": 1, "date": "2026-05-21", "change": "PERSEO V1 rent demand." }]
+}

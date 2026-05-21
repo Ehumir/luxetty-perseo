@@ -1,0 +1,27 @@
+{
+  "suite": "perseo-v1-essential-p0",
+  "description": "PERSEO V1 — 20 escenarios: compra, renta demanda, venta, renta oferta, pauta, cierre, terminal, anti-loop, fallback.",
+  "threshold": { "pass_rate": 1.0 },
+  "scenarios": [
+    "DEMAND_001.v1.json",
+    "DEMAND_002_FULL.v1.json",
+    "DEMAND_002_SLOTS.v1.json",
+    "V1_DEMAND_RENT_001.v1.json",
+    "OFFER_001.v1.json",
+    "OFFER_002.v1.json",
+    "OFFER_003.v1.json",
+    "OFFER_004.v1.json",
+    "PROP_001.v1.json",
+    "PROP_003.v1.json",
+    "CHAOS_001.v1.json",
+    "EDGE_001.v1.json",
+    "CLOSE_001.v1.json",
+    "CLOSE_003.v1.json",
+    "CLOSE_004.v1.json",
+    "CLOSE_006.v1.json",
+    "TERM_001.v1.json",
+    "TERM_002.v1.json",
+    "TERM_004.v1.json",
+    "HUMANITY_004.v1.json"
+  ]
+}
