@@ -6,7 +6,15 @@ const { normalizeText } = require('../../utils/text');
 const FLEX_ZONE_CATALOG = [
   {
     canonical: 'Cumbres Elite',
-    phrases: ['cumbres elite', 'cumbres elit', 'cumbres elitte', 'cumbress elite'],
+    phrases: [
+      'cumbres elite',
+      'cumbres elit',
+      'cumbres elitte',
+      'cumbress elite',
+      'cumpres elite',
+      'cumpres elit',
+      'cunbres elite',
+    ],
   },
   {
     canonical: 'Cumbres',

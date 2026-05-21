@@ -38,9 +38,24 @@ const { appendPropertyHistory, resolvePropertyReferenceCode } = require('../prop
 
 const { parseMoneyAmount } = require('./moneyParser');
 
+function isBareBuyMenuReply(t) {
+  return /^(comprar|compra|quiero comprar|busco comprar)$/.test(t);
+}
+
+function hasSubstantiveIntentAfterGreeting(t, raw) {
+  if (matchesBuyOpenSearchPattern(t, raw)) return true;
+  if (matchesSellerAcquisitionPattern(t)) return true;
+  if (mentionsRentDemand(t)) return true;
+  if (isRentOutIntent(raw)) return true;
+  if (isBareBuyMenuReply(t)) return true;
+  if (/\b(?:comprar|vender|rentar|busco|quiero|necesito)\b/.test(t) && t.length > 8) return true;
+  return false;
+}
+
 function matchesBuyOpenSearchPattern(t, raw) {
   if (mentionsRentDemand(t) && !isRentOutIntent(raw)) return false;
   if (isExplicitFlowSwitchToBuy(raw)) return true;
+  if (isBareBuyMenuReply(t)) return true;
   if (/\bbusco\b/.test(t) && /\bcasa\b/.test(t) && !/\brenta\b/.test(t)) return true;
   if (/\bbusco\b/.test(t) && /\b(depa|depto|departamento)\b/.test(t) && !/\brenta\b/.test(t)) return true;
   if (/\bbusco\b/.test(t) && /\bcomprar\b/.test(t)) return true;
@@ -56,7 +71,7 @@ function applyBuyDemandPatch(patch, raw, decision) {
   patch.conversationGoal = CONVERSATION_GOALS.BUY_PROPERTY;
   patch.leadFlow = 'demand';
   patch.operationType = 'sale';
-  const zoneBuy = extractLooseLocationPhrase(raw) || normalizeLocationFromUserText(raw);
+  const zoneBuy = normalizeLocationFromUserText(raw) || extractLooseLocationPhrase(raw);
   if (zoneBuy && !/^(busco|quiero|necesito)\b/i.test(normalizeText(zoneBuy))) {
     patch.locationText = zoneBuy;
     decision.extractedEntities.locationText = zoneBuy;
@@ -595,10 +610,22 @@ function interpretUserMessage(state, text, options = {}) {
     return { patch, decision };
   }
 
-  if (t === 'hola' || t.startsWith('hola ') || t === 'buenas' || t === 'hey') {
+  if (
+    (t === 'hola' || t.startsWith('hola ') || t === 'buenas' || t.startsWith('buenas ') || t === 'hey') &&
+    !hasSubstantiveIntentAfterGreeting(t, raw)
+  ) {
     decision.detectedIntent = V3_INTENT.GREETING;
     decision.confidence = 0.7;
     decision.nextSuggestedStage = CONVERSATION_STAGES.UNDERSTANDING;
+    return { patch, decision };
+  }
+
+  if (isBareBuyMenuReply(t) && !state.conversationGoalLocked) {
+    decision.detectedIntent = V3_INTENT.BUY_PROPERTY;
+    decision.confidence = 0.82;
+    decision.explicitFlowSwitch = false;
+    applyBuyDemandPatch(patch, raw, decision);
+    decision.shouldAskName = !state.collectedFields?.fullName;
     return { patch, decision };
   }
 

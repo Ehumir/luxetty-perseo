@@ -8,6 +8,8 @@
 
 ## FLEX1 — typo zona + slang dinero
 
+> **Fix `7631ff6+`:** `hola`+compra ya no cae en `GREETING`; `comprar` menú → `BUY_PROPERTY`; zona vía `normalizeLocationFromUserText` antes de loose phrase. **Re-smoke tras deploy.**
+
 **Inbound:** `Hola busco casa en cumpres elite como de unos 6 melones`
 
 | Campo | Esperado | Observado |
