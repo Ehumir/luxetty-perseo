@@ -93,6 +93,18 @@ const { seedSession, deleteSession } = require('./argos/argosSessionStore');
 
 ---
 
-## 6. Re-smoke WA staging (bloqueante merge)
+## 6. Consent compuesto + terminal ack (bloqueante merge #2)
+
+**Input:** `sale y vale, me late.`  
+**Causa:** `isFlexConsentAccept` solo matcheaba frase exacta en Set; compuesto fallaba → `composeHandoffPendingContinuity` (“un sí me ayuda…”).
+
+**Input:** `Sería todo`  
+**Causa:** `isTerminalAckClose` no incluía `seria todo` / `eso seria todo`.
+
+**Fix:** `shortReplyLexicon` compuestos; `isPositiveHandoffAck` delega a lexicon; patrones `seria todo` en `conversationReopenPolicy.js`.
+
+---
+
+## 7. Re-smoke WA staging (bloqueante merge)
 
 Repetir FLEX1 tras deploy fix en Railway QA con flag ON. Completar `FLEX_STAGING_SMOKE_RESULTS.md`.

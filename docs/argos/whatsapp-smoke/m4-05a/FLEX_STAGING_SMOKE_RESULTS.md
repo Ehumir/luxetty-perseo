@@ -33,7 +33,9 @@ node scripts/staging-wa-flex-smoke-check.js <phone> FLEX1
 
 ## FLEX2 — slang consent
 
-**Inbound:** `Simón jalo` (tras pregunta contacto asesor)
+> **Fix post-FLEX1:** `sale y vale, me late.` y compuestos MX → `ACCEPTED` vía `shortReplyLexicon` + `isPositiveHandoffAck`. Re-smoke tras deploy.
+
+**Inbound:** `Simón jalo` o `sale y vale, me late.` (tras pregunta contacto asesor)
 
 | Campo | Esperado | Observado |
 |-------|----------|-----------|
