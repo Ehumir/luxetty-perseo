@@ -7,6 +7,9 @@ const { parseMoneyAmount } = require('../conversation/v3/interpreter/moneyParser
 const { normalizeLocationFromUserText } = require('../conversation/v3/interpreter/locationNormalizer');
 const { parseAdvisorContactConsent } = require('../conversation/v3/planner/consentParser');
 const { parseOccupancyStatus } = require('../conversation/v3/interpreter/occupancyParser');
+const { interpretUserMessage } = require('../conversation/v3/interpreter/minimalInterpreter');
+const { createInitialConversationState } = require('../conversation/v3/types/conversationState');
+const { V3_INTENT } = require('../conversation/v3/types/constants');
 const { isConversationalFlexEnabled } = require('../config/perseoM405Flags');
 
 const PREV_FLEX = process.env.PERSEO_CONVERSATIONAL_FLEX_ENABLED;
@@ -67,6 +70,21 @@ describe('conversationFlexibilityQuickWins', () => {
       for (const phrase of ['sip', 'sí porfa', 'simon', 'jalo', 'me late', 'va', 'dale']) {
         assert.equal(parseAdvisorContactConsent(phrase), 'ACCEPTED', phrase);
       }
+    });
+  });
+
+  it('flag ON — FLEX1 hola+busco no es GREETING; compra menu reply', () => {
+    withFlex(true, () => {
+      const state = createInitialConversationState({ conversationId: 'test:flex1' });
+      const msg = 'Hola busco casa en cumpres elite como de unos 6 melones';
+      const { patch, decision } = interpretUserMessage(state, msg);
+      assert.equal(decision.detectedIntent, V3_INTENT.BUY_PROPERTY);
+      assert.equal(patch.locationText, 'Cumbres Elite');
+      assert.equal(patch.budget, 6_000_000);
+
+      const state2 = createInitialConversationState({ conversationId: 'test:flex1b' });
+      const menu = interpretUserMessage(state2, 'Comprar');
+      assert.equal(menu.decision.detectedIntent, V3_INTENT.BUY_PROPERTY);
     });
   });
 
