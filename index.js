@@ -586,7 +586,32 @@ async function runCleanOrchestratorCrmPhase({
   rawPayload,
   property = null,
   propertyId = null,
+  crmGateContext = null,
 }) {
+  const {
+    shouldAllowCrmExecuteForInbound,
+    logCrmExecuteGate,
+  } = require('./config/crmExecuteInboundGate');
+  const crmGate = shouldAllowCrmExecuteForInbound({
+    phone: from,
+    conversationId,
+    v3PrimaryAllowed: crmGateContext?.v3PrimaryAllowed === true,
+    selectedPipeline: crmGateContext?.selectedPipeline || 'legacy',
+  });
+  if (typeof crmGateContext?.logEvent === 'function') {
+    logCrmExecuteGate(crmGateContext.logEvent, crmGate);
+  }
+  if (!crmGate.crm_execute_allowed) {
+    return {
+      hasIntent: false,
+      canEnsureContact: false,
+      contactId: null,
+      leadResult: null,
+      crmSkipped: true,
+      crm_execute_block_reason: crmGate.block_reason,
+    };
+  }
+
   const hasIntent = hasClearRealEstateIntent(parsedSignals, text, nextAiState);
   const canEnsureContact =
     hasIntent && (hasValidHumanName(contact, nextAiState) || isUsefulWaProfileName(waProfileName));
@@ -881,6 +906,7 @@ app.post('/webhook', async (req, res) => {
     let nameFirstHandled = false;
     let v3PrimaryHandled = false;
     let skipLegacyCrm = false;
+    let selectedPipeline = 'legacy';
 
     if (policy.allowAutomatedReply) {
       const { campaignContext } = extractCampaignReferralContext({
@@ -962,6 +988,7 @@ app.post('/webhook', async (req, res) => {
       });
       if (v3Try.handled) {
         v3PrimaryHandled = true;
+        selectedPipeline = 'v3';
         skipLegacyCrm = !!v3Try.skipLegacyCrm;
         reply = v3Try.reply;
         responseSource = v3Try.responseSource || 'v3_core_f2';
@@ -971,7 +998,20 @@ app.post('/webhook', async (req, res) => {
           const { isClosureGateActive } = require('./conversation/v3/runtime/closureIntegrity');
           const { runWithTimeout } = require('./utils/runWithTimeout');
           const closureGateActive = isClosureGateActive(v3Try.v3State);
-          if (skipLegacyCrm && !closureGateActive) {
+          const {
+            shouldAllowCrmExecuteForInbound,
+            logCrmExecuteGate,
+          } = require('./config/crmExecuteInboundGate');
+          const crmExecuteGate = shouldAllowCrmExecuteForInbound({
+            phone: from,
+            rawPhone: rawFrom,
+            conversationId,
+            v3PrimaryAllowed: true,
+            selectedPipeline: 'v3',
+          });
+          logCrmExecuteGate(logEvent, crmExecuteGate);
+
+          if (skipLegacyCrm && !closureGateActive && crmExecuteGate.crm_execute_allowed) {
             crmOut = await runWithTimeout(
               () =>
                 executeV3CrmIfEligible({
@@ -997,6 +1037,11 @@ app.post('/webhook', async (req, res) => {
               v3StateForCrm = crmOut.v3State;
               setSession(conversationId, v3StateForCrm);
             }
+          } else if (skipLegacyCrm && !closureGateActive && !crmExecuteGate.crm_execute_allowed) {
+            logEvent('v3_crm_execute_skipped', {
+              conversation_id: conversationId,
+              block_reason: crmExecuteGate.block_reason,
+            });
           }
           Object.assign(nextAiState, mapV3StateToLegacyAiState(v3StateForCrm));
           sanitizeV3PrimaryLegacyAiState(nextAiState);
@@ -1251,7 +1296,20 @@ app.post('/webhook', async (req, res) => {
 
     await saveConversationState(conversationId, nextAiState);
 
-    if (!skipLegacyCrm) {
+    const {
+      shouldAllowCrmExecuteForInbound,
+      logCrmExecuteGate,
+    } = require('./config/crmExecuteInboundGate');
+    const crmExecuteGate = shouldAllowCrmExecuteForInbound({
+      phone: from,
+      rawPhone: rawFrom,
+      conversationId,
+      v3PrimaryAllowed: v3PrimaryHandled,
+      selectedPipeline,
+    });
+    logCrmExecuteGate(logEvent, crmExecuteGate);
+
+    if (!skipLegacyCrm && crmExecuteGate.crm_execute_allowed) {
       await runCleanOrchestratorCrmPhase({
         supabase,
         conversationId,
@@ -1265,6 +1323,18 @@ app.post('/webhook', async (req, res) => {
         rawPayload: req.body || null,
         property,
         propertyId,
+        crmGateContext: {
+          v3PrimaryAllowed: v3PrimaryHandled,
+          selectedPipeline,
+          logEvent,
+        },
+      });
+    } else if (!skipLegacyCrm) {
+      logEvent('legacy_crm_execute_skipped', {
+        conversation_id: conversationId,
+        block_reason: crmExecuteGate.block_reason,
+        selected_pipeline: selectedPipeline,
+        v3_primary_handled: v3PrimaryHandled,
       });
     } else {
       logEvent('v3_skip_legacy_crm', { conversation_id: conversationId });
