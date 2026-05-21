@@ -281,10 +281,11 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
     crm_skip_reason: crmGate.eligible ? null : crmGate.reason,
   };
 
-  const skipCrmSideEffects = isDeterministicMode(flags);
+  // Deterministic ARGOS: skip async runtime writes, but keep CRM dry-run preview for gate tests.
+  const skipCrmRuntimeSideEffects = isDeterministicMode(flags);
 
   let crm_runtime_out = null;
-  if (!skipCrmSideEffects && isCrmRuntimePersistentEnabled() && v3State) {
+  if (!skipCrmRuntimeSideEffects && isCrmRuntimePersistentEnabled() && v3State) {
     const supabaseRaw = input.supabaseRaw;
     crm_runtime_out = await executeV3CrmIfEligible({
       v3State,
@@ -302,7 +303,7 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
   }
 
   let crm_dry_run = null;
-  if (!skipCrmSideEffects && flags.crm_dry_run !== false && v3State && crmGate.eligible) {
+  if (flags.crm_dry_run !== false && v3State && crmGate.eligible) {
     const supabaseRaw = input.supabaseRaw;
     if (supabaseRaw) {
       const supabase = createArgosNoWriteSupabase(supabaseRaw);
