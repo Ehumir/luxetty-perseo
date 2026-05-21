@@ -115,6 +115,32 @@ async function logContactNameMismatchProposal({
 async function executeV3CrmIfEligibleImpl(input) {
   const state = input.v3State || {};
   const conversationId = state.conversationId || input.conversationRow?.id;
+
+  const {
+    shouldAllowCrmExecuteForInbound,
+    logCrmExecuteGate,
+  } = require('../../../config/crmExecuteInboundGate');
+  const inboundGate = shouldAllowCrmExecuteForInbound({
+    phone: input.phone,
+    rawPhone: input.rawPhone,
+    conversationId,
+    v3PrimaryAllowed: true,
+    selectedPipeline: 'v3',
+    argosMode: input.argosMode === true,
+  });
+  logCrmExecuteGate(input.logEvent, inboundGate);
+  if (!inboundGate.crm_execute_allowed) {
+    emitCrmLog(
+      'v3_crm_execution_skipped',
+      {
+        conversation_id: conversationId,
+        reason: inboundGate.block_reason || 'crm_execute_inbound_blocked',
+      },
+      input.logEvent,
+    );
+    return { executed: false, skipped: true, reason: inboundGate.block_reason, gate: inboundGate };
+  }
+
   const gate = evaluateV3CrmExecutionGate({
     state,
     phone: input.phone,
