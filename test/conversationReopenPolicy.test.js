@@ -28,6 +28,10 @@ describe('conversationReopenPolicy', () => {
     assert.equal(isTerminalAckClose('No, es todo gracias.'), true);
     assert.equal(isTerminalAckClose('nada más'), true);
     assert.equal(isTerminalAckClose('listo gracias'), true);
+    assert.equal(isTerminalAckClose('Sería todo'), true);
+    assert.equal(isTerminalAckClose('seria todo'), true);
+    assert.equal(isTerminalAckClose('eso sería todo'), true);
+    assert.equal(isTerminalAckClose('ya sería todo'), true);
     const msg = composeTerminalAckCloseReply({ collectedFields: { fullName: 'Jorge' } });
     assert.match(msg, /Gracias por contactarnos/);
     assert.match(msg, /asesor de Luxetty continuará/i);

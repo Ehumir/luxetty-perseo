@@ -27,6 +27,8 @@ function isShortPostCloseAck(text) {
 function isPositiveHandoffAck(text) {
   const t = normalizeText(String(text || ''));
   if (isShortPostCloseAck(text)) return true;
+  const { isFlexConsentAccept } = require('../../flexibility/shortReplyLexicon');
+  if (isFlexConsentAccept(text)) return true;
   return (
     /^(?:si|sí|me parece muy bien|me parece bien|de acuerdo|perfecto|excelente|muy bien|va|ok|vale|claro)(?:\s+gracias)?$/i.test(
       t,

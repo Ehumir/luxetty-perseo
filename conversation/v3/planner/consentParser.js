@@ -26,8 +26,8 @@ function parseAdvisorContactConsent(text) {
     t.includes('sin asesor');
   if (decline) return 'DECLINED';
 
-  if (isConversationalFlexEnabled() && isFlexConsentAccept(text)) {
-    recordFlexApplied('consent');
+  if (isFlexConsentAccept(text)) {
+    if (isConversationalFlexEnabled()) recordFlexApplied('consent');
     return 'ACCEPTED';
   }
 

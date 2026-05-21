@@ -61,6 +61,11 @@ function isTerminalAckClose(message) {
   if (isShortPostCloseAck(message)) return true;
   if (/^(?:no\s+gracias|no\s+por\s+ahora|no\s+nada)$/i.test(t)) return true;
   if (/^(?:no,?\s*)?es\s+todo(?:\s+gracias)?$/i.test(t)) return true;
+  if (/^(?:eso\s+)?(?:ya\s+)?seria\s+todo(?:\s+gracias)?$/i.test(t)) return true;
+  if (/^(?:ya\s+)?seria\s+todo$/i.test(t)) return true;
+  if (/\bseria\s+todo\b/.test(t) && !/\b(?:busco|quiero|revisar|tambien|también)\b/.test(t) && t.length <= 40) {
+    return true;
+  }
   if (/^nada\s+mas$/i.test(t)) return true;
   if (/^(?:listo|ya\s+no|todo\s+bien)$/i.test(t)) return true;
   if (/^(?:perfecto|listo)\s+gracias$/i.test(t)) return true;

@@ -40,7 +40,9 @@ describe('conversationFlexibilityQuickWins', () => {
     withFlex(false, () => {
       assert.equal(parseMoneyAmount('tengo 10 melones'), null);
       assert.equal(normalizeLocationFromUserText('busco en cumpres'), null);
-      assert.equal(parseAdvisorContactConsent('sip'), null);
+      // MX handoff consent phrases apply without flex flag (shortReplyLexicon).
+      assert.equal(parseAdvisorContactConsent('sale y vale, me late.'), 'ACCEPTED');
+      assert.equal(parseMoneyAmount('unos 10'), null);
       // Legacy: substring "libre" still matches when flex OFF.
       assert.equal(parseOccupancyStatus('no está libre'), 'libre');
     });
@@ -67,9 +69,16 @@ describe('conversationFlexibilityQuickWins', () => {
 
   it('flag ON — consent MX short replies', () => {
     withFlex(true, () => {
-      for (const phrase of ['sip', 'sí porfa', 'simon', 'jalo', 'me late', 'va', 'dale']) {
+      for (const phrase of ['sip', 'sí porfa', 'simon', 'jalo', 'me late', 'va', 'dale', 'sale', 'sale y vale']) {
         assert.equal(parseAdvisorContactConsent(phrase), 'ACCEPTED', phrase);
       }
+      assert.equal(parseAdvisorContactConsent('sale y vale, me late.'), 'ACCEPTED');
+    });
+  });
+
+  it('compound consent works with flex OFF (handoff phrases)', () => {
+    withFlex(false, () => {
+      assert.equal(parseAdvisorContactConsent('sale y vale, me late.'), 'ACCEPTED');
     });
   });
 
