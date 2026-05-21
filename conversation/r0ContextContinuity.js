@@ -107,7 +107,7 @@ function buildSaleCaptiveContinuityReply({ text = '', aiState = {}, loc = '', ha
   if (/\d/.test(raw) && (t.includes('millon') || t.includes('mdp') || /\b\d/.test(t))) {
     return zone
       ? `Con lo que comentas sobre la venta en ${zone}, sigo sin prometer precios de mercado aquí. ¿Tipo de inmueble y si está habitada o libre?`
-      : `Tomé el monto que comentas para orientarte en la venta. ¿En qué colonia o municipio está la propiedad?`;
+      : `Perfecto, con ese monto como referencia. ¿En qué colonia o municipio está la propiedad?`;
   }
 
   if (zone || t.includes('cumbres') || t.includes('zona') || t.includes('colonia') || t.includes('municipio')) {

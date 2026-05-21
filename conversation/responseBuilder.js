@@ -89,7 +89,7 @@ function buildLowInfoCampaignReply(hasCampaignContext = false, campaignContext =
     return `Claro. Te comparto la información de esta propiedad ${propertyCode}. ¿Quieres que un asesor confirme disponibilidad, precio y opción de visita?`;
   }
 
-  return 'Claro, con gusto te ayudo con el anuncio que viste. Te puedo apoyar con venta, compra, renta o valuación de propiedades. ¿Qué necesitas revisar?';
+  return 'Claro, con gusto te ayudo con el anuncio que viste. ¿Buscas comprar, vender o rentar una propiedad?';
 }
 
 function getChangeAcknowledgement(changeType, state) {
@@ -145,19 +145,22 @@ function buildFinalHandoffReply(state) {
       ? 'por llamada'
       : 'por WhatsApp';
 
+  const first = state.full_name ? state.full_name.split(/\s+/)[0] : null;
+  const { handoffAdvisorContinuation } = require('./v3/composer/humanCopyV1');
+  const lead = handoffAdvisorContinuation(first);
   if (state.lead_flow === 'offer') {
-    return `Perfecto${name}. Ya dejé tu caso listo y un asesor de Luxetty te contactará ${channel} para revisarlo contigo.`;
+    return `${lead} Te contactarán ${channel} para revisarlo contigo.`;
   }
 
   if (state.wants_visit) {
-    return `Perfecto${name}. Ya dejé tu solicitud para coordinar la visita y un asesor te contactará ${channel} para avanzar contigo.`;
+    return `${lead} Te contactarán ${channel} para coordinar la visita.`;
   }
 
   if (state.direct_property_reference && state.property_code) {
-    return `Perfecto${name}. Ya dejé registrada tu solicitud sobre la propiedad con ID ${state.property_code} y un asesor de Luxetty te contactará ${channel} para ayudarte a avanzar.`;
+    return `${lead} Te contactarán ${channel} sobre la referencia ${state.property_code}.`;
   }
 
-  return `Perfecto${name}. Ya dejé tu búsqueda lista y un asesor de Luxetty te contactará ${channel} para ayudarte a avanzar con las mejores opciones.`;
+  return `${lead} Te contactarán ${channel} para ayudarte con las mejores opciones.`;
 }
 
 function getDemandMatchQuality(state, properties = []) {

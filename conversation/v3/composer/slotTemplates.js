@@ -18,6 +18,15 @@ const { isSlotFilled } = require('../state/slotFillState');
 const { evaluateQualification } = require('../planner/qualificationPlanner');
 const { composeObjectionReply } = require('./objectionComposer');
 const { isOfferValuationUnknownRequest } = require('../interpreter/offerValuationSignals');
+const {
+  SLOT_COPY,
+  acknowledgedZone,
+  acknowledgedPrice,
+  askExpectedPrice,
+  askPurchaseBudget,
+  askMonthlyBudget,
+  MISUNDERSTANDING_PROMPT,
+} = require('./humanCopyV1');
 
 /**
  * @param {import('../types/conversationState').ConversationState} state
@@ -81,7 +90,7 @@ function composeAdvisorGreeting(state = {}) {
   if (st.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY && st.conversationGoalLocked) {
     return {
       responseText:
-        'Hola de nuevo. Seguimos con el tema de la venta de tu inmueble. ¿En qué te apoyo ahora con la siguiente información?',
+        'Hola de nuevo. Seguimos con la venta de tu inmueble. ¿Qué dato te gustaría completar?',
       followUpQuestion: null,
       awaitingField: null,
       toneFlags: { consultive: true, advisorPersona: true },
@@ -109,7 +118,7 @@ function composeAdvisorGreeting(state = {}) {
 
   if (headline) {
     return {
-      responseText: `Hola, soy el asesor IA de Luxetty. Vi que escribiste en relación con: «${headline}». Para no asumir de más: ¿buscas una propiedad en específico, quieres vender o publicar la tuya, o prefieres que un asesor te oriente?`,
+      responseText: `Hola, soy el asistente de Luxetty. Vi que escribiste en relación con: «${headline}». ¿Buscas una propiedad en específico, quieres vender o rentar la tuya, o prefieres que un asesor te oriente?`,
       followUpQuestion: null,
       awaitingField: null,
       toneFlags: { consultive: true, advisorPersona: true },
@@ -202,11 +211,7 @@ function composeSlotQuestion(state, slotId) {
           };
         }
         return {
-          responseText: pickOpeningVariant(state, [
-            'Claro, te apoyo con la venta. Para orientarte mejor, ¿me compartes tu nombre?',
-            'Perfecto, te acompaño con la venta de tu propiedad. ¿Me dices tu nombre?',
-            'Con gusto, seguimos con la venta. ¿Cómo te llamas?',
-          ]),
+          responseText: pickOpeningVariant(state, SLOT_COPY.sell_capture_name),
           followUpQuestion: null,
           awaitingField: 'full_name',
           toneFlags: { consultive: true },
@@ -240,11 +245,7 @@ function composeSlotQuestion(state, slotId) {
         };
       }
       return {
-        responseText: pickOpeningVariant(state, [
-          'Con gusto. Para continuar, ¿me compartes tu nombre?',
-          'Perfecto. ¿Me dices tu nombre para seguir?',
-          'Claro. ¿Cómo te llamas?',
-        ]),
+        responseText: pickOpeningVariant(state, SLOT_COPY.demand_name),
         followUpQuestion: null,
         awaitingField: 'full_name',
         toneFlags: { consultive: true },
@@ -252,7 +253,7 @@ function composeSlotQuestion(state, slotId) {
     case 'location_text':
       if (isBuy) {
         return {
-          responseText: '¿En qué zona te gustaría buscar?',
+          responseText: SLOT_COPY.buy_location,
           followUpQuestion: null,
           awaitingField: 'location_text',
           toneFlags: { consultive: true },
@@ -268,9 +269,7 @@ function composeSlotQuestion(state, slotId) {
       };
     case 'expected_price':
       return {
-        responseText: nm
-          ? `Perfecto, ${nm}. Tomé la zona (${zone}). ¿Qué precio esperado manejas?`
-          : `Tomé la zona (${zone}). ¿Qué precio esperado manejas?`,
+        responseText: askExpectedPrice(zone, nm),
         followUpQuestion: null,
         awaitingField: 'expected_price',
         toneFlags: { consultive: true },
@@ -278,14 +277,7 @@ function composeSlotQuestion(state, slotId) {
     case 'budget':
       if (isBuy) {
         return {
-          responseText: pickOpeningVariant(state, [
-            zone && zone !== 'esa zona'
-              ? `¿Qué presupuesto aproximado manejas para buscar en ${zone}?`
-              : '¿Qué presupuesto aproximado manejas?',
-            zone && zone !== 'esa zona'
-              ? `Para ${zone}, ¿qué rango de presupuesto tienes en mente?`
-              : '¿Qué rango de presupuesto manejas?',
-          ]),
+          responseText: askPurchaseBudget(zone !== 'esa zona' ? zone : null),
           followUpQuestion: null,
           awaitingField: 'budget',
           toneFlags: { consultive: true },
@@ -317,23 +309,21 @@ function composeSlotQuestion(state, slotId) {
     case 'property_type':
       if (isBuy) {
         return {
-          responseText: '¿Buscas casa, departamento o terreno?',
+          responseText: SLOT_COPY.buy_property_type,
           followUpQuestion: null,
           awaitingField: 'property_type',
           toneFlags: { consultive: true },
         };
       }
       return {
-        responseText: nm
-          ? `Entendido, ${nm}. ¿Es casa, departamento o terreno?`
-          : '¿Es casa, departamento o terreno?',
+        responseText: nm ? `Entendido, ${nm}. ${SLOT_COPY.sell_property_type}` : SLOT_COPY.sell_property_type,
         followUpQuestion: null,
         awaitingField: 'property_type',
         toneFlags: { consultive: true },
       };
     case 'bedrooms':
       return {
-        responseText: '¿Cuántas recámaras necesitas?',
+        responseText: SLOT_COPY.buy_bedrooms,
         followUpQuestion: null,
         awaitingField: 'bedrooms',
         toneFlags: { consultive: true },
@@ -345,7 +335,7 @@ function composeSlotQuestion(state, slotId) {
         ? `Tengo tu ${tipo} en ${zone} con precio esperado de ${pres}.`
         : `Tengo tu ${tipo} en ${zone}.`;
       return {
-        responseText: `Perfecto, ${nm}. ${context} ¿Está habitada, rentada o libre?`,
+        responseText: `Perfecto, ${nm}. ${context} ${SLOT_COPY.sell_occupancy}`,
         followUpQuestion: null,
         awaitingField: 'occupancy_status',
         toneFlags: { consultive: true },
@@ -353,7 +343,7 @@ function composeSlotQuestion(state, slotId) {
     }
     default:
       return {
-        responseText: 'Te escucho. ¿Me cuentas un poco más para orientarte mejor?',
+        responseText: MISUNDERSTANDING_PROMPT,
         followUpQuestion: null,
         awaitingField: null,
         toneFlags: { consultive: true },
@@ -785,7 +775,7 @@ function composeDemandRefinementTurn(state, decision) {
     return {
       responseText: pickOpeningVariant(state, [
         'Entendido, buscamos opciones más económicas. ¿Hasta qué presupuesto te gustaría ajustar?',
-        'Tomé que quieres algo más accesible. ¿Qué presupuesto máximo manejas?',
+        'Entendido, buscas algo más accesible. ¿Qué presupuesto máximo manejas?',
       ]),
       followUpQuestion: null,
       awaitingField: 'budget',
@@ -802,7 +792,7 @@ function composeDemandRefinementTurn(state, decision) {
         `Perfecto, priorizo algo más amplio (${brTxt}). ¿Mantengo la misma zona${zone ? ` (${zone})` : ''}${budgetNote}?`,
         nm
           ? `${nm}, tomé que buscas más espacio. ¿Seguimos en la misma zona o quieres mover la búsqueda?`
-          : 'Tomé que buscas algo más grande. ¿Seguimos en la misma zona o movemos algún detalle?',
+          : 'Entendido, buscas algo más grande. ¿Seguimos en la misma zona o movemos algún detalle?',
       ]),
       followUpQuestion: null,
       awaitingField: zone && state.budget == null ? 'budget' : null,
@@ -818,7 +808,7 @@ function composeDemandRefinementTurn(state, decision) {
     return {
       responseText: pickOpeningVariant(state, [
         `Perfecto, priorizo opciones con patio${zone ? ` en ${zone}` : ''}. ${budgetQ}`,
-        `Tomé el detalle del patio${zone ? ` en ${zone}` : ''}. ${budgetQ}`,
+        `Perfecto, anoto el detalle del patio${zone ? ` en ${zone}` : ''}. ${budgetQ}`,
       ]),
       followUpQuestion: null,
       awaitingField: state.budget == null ? 'budget' : null,
@@ -853,8 +843,8 @@ function composeStickyQualificationTurn(state, decision) {
       if (state.collectedFields?.fullName && priceOk) {
         return {
           responseText: pickOpeningVariant(state, [
-            `Perfecto, tomé la zona (${zone}). ¿Cómo está la ocupación (libre, habitada, rentada)?`,
-            `Gracias, registré ${zone}. ¿La propiedad está libre, habitada o rentada?`,
+            `${acknowledgedZone(zone)} ¿Cómo está la ocupación (libre, habitada, rentada)?`,
+            `Gracias. En ${zone}, ¿la propiedad está libre, habitada o rentada?`,
           ]),
           followUpQuestion: null,
           awaitingField: state.occupancyStatus ? null : 'occupancy_status',
@@ -862,9 +852,9 @@ function composeStickyQualificationTurn(state, decision) {
         };
       }
       const variants = [
-        `Tomé la zona (${zone}). ¿Qué precio esperado manejas para la venta?`,
-        `Perfecto, registré ${zone}. ¿Tienes un precio en mente?`,
-        nm ? `Gracias, ${nm}. Tomé ${zone}. ¿Qué precio esperado manejas?` : `Tomé ${zone}. Para seguir con la venta, ¿qué precio esperado manejas?`,
+        askExpectedPrice(zone, null),
+        `${acknowledgedZone(zone)} ¿Tienes un precio en mente?`,
+        nm ? `Gracias, ${nm}. ${askExpectedPrice(zone, null)}` : askExpectedPrice(zone, null),
       ];
       return {
         responseText: pickOpeningVariant(state, variants),
@@ -880,8 +870,8 @@ function composeStickyQualificationTurn(state, decision) {
           responseText: pickOpeningVariant(state, [
             `Perfecto, movimos la búsqueda a ${zone}. Mantengo tu presupuesto de ${pres}. ¿Quieres afinar tamaño o algún detalle?`,
             nm
-              ? `Gracias, ${nm}. Tomé ${zone} con ${pres} como referencia. ¿Algún detalle más (recámaras, patio)?`
-              : `Tomé ${zone}. Con ${pres} como referencia, ¿afinamos tamaño o algún detalle?`,
+              ? `Gracias, ${nm}. ${acknowledgedZone(zone)} Con ${pres} como referencia, ¿algún detalle más (recámaras, patio)?`
+              : `${acknowledgedZone(zone)} Con ${pres} como referencia, ¿afinamos tamaño o algún detalle?`,
           ]),
           followUpQuestion: null,
           awaitingField: null,
@@ -906,8 +896,8 @@ function composeStickyQualificationTurn(state, decision) {
       return {
         responseText: pickOpeningVariant(state, [
           pres
-            ? `Tomé un precio esperado de ${pres}. ¿Cómo está la ocupación (libre, habitada, rentada)?`
-            : 'Tomé el precio. ¿Cómo está la ocupación de la propiedad?',
+            ? `${acknowledgedPrice(pres)} ¿Cómo está la ocupación (libre, habitada, rentada)?`
+            : 'Perfecto. ¿Cómo está la ocupación de la propiedad?',
         ]),
         followUpQuestion: null,
         awaitingField: state.occupancyStatus ? null : 'occupancy_status',
@@ -916,8 +906,8 @@ function composeStickyQualificationTurn(state, decision) {
     }
     return {
       responseText: pickOpeningVariant(state, [
-        pres ? `Tomé un precio esperado de ${pres}. ¿Me compartes tu nombre?` : 'Tomé el precio. ¿Me compartes tu nombre?',
-        pres ? `Perfecto, ${pres} como referencia. Para seguir, ¿cómo te llamas?` : 'Gracias por el dato. ¿Me dices tu nombre?',
+        pres ? `${acknowledgedPrice(pres)} ¿Me compartes tu nombre?` : 'Perfecto. ¿Me compartes tu nombre?',
+        pres ? `Perfecto, ${pres} como referencia. ¿Cómo te llamas?` : 'Gracias por el dato. ¿Me dices tu nombre?',
       ]),
       followUpQuestion: null,
       awaitingField: 'full_name',
@@ -931,7 +921,7 @@ function composeStickyQualificationTurn(state, decision) {
         responseText: pickOpeningVariant(state, [
           budget
             ? `Perfecto, ajusté el presupuesto a ${budget}. ¿Quieres afinar zona, recámaras o algún detalle?`
-            : 'Tomé tu presupuesto. ¿Quieres afinar zona o recámaras?',
+            : 'Perfecto. ¿Quieres afinar zona o recámaras?',
           budget
             ? `Listo, con ${budget} como referencia. ¿Movemos zona o algún detalle como patio?`
             : 'Gracias por el dato. ¿Seguimos afinando zona o tamaño?',
@@ -943,7 +933,7 @@ function composeStickyQualificationTurn(state, decision) {
     }
     return {
       responseText: pickOpeningVariant(state, [
-        budget ? `Tomé un presupuesto de ${budget}. ¿Me compartes tu nombre?` : 'Tomé tu presupuesto. ¿Me compartes tu nombre?',
+        budget ? `${acknowledgedPrice(budget)} ¿Me compartes tu nombre?` : 'Perfecto. ¿Me compartes tu nombre?',
         budget ? `Perfecto, con ${budget} podemos afinar opciones. ¿Cómo te llamas?` : 'Gracias. ¿Me dices tu nombre?',
       ]),
       followUpQuestion: null,
@@ -1015,7 +1005,7 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
           ? ` ${slotQ.responseText}`
           : ' ¿En qué zona te gustaría enfocar la búsqueda?';
       return {
-        responseText: `Tomé un presupuesto de ${pres}. En compra, ese rango puede tener menos opciones premium, pero sí vale explorar con cuidado.${tail}`,
+        responseText: `${acknowledgedPrice(pres)} En compra, ese rango puede tener menos opciones premium, pero sí vale explorar con cuidado.${tail}`,
         followUpQuestion: slotQ?.followUpQuestion || null,
         awaitingField: slotQ?.awaitingField ?? buyPolicyHint.nextSlot ?? state.awaitingField,
         toneFlags: { consultive: true, pricePolicy: true },
