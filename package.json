@@ -8,7 +8,7 @@
     "test": "node --test",
     "test:regression": "node --test test/perseoRegression.test.js",
     "test:qa": "node --test test/qaCommands.test.js test/qaCommandsOrchestrator.test.js",
-    "test:perseo": "node --test test/perseoRegression.test.js test/conversationRegression.test.js test/crmFlowRegression.test.js test/crmCreationAuditV2.test.js test/inboundReliability.test.js test/sprint3Playbooks.test.js test/propertyIntentResolver.test.js test/propertyConversationFlow.test.js test/perseoGatekeeper.test.js",
+    "test:perseo": "node --test test/perseoRegression.test.js test/conversationRegression.test.js test/crmFlowRegression.test.js test/crmCreationAuditV2.test.js test/inboundReliability.test.js test/sprint3Playbooks.test.js test/propertyIntentResolver.test.js test/propertyConversationFlow.test.js test/perseoGatekeeper.test.js test/pautaDetection.test.js test/crmExecuteInboundGate.test.js",
     "test:crm": "node --test test/crmLeadIntegrity.test.js",
     "test:argos": "node --test test/argos*.test.js",
     "test:corpus": "node --test test/corpusFoundation.test.js",

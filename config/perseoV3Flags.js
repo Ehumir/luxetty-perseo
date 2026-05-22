@@ -32,7 +32,6 @@ function normalizeAllowlistEntry(entry) {
 function phonesEquivalent(inboundNorm, entryNorm) {
   if (!inboundNorm || !entryNorm) return false;
   if (inboundNorm === entryNorm) return true;
-  if (inboundNorm.endsWith(entryNorm) || entryNorm.endsWith(inboundNorm)) return true;
 
   const in10 =
     inboundNorm.length === 13 && inboundNorm.startsWith('521') ? inboundNorm.slice(3) : null;

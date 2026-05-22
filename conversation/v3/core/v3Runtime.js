@@ -5,6 +5,7 @@ const { interpretUserMessage } = require('../interpreter/minimalInterpreter');
 const { applyV3StateTransition } = require('../state/stateManager');
 const { composeHumanReplyText, composeHumanResponse } = require('../composer/humanComposer');
 const { getSession, setSession, resetSession } = require('./sessionStore');
+const { hydrateV3StateFromLegacyAiState } = require('../state/legacyToV3State');
 const { v3Log } = require('./v3Logger');
 const { detectFrustration } = require('../interpreter/frustrationDetector');
 const { isV3HandoffEnabled } = require('../../../config/perseoV3Flags');
@@ -110,6 +111,7 @@ function applyM4RuntimeFinishing(state, { effectiveText, replyText, decision, re
  *   recentMessages?: string[],
  *   supabase?: object|null,
  *   argosMode?: boolean,
+ *   persistedLegacyAiState?: object|null,
  * }} input
  */
 function processV3Turn(input) {
@@ -149,7 +151,13 @@ function processV3Turn(input) {
 
   let state = getSession(conversationId);
   if (!state) {
-    state = createInitialConversationState({ conversationId, phone });
+    const persisted =
+      input.persistedLegacyAiState && typeof input.persistedLegacyAiState === 'object'
+        ? input.persistedLegacyAiState
+        : null;
+    state =
+      hydrateV3StateFromLegacyAiState(conversationId, phone, persisted) ||
+      createInitialConversationState({ conversationId, phone });
     state = applyLegacyHydrationToSession(state);
     setSession(conversationId, state);
   } else {

@@ -1,5 +1,6 @@
 const { normalizeAiState, getDefaultAiState } = require('./aiState');
 const { cleanSpaces } = require('../utils/text');
+const { sanitizeLocationText } = require('./locationSanitizer');
 
 function mergeUnique(listA = [], listB = []) {
   return Array.from(new Set([...(Array.isArray(listA) ? listA : []), ...(Array.isArray(listB) ? listB : [])]));
@@ -181,7 +182,7 @@ function buildNextState(prevState, signals, changeType) {
       lead_flow: signals.lead_flow || null,
       operation_type: signals.operation_type || null,
       property_type: signals.property_type || null,
-      location_text: signals.location_text || null,
+      location_text: sanitizeLocationText(signals.location_text) || null,
       matched_location_from_catalog: signals.matched_location_from_catalog || null,
       budget_max:
         signals.budget_max !== null && signals.budget_max !== undefined
@@ -333,7 +334,7 @@ function buildNextState(prevState, signals, changeType) {
       property_type: signals.property_type || prev.property_type,
       location_text:
         signals.location_text !== null && signals.location_text !== undefined
-          ? signals.location_text
+          ? sanitizeLocationText(signals.location_text) || prev.location_text
           : prev.location_text,
       matched_location_from_catalog:
         signals.matched_location_from_catalog || prev.matched_location_from_catalog,

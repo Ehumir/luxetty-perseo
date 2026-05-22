@@ -8,11 +8,11 @@
 const {
   FOLLOWUP_BLOCKED_OUTSIDE_24H_EVENT,
   isInsideWhatsAppFreeTextWindow,
-  isPautaConversation,
   getNextDueAction,
   resetAiStateForClosedConversation,
   runInactivityFollowups,
 } = require('../services/followupAutomation');
+const { isPautaConversation } = require('../conversation/pautaDetection');
 
 function hoursAgo(hours) {
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
@@ -551,6 +551,10 @@ function testIsPautaConversation() {
   assert(
     isPautaConversation({ whatsapp_referral: null }) === false,
     'isPautaConversation: should return false with null referral'
+  );
+  assert(
+    isPautaConversation({ campaign_context: { property_code: 'LUX-A0453' } }) === true,
+    'isPautaConversation: should return true with campaign_context property_code'
   );
   assert(
     isPautaConversation({}) === false,

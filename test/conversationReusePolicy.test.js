@@ -36,6 +36,14 @@ test('contact provisional regression: ensureContactForConversation uses buildPho
   assert.equal(source.includes('buildPhoneLookupValues(normalizedPhone)'), true);
 });
 
+test('getOrCreateConversation wires selectConversationReuseStrategy (Cuarzo)', () => {
+  const indexPath = path.join(__dirname, '..', 'index.js');
+  const source = fs.readFileSync(indexPath, 'utf8');
+
+  assert.equal(source.includes('selectConversationReuseStrategy(rows, normalizedPhone)'), true);
+  assert.equal(source.includes('reuse.reusableConversation'), true);
+});
+
 test('conversation reuse policy: reuses latest non-closed conversation', () => {
   const strategy = selectConversationReuseStrategy(
     [
