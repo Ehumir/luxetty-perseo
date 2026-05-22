@@ -141,7 +141,11 @@ async function sendPerseoAutomatedWhatsApp({
     });
   }
 
-  return { sent: true, outbound: persisted.outbound, rows: persisted.rows };
+  return {
+    sent: true,
+    outbound: persisted?.outbound ?? outbound,
+    rows: persisted?.rows ?? [],
+  };
 }
 
 module.exports = {

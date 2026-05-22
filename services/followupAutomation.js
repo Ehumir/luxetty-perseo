@@ -249,8 +249,10 @@ async function sendFollowup({ supabase, sendWhatsAppText, conversation, action, 
     return { sent: false, reason: 'missing_phone' };
   }
 
-  await sendWhatsAppText(phone, step.message, conversation);
-  await saveOutboundFollowupMessage(supabase, conversation.id, step.message, step.key);
+  const sendResult = await sendWhatsAppText(phone, step.message, conversation);
+  if (!sendResult?.persistedOutbound) {
+    await saveOutboundFollowupMessage(supabase, conversation.id, step.message, step.key);
+  }
   await saveConversationEvent(supabase, conversation.id, step.eventType, {
     step: step.key,
     age_ms: action.ageMs,
