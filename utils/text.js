@@ -1,5 +1,6 @@
 function normalizeText(value) {
-  return (value || '')
+  if (value == null) return '';
+  return String(value)
     .toLowerCase()
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')

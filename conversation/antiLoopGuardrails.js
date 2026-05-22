@@ -334,8 +334,30 @@ function reformulateNearDuplicate(original, kind, aiState = {}, userText = '') {
       return loc
         ? `Sigo con ${loc}. Dime solo qué quieres ver primero: precio aproximado, ubicación en mapa o agendar visita.`
         : 'Sigo contigo. Dime solo una prioridad: precio, ubicación o visita.';
-    default:
-      return `Listo, retomo. ${cleanSpaces(String(userText || '')).slice(0, 120)} — dime qué parte quieres afinar primero.`;
+    default: {
+      const raw = cleanSpaces(String(userText || ''));
+      const t = normalizeText(raw);
+      if (
+        isLikelyShortPersonNameToken(raw) ||
+        /^me llamo\b/i.test(raw) ||
+        (t.startsWith('soy ') && raw.split(/\s+/).length <= 4)
+      ) {
+        const name = raw.replace(/^me llamo\s+/i, '').replace(/^soy\s+/i, '').trim();
+        const cap = name ? name.charAt(0).toUpperCase() + name.slice(1) : '';
+        if (flow === 'demand' && loc) {
+          return cap
+            ? `Perfecto, ${cap}. Sigo con tu búsqueda en ${loc} — ¿quieres afinar recámaras o alguna amenidad?`
+            : `Perfecto. Sigo con tu búsqueda en ${loc} — ¿quieres afinar recámaras o alguna amenidad?`;
+        }
+        return cap
+          ? `Perfecto, ${cap}. Para avanzar: ¿buscas comprar, rentar o es tema de venta?`
+          : 'Perfecto. Para avanzar sin repetirme: ¿buscas comprar, rentar o vender una propiedad?';
+      }
+      if (flow === 'demand' && loc) {
+        return `Sigo con tu búsqueda en ${loc}. ¿Quieres afinar recámaras, zona o presupuesto?`;
+      }
+      return `Entendido. ¿Quieres seguir con precio, ubicación o agendar una visita?`;
+    }
   }
 }
 

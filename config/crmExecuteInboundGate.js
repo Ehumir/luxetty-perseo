@@ -1,11 +1,15 @@
 'use strict';
 
 const { getPerseoV3Config, evaluateV3PrimaryGate } = require('./perseoV3Flags');
+const {
+  resolvePautaPropertyCrmContext,
+  isPautaPropertyBypassEnabled,
+} = require('../conversation/pautaDetection');
 
 const V3_PIPELINES = new Set(['v3', 'v3_primary']);
 
 /**
- * Gate de seguridad V1: mutaciones CRM reales solo con EXECUTE ON + allowlist + pipeline V3.
+ * Gate de seguridad V1: mutaciones CRM reales con EXECUTE ON + (allowlist V3 pipeline | bypass pauta/property controlado).
  *
  * @param {{
  *   phone: string,
@@ -14,6 +18,8 @@ const V3_PIPELINES = new Set(['v3', 'v3_primary']);
  *   v3PrimaryAllowed?: boolean,
  *   selectedPipeline?: string|null,
  *   argosMode?: boolean,
+ *   aiState?: object|null,
+ *   propertyId?: string|null,
  * }} input
  */
 function shouldAllowCrmExecuteForInbound(input) {
@@ -28,6 +34,14 @@ function shouldAllowCrmExecuteForInbound(input) {
   const v3PrimaryAllowed =
     input?.v3PrimaryAllowed === true || (input?.v3PrimaryAllowed !== false && gate.v3_primary_allowed);
 
+  const pautaCtx = resolvePautaPropertyCrmContext(input?.aiState || {}, {
+    propertyId: input?.propertyId ?? null,
+  });
+  const pautaBypass =
+    isPautaPropertyBypassEnabled() &&
+    pautaCtx.bypassEligible &&
+    !(input?.argosMode === true && process.env.PERSEO_ARGOS_ENABLED === 'true');
+
   const base = {
     phone: input?.phone || null,
     conversation_id: input?.conversationId || null,
@@ -38,6 +52,9 @@ function shouldAllowCrmExecuteForInbound(input) {
     v3_enabled: cfg.enabled,
     v3_primary_allowed: v3PrimaryAllowed,
     allowlist_block_reason: gate.v3_primary_block_reason || null,
+    pauta_property_bypass: pautaBypass,
+    pauta_property_code: pautaCtx.propertyCode || null,
+    pauta_bypass_reason: pautaBypass ? 'pauta_property' : pautaCtx.reason,
   };
 
   if (!cfg.crmExecute) {
@@ -45,6 +62,7 @@ function shouldAllowCrmExecuteForInbound(input) {
       ...base,
       crm_execute_allowed: false,
       block_reason: 'crm_execute_disabled',
+      crm_execute_bypass_reason: null,
     };
   }
 
@@ -53,6 +71,16 @@ function shouldAllowCrmExecuteForInbound(input) {
       ...base,
       crm_execute_allowed: false,
       block_reason: 'v3_disabled',
+      crm_execute_bypass_reason: null,
+    };
+  }
+
+  if (pautaBypass) {
+    return {
+      ...base,
+      crm_execute_allowed: true,
+      block_reason: null,
+      crm_execute_bypass_reason: 'pauta_property',
     };
   }
 
@@ -61,6 +89,7 @@ function shouldAllowCrmExecuteForInbound(input) {
       ...base,
       crm_execute_allowed: false,
       block_reason: 'allowlist_no_match',
+      crm_execute_bypass_reason: null,
     };
   }
 
@@ -69,6 +98,7 @@ function shouldAllowCrmExecuteForInbound(input) {
       ...base,
       crm_execute_allowed: false,
       block_reason: 'v3_primary_not_allowed',
+      crm_execute_bypass_reason: null,
     };
   }
 
@@ -77,6 +107,7 @@ function shouldAllowCrmExecuteForInbound(input) {
       ...base,
       crm_execute_allowed: false,
       block_reason: 'pipeline_not_v3',
+      crm_execute_bypass_reason: null,
     };
   }
 
@@ -84,6 +115,7 @@ function shouldAllowCrmExecuteForInbound(input) {
     ...base,
     crm_execute_allowed: true,
     block_reason: null,
+    crm_execute_bypass_reason: null,
   };
 }
 
@@ -105,6 +137,10 @@ function buildCrmExecuteGatePayload(gateResult) {
     v3_primary_allowed: gateResult.v3_primary_allowed,
     v3_enabled: gateResult.v3_enabled,
     allowlist_block_reason: gateResult.allowlist_block_reason ?? null,
+    pauta_property_bypass: gateResult.pauta_property_bypass === true,
+    pauta_property_code: gateResult.pauta_property_code ?? null,
+    crm_execute_bypass_reason: gateResult.crm_execute_bypass_reason ?? null,
+    pauta_bypass_reason: gateResult.pauta_bypass_reason ?? null,
   };
 }
 

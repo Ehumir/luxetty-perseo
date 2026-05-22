@@ -64,6 +64,7 @@ const {
   normalizeOutboundMessages,
   isUsefulContactName,
   isInvalidContactName,
+  selectConversationReuseStrategy,
 } = require('./utils/helpers');
 
 const app = express();
@@ -139,16 +140,25 @@ async function getOrCreateConversation(phone) {
       .order('last_message_at', { ascending: false, nullsFirst: false })
       .order('updated_at', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(1);
+      .limit(20);
 
     if (findError) {
       console.error('conversation_find_error', findError);
       return { id: null, ai_state: getDefaultAiState(), phone: normalizedPhone };
     }
 
-    const row = Array.isArray(existing) ? existing[0] : null;
-    if (row?.id) return row;
+    const rows = Array.isArray(existing) ? existing : [];
+    const reuse = selectConversationReuseStrategy(rows, normalizedPhone);
+    if (reuse.reusableConversation?.id) {
+      const row = reuse.reusableConversation;
+      if (reuse.shouldNormalizeReusablePhone && normalizedPhone && row.phone !== normalizedPhone) {
+        await supabase.from('conversations').update({ phone: normalizedPhone }).eq('id', row.id);
+        return { ...row, phone: normalizedPhone };
+      }
+      return row;
+    }
 
+    const createSeed = reuse.createSeed || {};
     const { data: created, error: createError } = await supabase
       .from('conversations')
       .insert({
@@ -158,6 +168,10 @@ async function getOrCreateConversation(phone) {
         priority: 'medium',
         last_message_at: nowIso(),
         ai_state: getDefaultAiState(),
+        contact_id: createSeed.contact_id || null,
+        lead_id: createSeed.lead_id || null,
+        assigned_agent_profile_id: createSeed.assigned_agent_profile_id || null,
+        external_contact_id: createSeed.external_contact_id || null,
       })
       .select()
       .single();
@@ -350,6 +364,28 @@ function enforceNameCapture(reply, context = {}) {
     nameAppendMode,
   });
   return { reply: packed.messages, applied: true, reason: 'append_name_request' };
+}
+
+/**
+ * Cuarzo §15 — no escribir lead legacy hasta slots mínimos (zona + presupuesto en demanda).
+ */
+function hasMinimumSlotsForLegacyCrmWrite(aiState = {}, signals = {}) {
+  const { resolvePautaPropertyCrmContext } = require('./conversation/pautaDetection');
+  if (resolvePautaPropertyCrmContext(aiState).bypassEligible) return true;
+  if (propertyIntentResolver.isPropertySpecificConversation(aiState)) return true;
+  const flow = aiState?.lead_flow || signals?.lead_flow;
+  if (flow === 'offer') {
+    return !!cleanSpaces(String(aiState?.location_text || signals?.location_text || ''));
+  }
+  if (flow === 'demand') {
+    const loc = cleanSpaces(String(aiState?.location_text || signals?.location_text || ''));
+    const budget =
+      aiState?.budget_max != null &&
+      Number.isFinite(Number(aiState.budget_max)) &&
+      Number(aiState.budget_max) > 0;
+    return !!loc && budget;
+  }
+  return false;
 }
 
 function hasClearRealEstateIntent(signals = {}, text = '', aiState = {}) {
@@ -588,15 +624,23 @@ async function runCleanOrchestratorCrmPhase({
   propertyId = null,
   crmGateContext = null,
 }) {
+  const resolvedPropertyId = propertyId != null ? propertyId : property?.id || null;
   const {
     shouldAllowCrmExecuteForInbound,
     logCrmExecuteGate,
   } = require('./config/crmExecuteInboundGate');
+  const { resolvePautaPropertyCrmContext } = require('./conversation/pautaDetection');
+  const pautaPropertyCtx = resolvePautaPropertyCrmContext(nextAiState, {
+    propertyId: resolvedPropertyId,
+  });
+
   const crmGate = shouldAllowCrmExecuteForInbound({
     phone: from,
     conversationId,
     v3PrimaryAllowed: crmGateContext?.v3PrimaryAllowed === true,
     selectedPipeline: crmGateContext?.selectedPipeline || 'legacy',
+    aiState: nextAiState,
+    propertyId: resolvedPropertyId,
   });
   if (typeof crmGateContext?.logEvent === 'function') {
     logCrmExecuteGate(crmGateContext.logEvent, crmGate);
@@ -614,7 +658,10 @@ async function runCleanOrchestratorCrmPhase({
 
   const hasIntent = hasClearRealEstateIntent(parsedSignals, text, nextAiState);
   const canEnsureContact =
-    hasIntent && (hasValidHumanName(contact, nextAiState) || isUsefulWaProfileName(waProfileName));
+    hasIntent &&
+    (hasValidHumanName(contact, nextAiState) ||
+      isUsefulWaProfileName(waProfileName) ||
+      (pautaPropertyCtx.bypassEligible && !!pautaPropertyCtx.propertyCode));
 
   let contactId = null;
   let contactWasCreated = false;
@@ -637,10 +684,9 @@ async function runCleanOrchestratorCrmPhase({
     contactWasCreated = !!contactResult?.wasCreated;
   }
 
-  const resolvedPropertyId = propertyId != null ? propertyId : property?.id || null;
-
   let leadResult = null;
-  if (hasIntent && contactId) {
+  const crmSlotsReady = hasMinimumSlotsForLegacyCrmWrite(nextAiState, parsedSignals);
+  if (hasIntent && contactId && crmSlotsReady) {
     logEvent('lead_create_attempted', { conversation_id: conversationId, contact_id: contactId });
     leadResult = await createOrReuseLeadFromConversation({
       supabase: db,
@@ -655,6 +701,17 @@ async function runCleanOrchestratorCrmPhase({
 
     if (leadResult?.success && leadResult?.wasCreated) {
       logEvent('lead_created', { conversation_id: conversationId, lead_id: leadResult.leadId || null });
+      if (crmGate.crm_execute_bypass_reason === 'pauta_property' || pautaPropertyCtx.bypassEligible) {
+        await saveConversationEventToClient(db, conversationId, 'property_pauta_lead_autocreated', {
+          lead_id: leadResult.leadId,
+          interested_property_id: resolvedPropertyId,
+          property_code: pautaPropertyCtx.propertyCode,
+          assigned_agent_profile_id: leadResult.assignedAgentProfileId,
+          assignment_strategy: leadResult.assignmentResult?.strategy || null,
+          source: 'legacy_crm_phase',
+          crm_execute_bypass_reason: crmGate.crm_execute_bypass_reason || 'pauta_property',
+        });
+      }
     } else if (leadResult?.success && !leadResult?.wasCreated) {
       logEvent('lead_reused', { conversation_id: conversationId, lead_id: leadResult.leadId || null });
     } else {
@@ -662,9 +719,15 @@ async function runCleanOrchestratorCrmPhase({
     }
   } else if (hasIntent && !contactId) {
     logEvent('lead_skipped', { conversation_id: conversationId, reason: 'missing_contact' });
+  } else if (hasIntent && contactId && !crmSlotsReady) {
+    logEvent('lead_skipped', {
+      conversation_id: conversationId,
+      reason: 'minimum_slots_not_met',
+      lead_flow: nextAiState?.lead_flow || parsedSignals?.lead_flow || null,
+    });
   }
 
-  return { hasIntent, canEnsureContact, contactId, leadResult };
+  return { hasIntent, canEnsureContact, contactId, leadResult, crmSlotsReady };
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -753,6 +816,16 @@ app.post('/webhook', async (req, res) => {
       metaMessageId,
       rawPayload: req.body || {},
     });
+
+    if (inboundRow?.conversation_id && conversationId && inboundRow.conversation_id !== conversationId) {
+      logEvent('inbound_duplicate_cross_conversation', {
+        meta_message_id: metaMessageId,
+        expected_conversation_id: conversationId,
+        existing_conversation_id: inboundRow.conversation_id,
+      });
+      res.sendStatus(200);
+      return;
+    }
 
     logEvent('inbound_persisted', {
       conversation_id: conversationId,
@@ -984,6 +1057,7 @@ app.post('/webhook', async (req, res) => {
         saveConversationEvent,
         campaignHeadline,
         legacyHydration,
+        persistedLegacyAiState: previousAiState,
         supabase,
       });
       if (v3Try.handled) {
@@ -1009,6 +1083,8 @@ app.post('/webhook', async (req, res) => {
             conversationId,
             v3PrimaryAllowed: true,
             selectedPipeline: 'v3',
+            aiState: nextAiState,
+            propertyId: resolvedPropertyId,
           });
           logCrmExecuteGate(logEvent, crmExecuteGate);
           await persistCrmExecuteGateEvent(saveConversationEvent, conversationId, crmExecuteGate);
@@ -1309,6 +1385,8 @@ app.post('/webhook', async (req, res) => {
       conversationId,
       v3PrimaryAllowed: v3PrimaryHandled,
       selectedPipeline,
+      aiState: nextAiState,
+      propertyId,
     });
     logCrmExecuteGate(logEvent, crmExecuteGate);
     await persistCrmExecuteGateEvent(saveConversationEvent, conversationId, crmExecuteGate);
@@ -1378,6 +1456,10 @@ app.post('/webhook', async (req, res) => {
 const { argosAuthMiddleware } = require('./argos/middleware/argosAuth');
 const internalArgosRouter = require('./argos/routes/internalArgosRouter');
 app.use('/internal/argos', argosAuthMiddleware, internalArgosRouter);
+
+const { perseoCronAuthMiddleware } = require('./middleware/perseoCronAuth');
+const internalJobsRouter = require('./routes/internalJobsRouter');
+app.use('/internal/jobs', perseoCronAuthMiddleware, internalJobsRouter);
 
 if (require.main === module) {
   app.listen(PORT, () => {

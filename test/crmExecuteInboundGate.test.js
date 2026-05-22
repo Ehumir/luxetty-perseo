@@ -20,22 +20,58 @@ function restoreEnv() {
   }
 }
 
-test('CRM_EXECUTE=true + allowlist_no_match → blocked', () => {
+const PREV_BYPASS = process.env.PERSEO_CRM_EXECUTE_PAUTA_PROPERTY_BYPASS;
+
+function restoreBypass() {
+  if (PREV_BYPASS === undefined) delete process.env.PERSEO_CRM_EXECUTE_PAUTA_PROPERTY_BYPASS;
+  else process.env.PERSEO_CRM_EXECUTE_PAUTA_PROPERTY_BYPASS = PREV_BYPASS;
+}
+
+test('CRM_EXECUTE=true + allowlist_no_match → blocked (sin pauta property)', () => {
   process.env.PERSEO_V3_ENABLED = 'true';
   process.env.PERSEO_V3_CRM_EXECUTE = 'true';
   process.env.PERSEO_V3_QA_ALLOWLIST = '5218181877351';
+  process.env.PERSEO_CRM_EXECUTE_PAUTA_PROPERTY_BYPASS = 'true';
 
   const gate = shouldAllowCrmExecuteForInbound({
     phone: '5218119086196',
     conversationId: 'conv-off',
     v3PrimaryAllowed: false,
     selectedPipeline: 'legacy',
+    aiState: { lead_flow: 'demand', location_text: 'Centro' },
   });
 
   assert.equal(gate.crm_execute_allowed, false);
   assert.equal(gate.block_reason, 'allowlist_no_match');
   assert.equal(gate.is_qa_allowed, false);
   restoreEnv();
+  restoreBypass();
+});
+
+test('CRM_EXECUTE=true + allowlist_no_match + pauta property → bypass allowed', () => {
+  process.env.PERSEO_V3_ENABLED = 'true';
+  process.env.PERSEO_V3_CRM_EXECUTE = 'true';
+  process.env.PERSEO_V3_QA_ALLOWLIST = '5218181877351';
+  process.env.PERSEO_CRM_EXECUTE_PAUTA_PROPERTY_BYPASS = 'true';
+
+  const gate = shouldAllowCrmExecuteForInbound({
+    phone: '5218998722910',
+    conversationId: 'conv-pauta',
+    v3PrimaryAllowed: false,
+    selectedPipeline: 'legacy',
+    aiState: {
+      campaign_context: { property_code: 'LUX-A0453' },
+      property_code: 'LUX-A0453',
+      property_specific_intent: true,
+      direct_property_reference: true,
+    },
+  });
+
+  assert.equal(gate.crm_execute_allowed, true);
+  assert.equal(gate.crm_execute_bypass_reason, 'pauta_property');
+  assert.equal(gate.block_reason, null);
+  restoreEnv();
+  restoreBypass();
 });
 
 test('CRM_EXECUTE=true + allowlist match + v3 pipeline → allowed', () => {

@@ -1,7 +1,8 @@
 const { getDefaultAiState, normalizeAiState } = require('../conversation/aiState');
 const { nowIso } = require('../utils/helpers');
-const { lookupSpecialAgentProfileId } = require('../utils/helpers');
-const { createPautaAbandonedLead } = require('./leadAutomation');
+const { ensurePropertyPautaAbandonedLead } = require('./leadAutomation');
+const { resolvePautaPropertyCrmContext } = require('../conversation/pautaDetection');
+const { isPautaConversation } = require('../conversation/pautaDetection');
 
 const FOLLOWUP_STEPS = [
   {
@@ -37,13 +38,6 @@ const CLOSE_STEP = {
 
 function isClosedStatus(status) {
   return ['closed', 'inactive', 'resolved', 'archived'].includes(String(status || '').toLowerCase());
-}
-
-function isPautaConversation(aiState) {
-  if (!aiState || typeof aiState !== 'object') return false;
-  const referral = aiState.whatsapp_referral;
-  if (!referral || typeof referral !== 'object') return false;
-  return Object.keys(referral).length > 0;
 }
 
 function isHumanOutbound(message) {
@@ -255,7 +249,7 @@ async function sendFollowup({ supabase, sendWhatsAppText, conversation, action, 
     return { sent: false, reason: 'missing_phone' };
   }
 
-  await sendWhatsAppText(phone, step.message);
+  await sendWhatsAppText(phone, step.message, conversation);
   await saveOutboundFollowupMessage(supabase, conversation.id, step.message, step.key);
   await saveConversationEvent(supabase, conversation.id, step.eventType, {
     step: step.key,
@@ -377,21 +371,33 @@ async function runInactivityFollowups({
       if (result.closed) {
         summary.closed += 1;
 
-        // Pauta abandonada: crear lead para Agente Especial si aplica
         const aiState = normalizeAiState(conversation.ai_state);
-        if (isPautaConversation(aiState)) {
+        const pautaProperty =
+          isPautaConversation(aiState) || resolvePautaPropertyCrmContext(aiState).bypassEligible;
+
+        if (pautaProperty) {
+          await saveConversationEvent(supabase, conversation.id, 'property_pauta_abandoned', {
+            step: CLOSE_STEP.key,
+            age_ms: action.ageMs,
+            source: 'inactivity_followup_job',
+          });
           try {
-            const specialAgentProfileId = await lookupSpecialAgentProfileId(supabase);
-            await createPautaAbandonedLead({
+            const abandonResult = await ensurePropertyPautaAbandonedLead({
               supabase,
               conversation,
               aiState,
               messages,
-              specialAgentProfileId,
               logger,
             });
+            if (abandonResult?.created) {
+              await saveConversationEvent(supabase, conversation.id, 'followup_lead_recovered', {
+                lead_id: abandonResult.leadId,
+                assignment_strategy: abandonResult.assignmentStrategy || 'property_owner_agent',
+                source: 'inactivity_followup_job',
+              });
+            }
           } catch (pautaErr) {
-            logger.warn?.('PAUTA_LEAD_CREATION_FAILED', {
+            logger.warn?.('PAUTA_PROPERTY_LEAD_CREATION_FAILED', {
               conversation_id: conversation.id,
               error: pautaErr?.message || String(pautaErr),
             });

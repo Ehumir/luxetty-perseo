@@ -88,6 +88,15 @@ describe('evaluateV3PrimaryGate (F2 hotfix)', () => {
     assert.equal(g.route, 'legacy_primary');
   });
 
+  it('no match por suffix parcial (allowlist estricta Cuarzo)', () => {
+    process.env.PERSEO_V3_ENABLED = 'true';
+    process.env.PERSEO_V3_QA_ALLOWLIST = '9086196';
+    const { evaluateV3PrimaryGate } = load();
+    const g = evaluateV3PrimaryGate({ phone: '5218119086196' });
+    assert.equal(g.allowlist_match, false);
+    assert.equal(g.v3_primary_block_reason, 'allowlist_no_match');
+  });
+
   it('v3_disabled cuando PERSEO_V3_ENABLED no es true', () => {
     process.env.PERSEO_V3_ENABLED = 'false';
     process.env.PERSEO_V3_QA_ALLOWLIST = '5218119086196';

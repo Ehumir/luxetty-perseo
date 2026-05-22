@@ -16,14 +16,14 @@ async function inboundMessageAlreadyProcessed(supabase, metaMessageId) {
       .limit(1);
 
     if (error) {
-      console.error('Error checking inbound duplicate:', error);
-      return false;
+      console.error('Error checking inbound duplicate (fail-closed):', error);
+      return true;
     }
 
     return Array.isArray(data) && data.length > 0;
   } catch (err) {
-    console.error('FATAL inboundMessageAlreadyProcessed:', err);
-    return false;
+    console.error('FATAL inboundMessageAlreadyProcessed (fail-closed):', err);
+    return true;
   }
 }
 

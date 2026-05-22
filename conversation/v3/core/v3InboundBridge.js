@@ -40,6 +40,7 @@ async function finishV3PrimaryAttempt(input, gate, result) {
  *   supabase?: object|null,
  *   campaignHeadline?: string|null,
  *   legacyHydration?: object|null,
+ *   persistedLegacyAiState?: object|null,
  *   media?: object|null,
  *   argosMode?: boolean,
  *   argosDeterministic?: boolean,
@@ -86,6 +87,7 @@ async function tryV3PrimaryReply(input) {
       reset: cmd === 'reset',
       campaignHeadline: input.campaignHeadline ?? null,
       legacyHydration: input.legacyHydration ?? null,
+      persistedLegacyAiState: input.persistedLegacyAiState ?? null,
       logEvent: input.logEvent,
       supabase: input.supabase ?? null,
     });

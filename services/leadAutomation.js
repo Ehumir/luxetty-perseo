@@ -283,18 +283,19 @@ function isLeadCompatible(lead, { contactId, leadType, operation, propertyId }) 
 }
 
 function buildResetAiStateAfterLeadCreated(aiState = {}, lead, assignment = {}) {
+  const preserveDemandMemory = (lead?.lead_type || aiState?.lead_flow) === 'demand';
   return {
-    lead_flow: null,
-    operation_type: null,
-    property_type: null,
-    location_text: null,
-    matched_location_from_catalog: null,
-    location_any: false,
-    budget_min: null,
-    budget_max: null,
-    budget_currency: null,
-    bedrooms: null,
-    bedrooms_any: false,
+    lead_flow: preserveDemandMemory ? aiState.lead_flow || 'demand' : null,
+    operation_type: preserveDemandMemory ? aiState.operation_type || lead?.interested_in_operation || null : null,
+    property_type: preserveDemandMemory ? aiState.property_type || null : null,
+    location_text: preserveDemandMemory ? aiState.location_text || null : null,
+    matched_location_from_catalog: preserveDemandMemory ? aiState.matched_location_from_catalog || null : null,
+    location_any: preserveDemandMemory ? !!aiState.location_any : false,
+    budget_min: preserveDemandMemory ? aiState.budget_min ?? null : null,
+    budget_max: preserveDemandMemory ? aiState.budget_max ?? null : null,
+    budget_currency: preserveDemandMemory ? aiState.budget_currency || null : null,
+    bedrooms: preserveDemandMemory ? aiState.bedrooms ?? null : null,
+    bedrooms_any: preserveDemandMemory ? !!aiState.bedrooms_any : false,
     bathrooms: null,
     must_have_features: [],
     timeline_text: null,
@@ -2455,10 +2456,13 @@ async function createOrReuseLeadFromConversation({
         };
       }
 
+    const resolvedAgentId =
+      assignedAgentProfileId || lead.assigned_agent_profile_id || conversation?.assigned_agent_profile_id || null;
+
     const conversationSync = await syncConversation(supabase, conversationId, {
       lead_id: lead.id,
       contact_id: contactId,
-      assigned_agent_profile_id: assignedAgentProfileId || lead.assigned_agent_profile_id || null,
+      assigned_agent_profile_id: resolvedAgentId,
       ai_state: nextAiState,
     });
 
@@ -2606,6 +2610,162 @@ function buildPautaAbandonedNotes({ aiState, conversation, referral, lastInbound
 }
 
 /**
+ * Cuarzo 0A — Lead de pauta/property abandonada: property_owner_agent vía motor oficial.
+ */
+async function ensurePropertyPautaAbandonedLead({
+  supabase,
+  conversation,
+  aiState,
+  messages = [],
+  logger = console,
+}) {
+  const conversationId = conversation?.id || null;
+  const { resolvePautaPropertyCrmContext } = require('../conversation/pautaDetection');
+  const propertyInventoryService = require('./propertyInventoryService');
+  const { ensureContactForConversationCore } = require('./contactProvisioning');
+
+  try {
+    const existingLeadId = conversation?.lead_id || aiState?.lead_id || null;
+    if (existingLeadId) {
+      const existingLead = await findLeadByConversation(supabase, existingLeadId);
+      if (existingLead?.id) {
+        await saveConversationEvent(supabase, conversationId, 'pauta_lead_skipped_already_exists', {
+          lead_id: existingLead.id,
+          reason: 'lead_already_exists_in_conversation',
+          source: 'inactivity_followup_job',
+        });
+        return { created: false, reason: 'lead_already_exists', leadId: existingLead.id };
+      }
+    }
+
+    const pautaCtx = resolvePautaPropertyCrmContext(aiState);
+    if (!pautaCtx.bypassEligible) {
+      await saveConversationEvent(supabase, conversationId, 'property_abandoned_lead_skipped', {
+        reason: pautaCtx.reason || 'not_pauta_property',
+        source: 'inactivity_followup_job',
+      });
+      return { created: false, reason: pautaCtx.reason || 'not_pauta_property' };
+    }
+
+    const hadAiOutbound = (messages || []).some(
+      (m) => m.direction === 'outbound' && ['ai_agent', 'system'].includes(String(m.sender_type || '').toLowerCase())
+    );
+    if (!hadAiOutbound) {
+      await saveConversationEvent(supabase, conversationId, 'property_abandoned_lead_skipped', {
+        reason: 'no_perseo_outbound',
+        source: 'inactivity_followup_job',
+      });
+      return { created: false, reason: 'no_perseo_outbound' };
+    }
+
+    let property = null;
+    let propertyId = pautaCtx.propertyId || null;
+    if (pautaCtx.propertyCode) {
+      const resolved = await propertyInventoryService.findPropertyByInventoryReference(
+        supabase,
+        { code: pautaCtx.propertyCode, text: '', hintZone: null },
+        logger
+      );
+      property = resolved.property;
+      propertyId = resolved.propertyId || propertyId;
+    }
+
+    const phone = conversation?.phone || null;
+    const contactResult = await ensureContactForConversationCore({
+      supabase,
+      conversationRow: conversation,
+      state: aiState,
+      phone,
+      waName: null,
+      source: 'whatsapp',
+      rawPayload: null,
+      property,
+      logger,
+      saveConversationEvent: (cid, type, payload) => saveConversationEvent(supabase, cid, type, payload),
+      updateConversationMeta: (cid, payload) => syncConversation(supabase, cid, payload),
+    });
+
+    const contactId = contactResult?.contactId || conversation?.contact_id || null;
+    if (!contactId) {
+      await saveConversationEvent(supabase, conversationId, 'property_abandoned_lead_failed', {
+        reason: 'missing_contact',
+        source: 'inactivity_followup_job',
+      });
+      return { created: false, reason: 'missing_contact' };
+    }
+
+    const enrichedState = {
+      ...aiState,
+      interested_property_id: propertyId || aiState.interested_property_id || null,
+      property_code: pautaCtx.propertyCode || aiState.property_code || null,
+      direct_property_code: pautaCtx.propertyCode || aiState.direct_property_code || null,
+      property_specific_intent: true,
+      direct_property_reference: true,
+    };
+
+    const leadResult = await createOrReuseLeadFromConversation({
+      supabase,
+      conversation,
+      aiState: enrichedState,
+      contactId,
+      propertyId,
+      property,
+      contactWasCreated: !!contactResult?.wasCreated,
+      logger,
+    });
+
+    if (!leadResult?.success) {
+      await saveConversationEvent(supabase, conversationId, 'property_abandoned_lead_failed', {
+        reason: leadResult?.reason || 'lead_creation_failed',
+        error: leadResult?.error || null,
+        source: 'inactivity_followup_job',
+      });
+      return { created: false, reason: leadResult?.reason || 'lead_creation_failed' };
+    }
+
+    const assignmentStrategy =
+      leadResult?.assignmentResult?.strategy || 'property_owner_agent';
+
+    await saveConversationEvent(supabase, conversationId, 'property_pauta_lead_autocreated', {
+      lead_id: leadResult.leadId,
+      was_created: !!leadResult.wasCreated,
+      interested_property_id: propertyId,
+      property_code: pautaCtx.propertyCode,
+      assigned_agent_profile_id: leadResult.assignedAgentProfileId,
+      assignment_strategy: assignmentStrategy,
+      source: 'inactivity_followup_job',
+      trigger: 'property_abandoned',
+    });
+
+    log(logger, 'PROPERTY_PAUTA_ABANDONED_LEAD', {
+      conversation_id: conversationId,
+      lead_id: leadResult.leadId,
+      property_code: pautaCtx.propertyCode,
+      assignment_strategy: assignmentStrategy,
+    });
+
+    return {
+      created: !!leadResult.wasCreated,
+      leadId: leadResult.leadId,
+      lead: leadResult.lead,
+      assignmentStrategy,
+      reason: leadResult.wasCreated ? 'created' : 'reused',
+    };
+  } catch (err) {
+    logWarn(logger, 'PROPERTY_PAUTA_ABANDONED_LEAD_ERROR', {
+      conversation_id: conversationId,
+      error: err?.message || String(err),
+    });
+    await saveConversationEvent(supabase, conversationId, 'property_abandoned_lead_failed', {
+      error: err?.message || String(err),
+      source: 'inactivity_followup_job',
+    });
+    return { created: false, reason: 'error', error: err?.message };
+  }
+}
+
+/**
+ * @deprecated Cuarzo 0A — usar ensurePropertyPautaAbandonedLead (property_owner_agent).
  * Crea un lead en public.leads asignado al Agente Especial cuando una conversación
  * proveniente de pauta es cerrada por inactividad.
  *
@@ -2921,6 +3081,7 @@ module.exports = {
   ensureLeadForConversation,
   createOrReuseLeadFromConversation,
   createPautaAbandonedLead,
+  ensurePropertyPautaAbandonedLead,
   _planLead,
   previewLeadFromConversation,
   resolveAssignmentDecision,
