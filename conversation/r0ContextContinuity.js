@@ -85,12 +85,23 @@ function buildSaleCaptiveContinuityReply({ text = '', aiState = {}, loc = '', ha
   const st = aiState && typeof aiState === 'object' ? aiState : {};
   const zone = cleanSpaces(String(loc || st.location_text || ''));
   const typeLabel = formatPropertyTypeLabel(st.property_type);
+  const hasType = !!cleanSpaces(String(st.property_type || ''));
+  const hasOccupancy = !!cleanSpaces(String(st.occupancy_status || ''));
   const priceHint =
     st.expected_price != null && Number.isFinite(Number(st.expected_price))
       ? Number(st.expected_price)
       : null;
 
-  if (!t || t === 'si' || t === 'sí' || t === 'ok' || t === 'vale') {
+  if (!t || t === 'si' || t === 'sí' || t === 'ok' || t === 'vale' || t === 'continuar' || t === 'sigue') {
+    if (hasType && hasOccupancy && zone) {
+      return `Listo, seguimos con la venta de tu ${typeLabel} en ${zone}. ¿Hay algo más que quieras aclarar sobre la propiedad?`;
+    }
+    if (hasType && zone) {
+      return `Listo, seguimos con la venta de tu ${typeLabel} en ${zone}. ¿Está habitada, rentada o libre?`;
+    }
+    if (hasType) {
+      return `Listo, seguimos con la venta de tu ${typeLabel}. ¿En qué colonia o municipio está la propiedad?`;
+    }
     return zone
       ? `Listo, seguimos con la venta en ${zone}. ¿Quieres afinar tipo de inmueble o motivación de venta?`
       : 'Listo, seguimos con la venta. ¿En qué colonia o municipio está la propiedad?';
@@ -99,10 +110,18 @@ function buildSaleCaptiveContinuityReply({ text = '', aiState = {}, loc = '', ha
   if (isLikelyShortPersonNameToken(raw) && raw.split(/\s+/).filter(Boolean).length <= 5) {
     const cap = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
     const z = zone ? ` en ${zone}` : '';
+    if (hasType) {
+      return `Gracias, ${cap}. Sigo con tu venta${z}. ${hasOccupancy ? '¿Hay algo más sobre la propiedad?' : '¿Está habitada, rentada o libre?'}`;
+    }
     return `Gracias, ${cap}. Sigo con tu venta${z}. ¿El inmueble es casa, departamento o terreno?`;
   }
 
   if (/\d/.test(raw) && (t.includes('millon') || t.includes('mdp') || /\b\d/.test(t))) {
+    if (hasType && hasOccupancy) {
+      return zone
+        ? `Con lo que comentas sobre la venta en ${zone}, sigo sin prometer precios de mercado aquí. ¿Hay algo más que quieras aclarar?`
+        : 'Con lo que comentas, sigo sin prometer precios de mercado aquí. ¿Hay algo más que quieras aclarar?';
+    }
     return zone
       ? `Con lo que comentas sobre la venta en ${zone}, sigo sin prometer precios de mercado aquí. ¿Tipo de inmueble y si está habitada o libre?`
       : `Perfecto, con ese monto como referencia. ¿En qué colonia o municipio está la propiedad?`;
@@ -110,12 +129,25 @@ function buildSaleCaptiveContinuityReply({ text = '', aiState = {}, loc = '', ha
 
   if (zone || t.includes('cumbres') || t.includes('zona') || t.includes('colonia') || t.includes('municipio')) {
     const z2 = zone || (raw.length < 80 ? raw : '');
+    if (hasType && hasOccupancy) {
+      return z2
+        ? `Perfecto, tomé la zona (${z2}). Sigo con la venta de tu ${typeLabel}. ¿Hay algo más que quieras aclarar?`
+        : `Sigo con la venta de tu ${typeLabel}. ¿Hay algo más que quieras aclarar?`;
+    }
+    if (hasType) {
+      return z2
+        ? `Perfecto, tomé la zona (${z2}). Sigo con la venta de tu ${typeLabel}. ¿Está habitada, rentada o libre?`
+        : `Sigo con la venta de tu ${typeLabel}. ¿Está habitada, rentada o libre?`;
+    }
     return z2
-      ? `Perfecto, tomé la zona (${z2}). Sigo con la venta de tu ${typeLabel}. ¿Está habitada, rentada o libre?`
-      : `Sigo con la venta de tu ${typeLabel}. ¿En qué colonia o municipio está?`;
+      ? `Perfecto, tomé la zona (${z2}). Sigo con la venta. ¿El inmueble es casa, departamento o terreno?`
+      : `Sigo con la venta. ¿El inmueble es casa, departamento o terreno?`;
   }
 
   if (priceHint != null) {
+    if (hasType && hasOccupancy && zone) {
+      return `Sigo con la venta de tu ${typeLabel} en ${zone}. ¿Hay algo más que quieras aclarar?`;
+    }
     return `Sigo con la venta de tu ${typeLabel}. ¿En qué colonia o municipio está la propiedad?`;
   }
 

@@ -2,6 +2,11 @@
 
 const { normalizeText } = require('../utils/text');
 const { buildFinalHandoffReply } = require('./responseBuilder');
+const {
+  buildOperationalHandoffSummary,
+  buildStandardHandoffStatePatch,
+  resolvePostHandoffTurn,
+} = require('./cuarzoHandoff');
 
 /** Solo petición explícita de asesor/persona — no visita ni interés comercial genérico. */
 function isExplicitHumanAdvisorRequest(text = '', parsedSignals = {}) {
@@ -13,6 +18,7 @@ function isExplicitHumanAdvisorRequest(text = '', parsedSignals = {}) {
     t.includes('humano') ||
     t.includes('persona real') ||
     t.includes('hablar con alguien') ||
+    t.includes('me atienda') ||
     t.includes('llamen') ||
     t.includes('marquen') ||
     t.includes('contacten')
@@ -23,7 +29,7 @@ function isExplicitHumanAdvisorRequest(text = '', parsedSignals = {}) {
 }
 
 /**
- * Escalación automática cuando el usuario pide asesor humano (Cuarzo 0C).
+ * Escalación automática cuando el usuario pide asesor humano (Cuarzo V1).
  */
 function resolveWantsHumanEscalationTurn({
   previousAiState = {},
@@ -31,12 +37,18 @@ function resolveWantsHumanEscalationTurn({
   parsedSignals = {},
   text = '',
 } = {}) {
-  const explicit = isExplicitHumanAdvisorRequest(text, parsedSignals);
-  const sticky =
-    explicit &&
-    (!!parsedSignals.wants_human || !!nextAiState.wants_human || !!previousAiState.wants_human);
+  const postHandoff = resolvePostHandoffTurn({ previousAiState, nextAiState, text });
+  if (postHandoff.handled) {
+    return {
+      handled: true,
+      reply: postHandoff.reply,
+      statePatch: postHandoff.statePatch,
+      responseSource: postHandoff.responseSource,
+    };
+  }
 
-  if (!sticky) {
+  const explicit = isExplicitHumanAdvisorRequest(text, parsedSignals);
+  if (!explicit) {
     return { handled: false };
   }
 
@@ -50,17 +62,17 @@ function resolveWantsHumanEscalationTurn({
     wants_human: true,
   };
 
+  const summary = buildOperationalHandoffSummary(merged, {
+    reason: 'explicit_human_request',
+    userSnippet: String(text || '').trim(),
+  });
+
   return {
     handled: true,
     reply: buildFinalHandoffReply(merged),
-    statePatch: {
-      wants_human: true,
-      handoff_ready: true,
-      handoff_sent: true,
-      awaiting_field: null,
-      pending_name_capture: false,
+    statePatch: buildStandardHandoffStatePatch(summary, {
       last_change_type: 'wants_human_auto_escalation',
-    },
+    }),
     responseSource: 'wants_human_auto_escalation',
   };
 }

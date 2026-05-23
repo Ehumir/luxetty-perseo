@@ -19,6 +19,10 @@ const FRUSTRATION_MARKERS = [
   { re: /\bte acabo de decir\b/i, id: 'acabo_de_decir' },
   { re: /\bme repites\b/i, id: 'me_repites' },
   { re: /\bno me lees\b/i, id: 'no_me_lees' },
+  { re: /\best[aá]\s+repitiendo\b/i, id: 'esta_repitiendo' },
+  { re: /\brepitiendo\s+todo\b/i, id: 'repitiendo_todo' },
+  { re: /\bno\s+repitas\b/i, id: 'no_repitas' },
+  { re: /\blo\s+mismo\b/i, id: 'lo_mismo' },
 ];
 
 function detectConversationalFrustration(text = '') {
@@ -96,6 +100,24 @@ function classifyOutboundQuestionKind(replyText = '') {
   }
   if (t.includes('visita') || t.includes('agendar')) {
     return 'visit';
+  }
+  if (
+    t.includes('casa, departamento') ||
+    t.includes('departamento o terreno') ||
+    t.includes('tipo de inmueble') ||
+    (t.includes('inmueble') && t.includes('casa'))
+  ) {
+    return 'property_type';
+  }
+  if (
+    t.includes('habitada') ||
+    t.includes('rentada') ||
+    t.includes('libre') ||
+    t.includes('ocupada') ||
+    t.includes('ocupación') ||
+    t.includes('ocupacion')
+  ) {
+    return 'occupancy';
   }
   if (
     t.includes('detalles, precio') ||
@@ -210,6 +232,17 @@ function buildStaleAwaitingFieldPatch(aiState = {}, parsedSignals = {}, inboundT
   }
 
   if (waiting === 'owner_relation' && sig.owner_relation != null && String(sig.owner_relation).trim()) {
+    patch.awaiting_field = null;
+  }
+
+  if (waiting === 'property_type' && cleanSpaces(String(sig.property_type || aiState.property_type || ''))) {
+    patch.awaiting_field = null;
+  }
+
+  if (
+    waiting === 'occupancy_status' &&
+    cleanSpaces(String(sig.occupancy_status || aiState.occupancy_status || ''))
+  ) {
     patch.awaiting_field = null;
   }
 
