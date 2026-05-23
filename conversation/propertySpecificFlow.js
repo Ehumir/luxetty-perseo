@@ -395,7 +395,7 @@ function buildPropertyDetailsReply({ property, aiState = {}, contact = null, waP
     try {
       parts.push(`Tipo: ${formatPropertyTypeLabel(row.property_type)}.`);
     } catch {
-      parts.push(`Tipo: ${row.property_type}.`);
+      parts.push('Tipo: inmueble.');
     }
   }
   const p = pickNumericPrice(row);

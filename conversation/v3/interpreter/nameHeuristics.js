@@ -48,7 +48,7 @@ function isNonNameUtterance(text) {
   if (!t) return true;
   if (NON_NAME_EXACT.has(t)) return true;
   if (NON_NAME_PATTERNS.some((p) => p.test(t))) return true;
-  if (t.split(/\s+/).length > 4) return true;
+  if (t.split(/\s+/).length > 6) return true;
   return false;
 }
 

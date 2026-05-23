@@ -592,6 +592,8 @@ function splitLuxettyLinksFromMessage(message) {
   return result;
 }
 
+const { sanitizeSpanishOutboundText } = require('./text');
+
 function normalizeOutboundMessages(reply) {
   const items = Array.isArray(reply) ? reply : [reply];
   const result = [];
@@ -599,7 +601,7 @@ function normalizeOutboundMessages(reply) {
   for (const item of items) {
     const split = splitLuxettyLinksFromMessage(item);
     split.forEach((message) => {
-      if (message) result.push(message);
+      if (message) result.push(sanitizeSpanishOutboundText(message));
     });
   }
 

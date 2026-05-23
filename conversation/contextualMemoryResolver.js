@@ -6,6 +6,7 @@
  */
 
 const { normalizeText, cleanSpaces } = require('../utils/text');
+const { formatPropertyTypeLabel } = require('../utils/formatting');
 const { extractMaxPrice, extractBedrooms } = require('./parsers');
 const r0ContextContinuity = require('./r0ContextContinuity');
 
@@ -479,7 +480,7 @@ function substituteForbiddenGenericDemandReply(messages, context = {}) {
   }
 
   const ptype = cleanSpaces(String(aiState.property_type || ''));
-  const propertyTypeLabel = ptype && ptype !== 'null' ? ptype : 'casa';
+  const propertyTypeLabel = formatPropertyTypeLabel(ptype);
 
   const reply = isOfferOrSellerSaleContext(aiState)
     ? buildContextualOfferCaptureReply({

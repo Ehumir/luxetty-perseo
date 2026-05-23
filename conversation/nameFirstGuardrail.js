@@ -18,6 +18,7 @@ function isUsefulWaProfileName(waProfileName) {
 }
 
 function requiresName(contact, aiState, waProfileName) {
+  if (aiState?.wants_human || aiState?.handoff_sent) return false;
   return !hasValidHumanName(contact, aiState) && !isUsefulWaProfileName(waProfileName);
 }
 

@@ -5,6 +5,10 @@ const {
   resolvePautaPropertyCrmContext,
   isPautaPropertyBypassEnabled,
 } = require('../conversation/pautaDetection');
+const {
+  resolveOrganicOfferCrmContext,
+  isOrganicOfferBypassEnabled,
+} = require('../conversation/organicOfferCrm');
 
 const V3_PIPELINES = new Set(['v3', 'v3_primary']);
 
@@ -42,6 +46,12 @@ function shouldAllowCrmExecuteForInbound(input) {
     pautaCtx.bypassEligible &&
     !(input?.argosMode === true && process.env.PERSEO_ARGOS_ENABLED === 'true');
 
+  const organicCtx = resolveOrganicOfferCrmContext(input?.aiState || {});
+  const organicBypass =
+    isOrganicOfferBypassEnabled() &&
+    organicCtx.bypassEligible &&
+    !(input?.argosMode === true && process.env.PERSEO_ARGOS_ENABLED === 'true');
+
   const base = {
     phone: input?.phone || null,
     conversation_id: input?.conversationId || null,
@@ -55,6 +65,8 @@ function shouldAllowCrmExecuteForInbound(input) {
     pauta_property_bypass: pautaBypass,
     pauta_property_code: pautaCtx.propertyCode || null,
     pauta_bypass_reason: pautaBypass ? 'pauta_property' : pautaCtx.reason,
+    organic_offer_bypass: organicBypass,
+    organic_offer_bypass_reason: organicBypass ? 'organic_offer' : organicCtx.reason,
   };
 
   if (!cfg.crmExecute) {
@@ -81,6 +93,15 @@ function shouldAllowCrmExecuteForInbound(input) {
       crm_execute_allowed: true,
       block_reason: null,
       crm_execute_bypass_reason: 'pauta_property',
+    };
+  }
+
+  if (organicBypass) {
+    return {
+      ...base,
+      crm_execute_allowed: true,
+      block_reason: null,
+      crm_execute_bypass_reason: 'organic_offer',
     };
   }
 
@@ -141,6 +162,8 @@ function buildCrmExecuteGatePayload(gateResult) {
     pauta_property_code: gateResult.pauta_property_code ?? null,
     crm_execute_bypass_reason: gateResult.crm_execute_bypass_reason ?? null,
     pauta_bypass_reason: gateResult.pauta_bypass_reason ?? null,
+    organic_offer_bypass: gateResult.organic_offer_bypass === true,
+    organic_offer_bypass_reason: gateResult.organic_offer_bypass_reason ?? null,
   };
 }
 

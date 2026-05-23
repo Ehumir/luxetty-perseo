@@ -1,4 +1,39 @@
 const { getPublicPropertyUrl } = require('./helpers');
+
+const PROPERTY_TYPE_LABELS_ES = {
+  house: 'casa',
+  home: 'casa',
+  apartment: 'departamento',
+  condo: 'departamento',
+  land: 'terreno',
+  terrain: 'terreno',
+  lot: 'terreno',
+  office: 'oficina',
+  commercial: 'local comercial',
+  warehouse: 'bodega',
+  nave: 'bodega',
+  local: 'local comercial',
+  townhouse: 'casa',
+  duplex: 'departamento',
+};
+
+/** Normaliza tipo interno (EN) → etiqueta español para outbound al cliente. */
+function formatPropertyTypeLabel(propertyType) {
+  const raw = String(propertyType ?? '').trim().toLowerCase();
+  if (!raw || raw === 'null') return 'propiedad';
+  if (PROPERTY_TYPE_LABELS_ES[raw]) return PROPERTY_TYPE_LABELS_ES[raw];
+  if (/^(casa|departamento|terreno|oficina|local|bodega|inmueble|propiedad)$/.test(raw)) return raw;
+  return 'inmueble';
+}
+
+/**
+ * @deprecated Prefer sanitizeSpanishOutboundText from utils/text.js (sin dependencia circular).
+ */
+function sanitizeSpanishOutboundText(text) {
+  const { sanitizeSpanishOutboundText: sanitize } = require('./text');
+  return sanitize(text);
+}
+
 function formatMoney(amount, currencyCode = 'MXN') {
   if (amount == null) return 'Precio por confirmar';
   return `$${Number(amount).toLocaleString('es-MX')} ${currencyCode}`;
@@ -8,18 +43,6 @@ function formatOperationLabel(operationType) {
   if (operationType === 'sale') return 'compra';
   if (operationType === 'rent') return 'renta';
   return 'operación';
-}
-
-function formatPropertyTypeLabel(propertyType) {
-  const labels = {
-    house: 'casa',
-    apartment: 'departamento',
-    land: 'terreno',
-    office: 'oficina',
-    commercial: 'local comercial',
-    warehouse: 'nave',
-  };
-  return labels[propertyType] || propertyType || 'propiedad';
 }
 
 function formatPropertyShort(property) {
@@ -53,6 +76,7 @@ module.exports = {
   formatMoney,
   formatOperationLabel,
   formatPropertyTypeLabel,
+  sanitizeSpanishOutboundText,
   formatPropertyShort,
   formatPropertyList,
 };

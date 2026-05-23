@@ -98,7 +98,12 @@ function extractLocation(message, prevState = null) {
 
   if (prevState?.awaiting_field === 'location_text') {
     if (hasPropertyCode || looksLikeDirectPropertyIntent) return null;
-    return cleanSpaces(message);
+    const raw = cleanSpaces(message);
+    const { sanitizeLocationText, extractKnownZoneFromText } = require('./locationSanitizer');
+    const zone = extractKnownZoneFromText(raw);
+    if (zone) return zone;
+    if (raw.length > 80) return null;
+    return sanitizeLocationText(raw);
   }
 
   return null;
@@ -709,7 +714,10 @@ function classifyInboundBusinessCategory(message, intent = {}, prevState = {}) {
     text.includes('información') ||
     text.includes('me interesa') ||
     text.includes('agendar') ||
-    text.includes('visita');
+    text.includes('visita') ||
+    text.includes('asesor') ||
+    text.includes('agente') ||
+    (text.includes('humano') && (text.includes('asesor') || text.includes('hablar') || text.includes('persona')));
 
   const isBroker = detectExternalBroker(message);
   const isProvider = detectProvider(message) || detectNonRealEstateOrProvider(message);

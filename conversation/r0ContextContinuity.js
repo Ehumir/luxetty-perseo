@@ -7,6 +7,7 @@
 
 const { normalizeText, cleanSpaces } = require('../utils/text');
 const { isLikelyShortPersonNameToken } = require('./antiLoopGuardrails');
+const { formatPropertyTypeLabel } = require('../utils/formatting');
 
 /**
  * Hilo de captación/venta protegido.
@@ -83,10 +84,7 @@ function buildSaleCaptiveContinuityReply({ text = '', aiState = {}, loc = '', ha
   const t = normalizeText(raw);
   const st = aiState && typeof aiState === 'object' ? aiState : {};
   const zone = cleanSpaces(String(loc || st.location_text || ''));
-  const typeLabel =
-    st.property_type && String(st.property_type).trim() && String(st.property_type) !== 'null'
-      ? String(st.property_type)
-      : 'propiedad';
+  const typeLabel = formatPropertyTypeLabel(st.property_type);
   const priceHint =
     st.expected_price != null && Number.isFinite(Number(st.expected_price))
       ? Number(st.expected_price)
@@ -98,7 +96,7 @@ function buildSaleCaptiveContinuityReply({ text = '', aiState = {}, loc = '', ha
       : 'Listo, seguimos con la venta. ¿En qué colonia o municipio está la propiedad?';
   }
 
-  if (isLikelyShortPersonNameToken(raw) && raw.split(/\s+/).filter(Boolean).length <= 2) {
+  if (isLikelyShortPersonNameToken(raw) && raw.split(/\s+/).filter(Boolean).length <= 5) {
     const cap = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
     const z = zone ? ` en ${zone}` : '';
     return `Gracias, ${cap}. Sigo con tu venta${z}. ¿El inmueble es casa, departamento o terreno?`;

@@ -174,6 +174,10 @@ function appendNameRequestIfNeeded(messages, context = {}) {
     return { messages, statePatch: {}, setAwaitingFullName: false };
   }
 
+  if (aiState?.handoff_sent || aiState?.wants_human) {
+    return { messages, statePatch: {}, setAwaitingFullName: false };
+  }
+
   const waiting = aiState?.awaiting_field;
   // No pisar confirmaciones de contacto; sí sumar nombre junto a zona/presupuesto/tipo/etc.
   const blocksNameAppend = ['contact_preference', 'contact_number_confirmed', 'contact_number'].includes(waiting);

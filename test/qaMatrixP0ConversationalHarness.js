@@ -23,6 +23,8 @@ const { isGreetingOnly } = require('../utils/messageChecks');
 const { appendNameRequestIfNeeded, hasValidHumanName } = require('../conversation/namePrompt');
 const { PROPERTY_LUX_A0453 } = require('./fixtures/perseoRegressionFixtures');
 const propertyIntentResolver = require('../conversation/propertyIntentResolver');
+const humanEscalation = require('../conversation/humanEscalation');
+const slotSanitizer = require('../conversation/slotSanitizer');
 
 const WRONG_CHANNEL_RE = /Gracias por escribir\. Para ayudarte bien, este canal atiende/i;
 const BOT_RE = /soy un bot|no puedo ayudarte|error interno/i;
@@ -93,6 +95,17 @@ function produceCoreReply({
 
   if (nextAiState.handoff_sent && isClosureCheck(userText)) {
     return 'Gracias a ti. Si surge algo más, aquí estoy para seguirte orientando con gusto.';
+  }
+
+  const humanEsc = humanEscalation.resolveWantsHumanEscalationTurn({
+    previousAiState: prevAiState,
+    nextAiState,
+    parsedSignals: signals,
+    text: userText,
+  });
+  if (humanEsc.handled) {
+    Object.assign(nextAiState, humanEsc.statePatch);
+    return humanEsc.reply;
   }
 
   if (isNonRealEstateCategoryState(nextAiState)) {
@@ -187,7 +200,8 @@ function simulateTurn({
 }) {
   const prev = normalizeAiState(aiState);
   const inboundContext = {};
-  const signals = parseMessageSignals(userText, prev, inboundContext);
+  let signals = parseMessageSignals(userText, prev, inboundContext);
+  signals = slotSanitizer.sanitizeInboundSignals(signals, prev);
   Object.assign(signals, propertyIntentResolver.resolvePropertyIntent(userText, prev));
   const changeType = detectStateChange(prev, signals);
   let next = buildNextState(prev, signals, changeType);
@@ -305,13 +319,14 @@ const SCENARIOS = [
   },
   {
     id: 'QA-04',
-    title: 'Visita explícita + nombre',
+    title: 'Visita explícita + canalización asesor',
     contact: CONTACT_NO_NAME,
     matchedProperty: PROPERTY_LUX_A0453,
     turns: [
       {
         user: 'Me interesa LUX-A0453 y quiero verla',
-        requireName: true,
+        requireName: false,
+        extraCheck: (t) => /asesor|canalizar|visita|luxetty/i.test(t),
         patchAfter: (s) => {
           s.aiState.direct_property_reference = true;
           s.aiState.property_code = 'LUX-A0453';
@@ -323,10 +338,10 @@ const SCENARIOS = [
   },
   {
     id: 'QA-05',
-    title: 'Handoff previo + “gracias” (sin silencio + nombre si falta)',
+    title: 'Handoff previo + “gracias” (sin silencio, sin loop de nombre)',
     contact: CONTACT_NO_NAME,
     forceHandoffSent: true,
-    turns: [{ user: 'gracias', requireName: true, allowWrongChannel: true }],
+    turns: [{ user: 'gracias', requireName: false, allowWrongChannel: true }],
   },
   {
     id: 'QA-06',

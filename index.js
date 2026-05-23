@@ -911,10 +911,12 @@ app.post('/webhook', async (req, res) => {
     });
 
     const inboundContext = { media: { type: message?.type || 'text' } };
+    const slotSanitizer = require('./conversation/slotSanitizer');
     let parsedSignals = mergeSignalsWithMulti(
       parseMessageSignals(text, previousAiState, inboundContext),
       extractMultiSignals(text, previousAiState)
     );
+    parsedSignals = slotSanitizer.sanitizeInboundSignals(parsedSignals, previousAiState);
     Object.assign(parsedSignals, propertyIntentResolver.resolvePropertyIntent(text, previousAiState));
     leadEntryPointRouter.applyEntryClassificationToSignals(parsedSignals, text, previousAiState);
     const earlyExtractedName = extractPossibleName(text, previousAiState, parsedSignals.owner_relation);
@@ -1177,6 +1179,23 @@ app.post('/webhook', async (req, res) => {
           nameFirstHandled = true;
           logEvent('closure_integrity_legacy', { conversation_id: conversationId });
         }
+      }
+
+      if (!nameFirstHandled) {
+      const humanEscalation = require('./conversation/humanEscalation');
+      const humanEsc = humanEscalation.resolveWantsHumanEscalationTurn({
+        previousAiState,
+        nextAiState,
+        parsedSignals,
+        text,
+      });
+      if (humanEsc.handled) {
+        reply = humanEsc.reply;
+        Object.assign(nextAiState, humanEsc.statePatch);
+        nameFirstHandled = true;
+        responseSource = humanEsc.responseSource || 'wants_human_auto_escalation';
+        logEvent('wants_human_auto_escalation', { conversation_id: conversationId });
+      }
       }
 
       if (!nameFirstHandled) {

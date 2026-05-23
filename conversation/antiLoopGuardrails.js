@@ -153,7 +153,7 @@ function wasSignatureRepeatedRecently(aiState, sig) {
 function isLikelyShortPersonNameToken(s = '') {
   const t = cleanSpaces(String(s || ''));
   if (!t || t.length < 2 || t.length > 48) return false;
-  if (t.split(/\s+/).filter(Boolean).length > 4) return false;
+  if (t.split(/\s+/).filter(Boolean).length > 5) return false;
   const low = normalizeText(t);
   if (/\b(busco|buscar|rento|rentar|compro|comprar|vendo|vender|quiero|casa|depa|depas|departamento|millones|pesos|mxn|usd|hola|buenas|informacion|información)\b/.test(low)) {
     return false;

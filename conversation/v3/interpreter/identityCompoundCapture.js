@@ -25,7 +25,7 @@ function isLikelyFirstNameOnly(head) {
     return false;
   }
   const words = h.split(/\s+/).filter(Boolean);
-  if (words.length > 3) return false;
+  if (words.length > 5) return false;
   return /^[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+)*$/i.test(h);
 }
 

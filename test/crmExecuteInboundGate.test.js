@@ -142,6 +142,34 @@ test('CRM_EXECUTE=true + allowlist + legacy pipeline (no v3) → pipeline_not_v3
   restoreEnv();
 });
 
+test('CRM_EXECUTE=true + oferta orgánica (sin pauta) → bypass organic_offer', () => {
+  process.env.PERSEO_V3_ENABLED = 'true';
+  process.env.PERSEO_V3_CRM_EXECUTE = 'true';
+  process.env.PERSEO_V3_QA_ALLOWLIST = '5218181877351';
+  process.env.PERSEO_CRM_EXECUTE_PAUTA_PROPERTY_BYPASS = 'true';
+  process.env.PERSEO_CRM_EXECUTE_ORGANIC_OFFER_BYPASS = 'true';
+
+  const gate = shouldAllowCrmExecuteForInbound({
+    phone: '5218119814146',
+    conversationId: 'conv-organic-offer',
+    v3PrimaryAllowed: false,
+    selectedPipeline: 'legacy',
+    aiState: {
+      lead_flow: 'offer',
+      operation_type: 'sale',
+      property_type: 'land',
+      full_name: 'Jose Ángel Hernández López',
+      location_text: 'Santa Catarina',
+    },
+  });
+
+  assert.equal(gate.crm_execute_allowed, true);
+  assert.equal(gate.crm_execute_bypass_reason, 'organic_offer');
+  assert.equal(gate.block_reason, null);
+  restoreEnv();
+  restoreBypass();
+});
+
 test('runCleanOrchestratorCrmPhase: off allowlist → no lead_create_attempted path', async () => {
   process.env.PERSEO_V3_ENABLED = 'true';
   process.env.PERSEO_V3_CRM_EXECUTE = 'true';
