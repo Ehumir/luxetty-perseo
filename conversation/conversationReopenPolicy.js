@@ -42,11 +42,13 @@ function isAdvisorConsentAccepted(aiState) {
 
 function isClosureGateActive(aiState) {
   const ctx = readClosureContext(aiState);
+  const s = aiState && typeof aiState === 'object' ? aiState : {};
   return (
     ctx.handoffWaitingFinalConfirmation ||
     ctx.softClosePending ||
     ctx.conversationSoftClosed ||
-    ctx.terminalAckClose
+    ctx.terminalAckClose ||
+    s.handoff_sent === true
   );
 }
 

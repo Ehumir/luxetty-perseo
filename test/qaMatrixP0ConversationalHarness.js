@@ -25,6 +25,8 @@ const { PROPERTY_LUX_A0453 } = require('./fixtures/perseoRegressionFixtures');
 const propertyIntentResolver = require('../conversation/propertyIntentResolver');
 const humanEscalation = require('../conversation/humanEscalation');
 const slotSanitizer = require('../conversation/slotSanitizer');
+const cuarzoHandoff = require('../conversation/cuarzoHandoff');
+const antiLoopGuardrails = require('../conversation/antiLoopGuardrails');
 
 const WRONG_CHANNEL_RE = /Gracias por escribir\. Para ayudarte bien, este canal atiende/i;
 const BOT_RE = /soy un bot|no puedo ayudarte|error interno/i;
@@ -93,8 +95,26 @@ function produceCoreReply({
 }) {
   const normalizedText = normalizeText(userText);
 
-  if (nextAiState.handoff_sent && isClosureCheck(userText)) {
-    return 'Gracias a ti. Si surge algo más, aquí estoy para seguirte orientando con gusto.';
+  const postHandoff = cuarzoHandoff.resolvePostHandoffTurn({
+    previousAiState: prevAiState,
+    nextAiState,
+    text: userText,
+  });
+  if (postHandoff.handled) {
+    Object.assign(nextAiState, postHandoff.statePatch || {});
+    return postHandoff.reply;
+  }
+
+  const inboundFrustration = antiLoopGuardrails.detectConversationalFrustration(userText);
+  const frHandoff = cuarzoHandoff.resolveFrustrationTerminalHandoff({
+    previousAiState: prevAiState,
+    nextAiState,
+    text: userText,
+    inboundFrustration,
+  });
+  if (frHandoff.handled) {
+    Object.assign(nextAiState, frHandoff.statePatch || {});
+    return frHandoff.reply;
   }
 
   const humanEsc = humanEscalation.resolveWantsHumanEscalationTurn({
@@ -169,6 +189,9 @@ function produceCoreReply({
 }
 
 function applyNameLayer(reply, { contact, nextAiState, outboundHistory, userText, waProfile }) {
+  if (nextAiState.handoff_sent) {
+    return Array.isArray(reply) ? reply : [String(reply || '')];
+  }
   const { messages, statePatch, setAwaitingFullName } = appendNameRequestIfNeeded(reply, {
     contact,
     aiState: nextAiState,

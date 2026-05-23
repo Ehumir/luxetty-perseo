@@ -303,11 +303,15 @@ function enforceNameCapture(reply, context = {}) {
   const frustration = inboundFrustration && typeof inboundFrustration === 'object' ? inboundFrustration : { frustrated: false };
   const nameOkFn = typeof hasValidHumanNameFn === 'function' ? hasValidHumanNameFn : hasValidHumanName;
 
+  if (aiState?.handoff_sent) return { reply, applied: false, statePatch: { awaiting_field: null } };
   if (!requiresName(contact, aiState, waProfileName)) return { reply, applied: false };
   const merged = Array.isArray(reply) ? reply.join('\n\n') : String(reply || '');
   if (replyAlreadyAsksName(merged)) return { reply, applied: false };
 
   if (frustration.frustrated) {
+    if (aiState?.handoff_sent) {
+      return { reply, applied: false, statePatch: { awaiting_field: null } };
+    }
     if (aiState?.awaiting_field === 'full_name' && !cleanSpaces(String(aiState?.full_name || ''))) {
       return {
         reply: antiLoopGuardrails.buildFrustrationRecoveryReply({
@@ -984,6 +988,23 @@ app.post('/webhook', async (req, res) => {
     let selectedPipeline = 'legacy';
 
     if (policy.allowAutomatedReply) {
+      const cuarzoHandoff = require('./conversation/cuarzoHandoff');
+      const cuarzoFallbacks = require('./conversation/cuarzoFallbacks');
+
+      const earlyPostHandoff = cuarzoHandoff.resolvePostHandoffTurn({
+        previousAiState,
+        nextAiState,
+        text,
+      });
+      if (earlyPostHandoff.handled) {
+        reply = earlyPostHandoff.reply;
+        Object.assign(nextAiState, earlyPostHandoff.statePatch || {});
+        responseSource = earlyPostHandoff.responseSource || 'cuarzo_post_handoff';
+        nameFirstHandled = true;
+        v3PrimaryHandled = true;
+        logEvent('cuarzo_post_handoff', { conversation_id: conversationId, source: responseSource });
+      }
+
       const { campaignContext } = extractCampaignReferralContext({
         aiState: previousAiState,
         referral: previousAiState?.whatsapp_referral || null,
@@ -1148,6 +1169,44 @@ app.post('/webhook', async (req, res) => {
         shouldBlockLegacyCommercialReply,
         tryResolveLegacyConsentClosure,
       } = require('./conversation/v3/runtime/closureIntegrity');
+
+      if (!nameFirstHandled) {
+        const frHandoff = cuarzoHandoff.resolveFrustrationTerminalHandoff({
+          previousAiState,
+          nextAiState,
+          text,
+          inboundFrustration,
+        });
+        if (frHandoff.handled) {
+          reply = frHandoff.reply;
+          Object.assign(nextAiState, frHandoff.statePatch || {});
+          nameFirstHandled = true;
+          responseSource = frHandoff.responseSource || 'cuarzo_frustration_handoff';
+          logEvent('cuarzo_frustration_handoff', { conversation_id: conversationId });
+        }
+      }
+
+      if (!nameFirstHandled) {
+        const oosTurn = cuarzoFallbacks.resolveCuarzoOutOfScopeTurn({
+          text,
+          parsedSignals,
+          inboundContext,
+          previousAiState,
+          nextAiState,
+        });
+        if (oosTurn.handled) {
+          reply = oosTurn.reply;
+          Object.assign(nextAiState, oosTurn.statePatch || {});
+          nameFirstHandled = true;
+          responseSource = oosTurn.responseSource || 'cuarzo_out_of_scope';
+          logEvent('cuarzo_out_of_scope', {
+            conversation_id: conversationId,
+            source: responseSource,
+            pending_version: oosTurn.pending_version || null,
+          });
+        }
+      }
+
       const legacyConsentClosure = tryResolveLegacyConsentClosure({
         text,
         previousAiState,
@@ -1392,6 +1451,13 @@ app.post('/webhook', async (req, res) => {
     }
 
     await saveConversationState(conversationId, nextAiState);
+
+    if (nextAiState.handoff_summary && !previousAiState.handoff_summary) {
+      await saveConversationEvent(conversationId, 'cuarzo_handoff_summary', {
+        handoff_summary: nextAiState.handoff_summary,
+        response_source: responseSource,
+      });
+    }
 
     const {
       shouldAllowCrmExecuteForInbound,
