@@ -38,6 +38,21 @@ function parseMoneyAmount(text) {
   if (mShort) return Math.round(Number(mShort[1].replace(',', '.')) * 1_000_000);
   const mdp = t.match(/\b(\d+(?:[.,]\d+)?)\s*mdp\b/);
   if (mdp) return Math.round(Number(mdp[1].replace(',', '.')) * 1_000_000);
+
+  const mil = t.match(
+    /\b(?:presupuesto|renta\s+mensual|mensualidad|hasta|max|de)?\s*(\d+(?:[.,]\d+)?)\s*mil\b/
+  );
+  if (mil) {
+    const n = Number(mil[1].replace(',', '.'));
+    if (Number.isFinite(n) && n > 0 && n < 10_000) return Math.round(n * 1_000);
+  }
+
+  const plain = t.match(/(?:\$|mxn\s*)?(\d{1,3}(?:,\d{3})+|\d{4,7})\b/);
+  if (plain) {
+    const n = Number(String(plain[1]).replace(/,/g, ''));
+    if (Number.isFinite(n) && n >= 1_000 && n <= 500_000_000) return Math.round(n);
+  }
+
   return null;
 }
 
