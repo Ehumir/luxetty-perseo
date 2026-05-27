@@ -1107,7 +1107,7 @@ app.post('/webhook', async (req, res) => {
             v3PrimaryAllowed: true,
             selectedPipeline: 'v3',
             aiState: nextAiState,
-            propertyId: resolvedPropertyId,
+            propertyId: propertyId != null ? propertyId : property?.id ?? null,
           });
           logCrmExecuteGate(logEvent, crmExecuteGate);
           await persistCrmExecuteGateEvent(saveConversationEvent, conversationId, crmExecuteGate);
