@@ -6,6 +6,7 @@ const { CONVERSATION_STAGES, V3_INTENT, CONVERSATION_GOALS } = require('../types
 const { detectFrustration } = require('./frustrationDetector');
 const { normalizeLocationFromUserText, isBareKnownZoneToken } = require('./locationNormalizer');
 const { shouldAcceptAsIdentityName, isAwaitingIdentityName } = require('./nameHeuristics');
+const { isExplicitHumanRequest, isHandoffFlowActive } = require('./objectionClassifier');
 const { parsePropertyType } = require('./propertyTypeParser');
 const { parseOccupancyStatus } = require('./occupancyParser');
 const { tryParseSellLocation, tryParseQualificationLocation } = require('./sellLocationCapture');
@@ -83,6 +84,29 @@ function applyBuyDemandPatch(patch, raw, decision) {
   if (amount != null) {
     patch.budget = amount;
     decision.extractedEntities.budget = amount;
+  }
+}
+
+function applyRentDemandPatch(patch, raw, decision) {
+  patch.conversationGoal = CONVERSATION_GOALS.RENT_PROPERTY;
+  patch.leadFlow = 'demand';
+  patch.operationType = 'rent';
+  const zoneRent = normalizeLocationFromUserText(raw) || extractLooseLocationPhrase(raw);
+  if (zoneRent && !/^(busco|quiero|necesito|rentar)\b/i.test(normalizeText(zoneRent))) {
+    patch.locationText = zoneRent;
+    decision.extractedEntities.locationText = zoneRent;
+  }
+  const prop = parsePropertyType(raw);
+  if (prop) applyPropertyTypePatch(patch, prop);
+  const amount = parseMoneyAmount(raw);
+  if (amount != null) {
+    patch.budget = amount;
+    decision.extractedEntities.budget = amount;
+  }
+  const br = parseBedrooms(raw);
+  if (br != null) {
+    patch.bedrooms = br;
+    decision.extractedEntities.bedrooms = br;
   }
 }
 
@@ -594,6 +618,15 @@ function interpretUserMessage(state, text, options = {}) {
     return { patch, decision };
   }
 
+  if (isExplicitHumanRequest(text) && isHandoffFlowActive(state)) {
+    decision.detectedIntent = V3_INTENT.UNKNOWN;
+    decision.confidence = 0.91;
+    decision.explicitFlowSwitch = false;
+    patch.lastAssistantReply = null;
+    patch.lastAssistantReplySignature = null;
+    return { patch, decision };
+  }
+
   if (isShortAck(t) && state.conversationGoalLocked) {
     const ackAwaiting = tryResolveAwaitingFieldCapture(state, raw, text, patch, decision);
     if (ackAwaiting) return ackAwaiting;
@@ -640,11 +673,7 @@ function interpretUserMessage(state, text, options = {}) {
     decision.detectedIntent = V3_INTENT.RENT_PROPERTY;
     decision.confidence = 0.8;
     decision.explicitFlowSwitch = state.conversationGoalLocked ? isExplicitFlowSwitchToRentDemand(text) : true;
-    patch.conversationGoal = CONVERSATION_GOALS.RENT_PROPERTY;
-    patch.leadFlow = 'demand';
-    patch.operationType = 'rent';
-    const rentType = parsePropertyType(text);
-    if (rentType) applyPropertyTypePatch(patch, rentType);
+    applyRentDemandPatch(patch, raw, decision);
     decision.shouldAskName = !state.collectedFields?.fullName;
     return { patch, decision };
   }
@@ -697,7 +726,11 @@ function interpretUserMessage(state, text, options = {}) {
   }
 
   const br = parseBedrooms(text);
-  if (br != null && state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+  if (
+    br != null &&
+    (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY ||
+      state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY)
+  ) {
     decision.detectedIntent = V3_INTENT.BEDROOMS_CAPTURE;
     decision.confidence = 0.85;
     patch.bedrooms = br;
