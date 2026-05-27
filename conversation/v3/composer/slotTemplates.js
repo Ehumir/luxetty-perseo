@@ -388,6 +388,64 @@ function composeHandoffBuyDemand(state) {
   };
 }
 
+/**
+ * Demanda de renta calificada — no usar copy de captación/valuación (composeHandoffOffer).
+ * @param {import('../types/conversationState').ConversationState} state
+ */
+function isRentDemandHandoffState(state) {
+  return (
+    state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY &&
+    state.leadFlow === 'demand' &&
+    state.operationType === 'rent' &&
+    !state.propertyListingCode
+  );
+}
+
+/**
+ * @param {import('../types/conversationState').ConversationState} state
+ */
+function composeHandoffRentDemand(state) {
+  const nm = firstName(state) || 'perfecto';
+  const zone = state.locationText || null;
+  const pres = state.budget != null ? formatMoneyMx(state.budget) : null;
+  const br = state.bedrooms != null ? Number(state.bedrooms) : null;
+
+  const parts = [];
+  if (zone) parts.push(zone);
+  if (pres) parts.push(`presupuesto de ${pres}`);
+  if (br != null && Number.isFinite(br) && br > 0) {
+    parts.push(`${br} ${br === 1 ? 'recámara' : 'recámaras'}`);
+  }
+
+  const criteria =
+    parts.length > 0
+      ? `Con ${parts.join(', ')}`
+      : 'Con lo que me compartes';
+
+  return {
+    responseText: `Perfecto, ${nm}. ${criteria}, ya tengo lo básico para ayudarte. ¿Te parece si un asesor de Luxetty te contacta para revisar opciones disponibles?`,
+    followUpQuestion: null,
+    awaitingField: 'advisor_contact_consent',
+    toneFlags: { consultive: true, handoff: true, rentDemand: true },
+  };
+}
+
+function resolveQualificationHandoffCompose(state) {
+  if (
+    state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY ||
+    (state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY && state.propertyListingCode)
+  ) {
+    return composeHandoffPropertyOrCode(state);
+  }
+  if (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
+    return composeHandoffBuyDemand(state);
+  }
+  if (isRentDemandHandoffState(state)) {
+    return composeHandoffRentDemand(state);
+  }
+  return composeHandoffOffer(state);
+}
+
 function composeConsentAccepted(state) {
   const { composeConsentAcceptedMessage } = require('../runtime/closureIntegrity');
   return {
@@ -1056,16 +1114,7 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   }
 
   if (handoffOut.action === 'OFFER_HANDOFF') {
-    if (
-      state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY ||
-      (state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY && state.propertyListingCode)
-    ) {
-      return composeHandoffPropertyOrCode(state);
-    }
-    if (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
-      return composeHandoffBuyDemand(state);
-    }
-    return composeHandoffOffer(state);
+    return resolveQualificationHandoffCompose(state);
   }
 
   if (intent === V3_INTENT.GREETING) return composeAdvisorGreeting(state);
@@ -1140,16 +1189,7 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   if (plannerOut.nextSlot) return composePlannerSlotQuestion(state, plannerOut.nextSlot);
 
   if (plannerOut.qualificationComplete && handoffOut.action === 'OFFER_HANDOFF') {
-    if (
-      state.conversationGoal === CONVERSATION_GOALS.PROPERTY_INQUIRY ||
-      (state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY && state.propertyListingCode)
-    ) {
-      return composeHandoffPropertyOrCode(state);
-    }
-    if (state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY) {
-      return composeHandoffBuyDemand(state);
-    }
-    return composeHandoffOffer(state);
+    return resolveQualificationHandoffCompose(state);
   }
 
   if (intent === V3_INTENT.BUY_PROPERTY && plannerOut.nextSlot) {
@@ -1193,6 +1233,9 @@ module.exports = {
   composeSlotQuestion,
   composeHandoffOffer,
   composeHandoffBuyDemand,
+  composeHandoffRentDemand,
+  isRentDemandHandoffState,
+  resolveQualificationHandoffCompose,
   composeConsentAccepted,
   composeConsentDeclined,
   composeFromPlannerContext,
