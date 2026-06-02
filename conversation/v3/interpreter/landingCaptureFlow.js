@@ -1,7 +1,7 @@
 'use strict';
 
 const { normalizeText, cleanSpaces } = require('../../../utils/text');
-const { CONVERSATION_GOALS, CONVERSATION_STAGES, V3_INTENT } = require('../types/constants');
+const { CONVERSATION_GOALS, CONVERSATION_STAGES, V3_INTENT, IDENTITY_STATES } = require('../types/constants');
 const { normalizeLocationFromUserText } = require('./locationNormalizer');
 const { extractLooseLocationPhrase } = require('./campaignIntake');
 const { parsePropertyType } = require('./propertyTypeParser');
@@ -12,12 +12,17 @@ const {
 } = require('./campaignIntake');
 const { splitNameAndTail, isLikelyFirstNameOnly } = require('./identityCompoundCapture');
 const { parseMoneyAmount } = require('./moneyParser');
+const { forceHandoff } = require('../planner/handoffPlanner');
+const { mergeConversationState } = require('../types/conversationState');
 
 const LANDING_SLUG = '/vende-tu-propiedad-en-cumbres';
 const CAMPAIGN_CONTEXT_KEY = 'prevaluacion_cumbres';
 
-const LANDING_CAPTURE_FALLBACK_REPLY =
-  'Para no darte una orientación incompleta, voy a canalizar tu caso con un asesor humano de Luxetty. Él podrá revisar los detalles de tu propiedad y continuar contigo por este medio.';
+/** Único copy de handoff para landing capture (no combinar con forcedHandoffComposer). */
+const LANDING_CAPTURE_HANDOFF_REPLY =
+  'Para darte una orientación más precisa, voy a canalizar tu caso con un asesor inmobiliario de Luxetty que podrá revisar los detalles contigo por este mismo medio. ¿Está bien si te contactan por este mismo número?';
+
+const LANDING_CAPTURE_FALLBACK_REPLY = LANDING_CAPTURE_HANDOFF_REPLY;
 
 const REPLY_WELCOME =
   'Hola, soy el asistente IA de Luxetty. Con gusto te ayudo a iniciar tu prevaluación comercial.\n\nPara orientarte mejor, ¿me compartes por favor tu nombre y en qué colonia o zona se encuentra la propiedad?';
@@ -86,47 +91,105 @@ function buildLandingCaptureBootstrapPatch() {
   };
 }
 
+function formatStoredName(name) {
+  let s = cleanSpaces(String(name || ''))
+    .replace(/^soy\s+/i, '')
+    .replace(/[….]+\s*$/g, '')
+    .replace(/[.,!?]+\s*$/g, '')
+    .trim();
+  if (!s) return s;
+  return s
+    .split(/\s+/)
+    .map((w) => w.replace(/[.,!?]+$/g, '').charAt(0).toUpperCase() + w.replace(/[.,!?]+$/g, '').slice(1).toLowerCase())
+    .join(' ');
+}
+
+function resolveZonePhrase(phrase) {
+  const raw = cleanSpaces(String(phrase || ''));
+  if (!raw || !isPlausibleZone(raw)) return null;
+  const norm = normalizeLocationFromUserText(raw);
+  if (!norm) return raw;
+  if (raw.length >= norm.length && raw.split(/\s+/).length >= norm.split(/\s+/).length) {
+    return raw;
+  }
+  return isPlausibleZone(norm) ? norm : raw;
+}
+
+function isPlausibleZone(zone) {
+  const z = cleanSpaces(String(zone || ''));
+  if (!z || z.length < 3) return false;
+  if (/^[%?#@$*+]+$/i.test(z)) return false;
+  if (/^[^a-záéíóúñ0-9\s.,-]{2,}$/i.test(z)) return false;
+  return /[a-záéíóúñ]/i.test(z);
+}
+
+function cleanLeadingNameToken(head) {
+  let name = cleanSpaces(String(head || ''))
+    .replace(/^soy\s+/i, '')
+    .replace(/[….]+\s*$/g, '')
+    .replace(/[.,!?]+\s*$/g, '')
+    .trim();
+  if (!name || !isLikelyFirstNameOnly(name)) return null;
+  const parts = name.split(/\s+/);
+  if (parts.length > 3) name = parts.slice(0, 2).join(' ');
+  if (name.length > 48) name = name.slice(0, 48);
+  return name;
+}
+
 function parseNameAndZone(raw) {
   const t = normalizeText(String(raw || ''));
   let name = null;
   let zone = null;
 
-  const estaEn = t.match(/\best[aá]\s+en\s+(.+?)(?:\s*[.!?]|$)/);
-  if (estaEn) {
-    zone = cleanSpaces(estaEn[1]);
-    const norm = normalizeLocationFromUserText(estaEn[1]);
-    if (norm && norm.length > zone.length) zone = norm;
+  const casaEsta = t.match(
+    /^(.+?)\s+(?:la\s+)?(?:casa|depa|departamento|propiedad|terreno|local)\s+est[aá]\s+en\s+(.+)$/i,
+  );
+  if (casaEsta) {
+    name = cleanLeadingNameToken(casaEsta[1]);
+    zone = resolveZonePhrase(casaEsta[2]);
+  }
+
+  const soyZone = t.match(
+    /^soy\s+([a-záéíóúñ][a-záéíóúñ.'-]{1,24})(?:\s+y\s+|\s*[.,…]\s*|\s+)(?:esta|est[aá]|estan|est[aá]n)?\s*(?:en\s+)?(.+)$/i,
+  );
+  if (soyZone && !name) {
+    name = cleanSpaces(soyZone[1]);
+    zone = resolveZonePhrase(soyZone[2]);
   }
 
   const soyShort = t.match(/^soy\s+([a-záéíóúñ][a-záéíóúñ.'-]{1,24})(?:\s*[.,]|\s+est[aá]|\s+y\s+|$)/);
-  if (soyShort) {
+  if (soyShort && !name) {
     name = cleanSpaces(soyShort[1]);
+  }
+
+  const estaEn = t.match(/\best[aá]\s+en\s+(.+?)(?:\s*[.!?]|$)/);
+  if (estaEn) {
+    if (!zone) {
+      zone = resolveZonePhrase(estaEn[1]);
+    }
+    if (!name) {
+      const before = t.slice(0, estaEn.index).trim();
+      name = cleanLeadingNameToken(before);
+    }
   }
 
   const compound = splitNameAndTail(raw);
   if (compound && !name) {
     name = compound.name;
     if (!zone) {
-      zone =
-        normalizeLocationFromUserText(compound.tail) ||
-        extractLooseLocationPhrase(compound.tail) ||
-        cleanSpaces(compound.tail);
+      zone = resolveZonePhrase(compound.tail) || extractLooseLocationPhrase(compound.tail) || cleanSpaces(compound.tail);
     }
   }
 
   if (!zone) {
-    zone = normalizeLocationFromUserText(raw) || extractLooseLocationPhrase(raw);
+    zone = resolveZonePhrase(raw) || extractLooseLocationPhrase(raw);
   }
 
   if (!name && isLikelyFirstNameOnly(raw) && !zone) {
     name = cleanSpaces(raw);
   }
 
-  if (name) {
-    name = name.replace(/^soy\s+/i, '').trim();
-    const parts = name.split(/\s+/);
-    if (parts.length > 3) name = parts.slice(0, 2).join(' ');
-  }
+  if (name) name = formatStoredName(name);
   if (name && name.length > 48) name = name.slice(0, 48);
   if (zone && zone.length > 80) zone = zone.slice(0, 80);
 
@@ -214,7 +277,7 @@ function advanceLandingCaptureStage(state, raw) {
     };
     if (name) {
       patch.collectedFields = { ...(state.collectedFields || {}), fullName: name };
-      patch.identityState = 'PARTIAL';
+      patch.identityState = name.length >= 2 ? IDENTITY_STATES.CONFIRMED : IDENTITY_STATES.PARTIAL;
     }
     if (zone) {
       patch.locationText = zone;
@@ -306,7 +369,7 @@ function advanceLandingCaptureStage(state, raw) {
     }
     const greet = nm ? `${nm}, ` : '';
     return {
-      reply: `${greet}con lo que me compartiste ya tengo una base para orientarte. Un asesor de Luxetty puede continuar contigo por este medio para afinar tu prevaluación comercial.`,
+      reply: `${greet}con lo que me compartiste ya tengo una base para orientarte. Si quieres, podemos seguir afinando algún detalle por aquí.`,
       patch,
       handoff: false,
       intent: V3_INTENT.LANDING_CAPTURE,
@@ -329,7 +392,8 @@ function tryInterpretLandingCapture(state, raw, t, patch, decision) {
       decision.detectedIntent = V3_INTENT.LANDING_CAPTURE;
       decision.confidence = 0.95;
       decision.landingCaptureHandoff = true;
-      decision.landingCaptureReply = LANDING_CAPTURE_FALLBACK_REPLY;
+      decision.landingCaptureReply = LANDING_CAPTURE_HANDOFF_REPLY;
+      decision.landingCaptureSkipForcedComposer = true;
       patch.landingCaptureFlow = true;
       return { patch, decision };
     }
@@ -342,7 +406,8 @@ function tryInterpretLandingCapture(state, raw, t, patch, decision) {
     decision.explicitFlowSwitch = false;
     if (advanced.handoff) {
       decision.landingCaptureHandoff = true;
-      decision.landingCaptureReply = LANDING_CAPTURE_FALLBACK_REPLY;
+      decision.landingCaptureReply = LANDING_CAPTURE_HANDOFF_REPLY;
+      decision.landingCaptureSkipForcedComposer = true;
       return { patch, decision };
     }
     Object.assign(patch, advanced.patch);
@@ -368,15 +433,32 @@ function tryInterpretLandingCapture(state, raw, t, patch, decision) {
  */
 function composeLandingCaptureReply(state, decision) {
   if (decision.landingCaptureReply) return String(decision.landingCaptureReply);
-  if (decision.landingCaptureHandoff) return LANDING_CAPTURE_FALLBACK_REPLY;
+  if (decision.landingCaptureHandoff) return LANDING_CAPTURE_HANDOFF_REPLY;
   if (isLandingCaptureActive(state)) return REPLY_WELCOME;
   return null;
+}
+
+/**
+ * Aplica estado de handoff sin segundo composer (un solo mensaje premium).
+ * @param {import('../types/conversationState').ConversationState} state
+ * @param {import('../types/conversationDecision').ConversationDecision} decision
+ * @param {string} [reason]
+ */
+function applyLandingCaptureHandoffState(state, decision, reason = 'landing_capture_fallback') {
+  const handoffOut = forceHandoff(state, { reason, decision });
+  return mergeConversationState(state, {
+    ...handoffOut.patch,
+    landingCaptureFlow: true,
+    lastComposerIntent: `landing_capture_handoff|${reason}`,
+  });
 }
 
 module.exports = {
   LANDING_SLUG,
   CAMPAIGN_CONTEXT_KEY,
+  LANDING_CAPTURE_HANDOFF_REPLY,
   LANDING_CAPTURE_FALLBACK_REPLY,
+  applyLandingCaptureHandoffState,
   matchesLandingCaptureInbound,
   isLandingCaptureActive,
   tryInterpretLandingCapture,

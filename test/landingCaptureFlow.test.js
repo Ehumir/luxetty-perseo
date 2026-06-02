@@ -18,7 +18,6 @@ const { processV3Turn, clearV3Session } = require('../conversation/v3');
 const { mapV3StateToLegacyAiState } = require('../conversation/v3/state/v3ToLegacyAiState');
 const {
   matchesLandingCaptureInbound,
-  LANDING_CAPTURE_FALLBACK_REPLY,
 } = require('../conversation/v3/interpreter/landingCaptureFlow');
 
 const OFFICIAL_MSG =
@@ -63,7 +62,25 @@ describe('Sprint 2 — landing capture flow', () => {
     assert.match(String(r.reply), /Ana/i);
     assert.match(String(r.reply), /Cerradas de Cumbres/i);
     assert.match(String(r.reply), /casa|departamento|terreno|local/i);
+    assert.equal(r.state.collectedFields?.fullName, 'Ana');
+    const legacy = mapV3StateToLegacyAiState(r.state);
+    assert.equal(legacy.full_name, 'Ana');
     assert.notEqual(r.state.operationType, 'sale');
+  });
+
+  it('nombre + zona compuesto: Jorge en Puerta de Hierro persiste full_name', () => {
+    const cid = 's2-jorge-zone';
+    clearV3Session(cid);
+    processV3Turn({ conversationId: cid, phone: '5218111111120', text: OFFICIAL_MSG });
+    const r = processV3Turn({
+      conversationId: cid,
+      phone: '5218111111120',
+      text: 'Jorge… la casa está en Puerta de Hierro',
+    });
+    assert.match(String(r.reply), /Jorge/i);
+    assert.match(String(r.reply), /Puerta de Hierro/i);
+    assert.equal(r.state.collectedFields?.fullName, 'Jorge');
+    assert.equal(mapV3StateToLegacyAiState(r.state).full_name, 'Jorge');
   });
 
   it('caso 4: usuario explorando — respuesta consultiva', () => {
@@ -91,10 +108,10 @@ describe('Sprint 2 — landing capture flow', () => {
       phone: '5218111111115',
       text: 'Prefiero hablar con una persona.',
     });
-    assert.match(
-      String(r.reply),
-      /asesor humano|canalizar tu caso con un asesor/i,
-    );
+    assert.match(String(r.reply), /asesor inmobiliario|canalizar tu caso/i);
+    assert.match(String(r.reply), /Está bien si te contactan/i);
+    assert.doesNotMatch(String(r.reply), /En breve te contactará por WhatsApp/i);
+    assert.equal(r.responseSource, 'v3_landing_capture_handoff');
   });
 
   it('caso 6: pregunta costo prevaluación', () => {
@@ -133,8 +150,9 @@ describe('Sprint 2 — landing capture flow', () => {
     });
     assert.match(
       String(r.reply),
-      /asesor humano|canalizar tu caso con un asesor/i,
+      /asesor inmobiliario|canalizar tu caso/i,
     );
+    assert.match(String(r.reply), /Está bien si te contactan/i);
   });
 
   it('venta explícita tras explorar clasifica sale', () => {

@@ -14,7 +14,8 @@ const { detectForcedHandoffReason } = require('../planner/forcedHandoffDetector'
 const {
   composeLandingCaptureReply,
   isLandingCaptureActive,
-  LANDING_CAPTURE_FALLBACK_REPLY,
+  LANDING_CAPTURE_HANDOFF_REPLY,
+  applyLandingCaptureHandoffState,
 } = require('../interpreter/landingCaptureFlow');
 const { runForcedHandoffTurn } = require('./forcedHandoffTurn');
 const { V3_INTENT } = require('../types/constants');
@@ -47,7 +48,11 @@ const {
 } = require('../runtime/closureIntegrity');
 
 function finalizeAssistantTurn(state, replyText, effectiveText, decision) {
-  const reply = applyHumanityWave2Reply({ state, replyText, text: effectiveText, decision });
+  const skipHumanity =
+    decision?.landingCaptureHandoff === true || decision?.landingCaptureSkipForcedComposer === true;
+  const reply = skipHumanity
+    ? String(replyText || '').trim()
+    : applyHumanityWave2Reply({ state, replyText, text: effectiveText, decision });
   return {
     reply,
     state: {
@@ -377,17 +382,15 @@ function processV3Turn(input) {
   ) {
     const landingReply =
       composeLandingCaptureReply(nextState, decision) ||
-      (decision.landingCaptureHandoff ? LANDING_CAPTURE_FALLBACK_REPLY : null);
+      (decision.landingCaptureHandoff ? LANDING_CAPTURE_HANDOFF_REPLY : null);
     if (landingReply) {
       if (decision.landingCaptureHandoff) {
-        const forced = runForcedHandoffTurn({
-          state: nextState,
+        const handoffState = applyLandingCaptureHandoffState(
+          nextState,
           decision,
-          reason: 'landing_capture_fallback',
-          userText: effectiveText,
-        });
-        const forcedReply = forced.replyText || landingReply;
-        const fin = finalizeAssistantTurn(forced.state, forcedReply, effectiveText, decision);
+          'landing_capture_fallback',
+        );
+        const fin = finalizeAssistantTurn(handoffState, landingReply, effectiveText, decision);
         const landingFin = applyM4RuntimeFinishing(fin.state, {
           effectiveText,
           replyText: fin.reply,
@@ -396,6 +399,10 @@ function processV3Turn(input) {
           input,
         });
         setSession(conversationId, landingFin.state);
+        v3Log('landing_capture_handoff', {
+          conversation_id: conversationId,
+          single_reply: true,
+        });
         return {
           ok: true,
           reply: fin.reply,
