@@ -24,6 +24,11 @@ const {
   isExplicitFlowSwitchToSellFromRent,
   isExplicitPropertyInquiryPhrase,
 } = require('./campaignIntake');
+const {
+  matchesLandingCaptureInbound,
+  tryInterpretLandingCapture,
+  isLandingCaptureActive,
+} = require('./landingCaptureFlow');
 const { splitNameAndTail, parseChannelPreference, isLikelyFirstNameOnly } = require('./identityCompoundCapture');
 const { extractAffirmationName } = require('./identityNameParser');
 const { isOfferValuationUnknownRequest, isSellValuationLeadIntent } = require('./offerValuationSignals');
@@ -239,6 +244,11 @@ function interpretUserMessage(state, text, options = {}) {
     state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY &&
     isExplicitFlowSwitchToSellFromRent(text);
 
+  if (isLandingCaptureActive(state) || matchesLandingCaptureInbound(t)) {
+    const landingEarly = tryInterpretLandingCapture(state, raw, t, patch, decision);
+    if (landingEarly) return landingEarly;
+  }
+
   const awaitingCapture = tryResolveAwaitingFieldCapture(state, raw, text, patch, decision);
   if (awaitingCapture) return awaitingCapture;
 
@@ -338,10 +348,11 @@ function interpretUserMessage(state, text, options = {}) {
   }
 
   const strongSellEarly =
-    isExplicitFlowSwitchToSell(text) ||
-    matchesSellerAcquisitionPattern(t) ||
-    isSellValuationLeadIntent(text) ||
-    sellFromRentLocked;
+    !matchesLandingCaptureInbound(t) &&
+    (isExplicitFlowSwitchToSell(text) ||
+      matchesSellerAcquisitionPattern(t) ||
+      isSellValuationLeadIntent(text) ||
+      sellFromRentLocked);
   const weakSellEarly = t.includes('vender') && t.includes('casa') && !state.conversationGoalLocked;
   if (strongSellEarly || weakSellEarly) {
     decision.detectedIntent = V3_INTENT.SELL_PROPERTY;

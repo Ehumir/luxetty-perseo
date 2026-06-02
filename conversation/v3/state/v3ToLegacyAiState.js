@@ -95,6 +95,18 @@ function mapV3StateToLegacyAiState(v3State) {
     terminal_ack_close: v3State.terminalAckClose === true,
     last_handoff_prompt_at: v3State.lastHandoffPromptAt ?? null,
     explicit_reopen: v3State.explicitReopen === true,
+    landing_capture_flow: v3State.landingCaptureFlow === true,
+    source_context: v3State.sourceContext ?? null,
+    landing_slug: v3State.landingSlug ?? null,
+    capture_channel: v3State.captureChannel ?? null,
+    campaign_context:
+      v3State.campaign_context && typeof v3State.campaign_context === 'object'
+        ? v3State.campaign_context
+        : null,
+    operation_type_pending: v3State.operationTypePending === true,
+    landing_capture_stage: v3State.landingCaptureStage ?? null,
+    lead_type: v3State.lead_type ?? (v3State.landingCaptureFlow ? 'supply' : v3State.leadFlow ?? null),
+    utm_campaign: v3State.landingCaptureFlow ? 'captacion_cumbres' : null,
   };
 }
 

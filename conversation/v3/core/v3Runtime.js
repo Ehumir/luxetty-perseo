@@ -11,6 +11,11 @@ const { detectFrustration } = require('../interpreter/frustrationDetector');
 const { isV3HandoffEnabled } = require('../../../config/perseoV3Flags');
 const { runF3Pipeline } = require('./f3Pipeline');
 const { detectForcedHandoffReason } = require('../planner/forcedHandoffDetector');
+const {
+  composeLandingCaptureReply,
+  isLandingCaptureActive,
+  LANDING_CAPTURE_FALLBACK_REPLY,
+} = require('../interpreter/landingCaptureFlow');
 const { runForcedHandoffTurn } = require('./forcedHandoffTurn');
 const { V3_INTENT } = require('../types/constants');
 const { tryComposeF4EarlyTurn, shouldSuppressForcedHandoff } = require('../composer/f4TurnComposer');
@@ -365,6 +370,67 @@ function processV3Turn(input) {
   }
 
   const { state: nextState, guard } = applyV3StateTransition(state, patchWithStreak, decision);
+
+  if (
+    (isLandingCaptureActive(nextState) || decision.detectedIntent === V3_INTENT.LANDING_CAPTURE) &&
+    (decision.landingCaptureReply || decision.landingCaptureHandoff)
+  ) {
+    const landingReply =
+      composeLandingCaptureReply(nextState, decision) ||
+      (decision.landingCaptureHandoff ? LANDING_CAPTURE_FALLBACK_REPLY : null);
+    if (landingReply) {
+      if (decision.landingCaptureHandoff) {
+        const forced = runForcedHandoffTurn({
+          state: nextState,
+          decision,
+          reason: 'landing_capture_fallback',
+          userText: effectiveText,
+        });
+        const forcedReply = forced.replyText || landingReply;
+        const fin = finalizeAssistantTurn(forced.state, forcedReply, effectiveText, decision);
+        const landingFin = applyM4RuntimeFinishing(fin.state, {
+          effectiveText,
+          replyText: fin.reply,
+          decision,
+          resolvedMedia,
+          input,
+        });
+        setSession(conversationId, landingFin.state);
+        return {
+          ok: true,
+          reply: fin.reply,
+          state: landingFin.state,
+          decision,
+          guard,
+          responseSource: 'v3_landing_capture_handoff',
+          fallbackToLegacy: false,
+          forcedHandoffReason: 'landing_capture_fallback',
+          resilienceRuntime: landingFin.resilienceRuntime,
+          telemetryResult: landingFin.telemetryResult,
+        };
+      }
+      const fin = finalizeAssistantTurn(nextState, landingReply, effectiveText, decision);
+      const landingFin = applyM4RuntimeFinishing(fin.state, {
+        effectiveText,
+        replyText: fin.reply,
+        decision,
+        resolvedMedia,
+        input,
+      });
+      setSession(conversationId, landingFin.state);
+      return {
+        ok: true,
+        reply: fin.reply,
+        state: landingFin.state,
+        decision,
+        guard,
+        responseSource: 'v3_landing_capture',
+        fallbackToLegacy: false,
+        resilienceRuntime: landingFin.resilienceRuntime,
+        telemetryResult: landingFin.telemetryResult,
+      };
+    }
+  }
 
   if (policyCrossLayer && shouldShortCircuitPolicy({ layer: policyCrossLayer, state: nextState, text: effectiveText })) {
     const policyReply = buildPolicyShortCircuitReply({

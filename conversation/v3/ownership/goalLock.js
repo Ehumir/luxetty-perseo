@@ -1,6 +1,7 @@
 'use strict';
 
 const { CONVERSATION_GOALS } = require('../types/constants');
+const { isLandingCaptureActive } = require('../interpreter/landingCaptureFlow');
 const { releaseStickyContext, stampStickyContext, enforceStickyContext } = require('./stickyContext');
 
 /**
@@ -27,6 +28,21 @@ function applyGoalOwnership(state, patch, decision) {
     releaseStickyContext(out);
   }
 
+  if (isLandingCaptureActive(state) || out.landingCaptureFlow === true) {
+    out.conversationGoal = CONVERSATION_GOALS.SELL_PROPERTY;
+    out.conversationGoalLocked = true;
+    out.leadFlow = 'offer';
+    out.propertySpecificIntent = false;
+    if (out.operationType !== 'sale' && out.operationType !== 'rent') {
+      out.operationTypePending = true;
+      delete out.operationType;
+    } else {
+      out.operationTypePending = false;
+    }
+    stampStickyContext(out);
+    return enforceStickyContext(state, out, decision);
+  }
+
   if (state.conversationGoalLocked && !decision.explicitFlowSwitch) {
     if (out.conversationGoal != null && out.conversationGoal !== state.conversationGoal) {
       delete out.conversationGoal;
@@ -41,7 +57,9 @@ function applyGoalOwnership(state, patch, decision) {
       out.conversationGoalLocked = true;
       out.goalConfidence = Math.max(state.goalConfidence || 0, decision.confidence || 0.85);
       out.leadFlow = 'offer';
-      out.operationType = 'sale';
+      if (!isLandingCaptureActive(state) && out.landingCaptureFlow !== true) {
+        out.operationType = 'sale';
+      }
       out.propertySpecificIntent = false;
     }
   }
@@ -94,7 +112,14 @@ function applyGoalOwnership(state, patch, decision) {
   if (state.conversationGoalLocked && !decision.explicitFlowSwitch) {
     if (state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY) {
       out.leadFlow = 'offer';
-      out.operationType = 'sale';
+      if (isLandingCaptureActive(state) && (state.operationTypePending || out.operationTypePending)) {
+        if (out.operationType !== 'sale' && out.operationType !== 'rent') {
+          out.operationTypePending = true;
+          delete out.operationType;
+        }
+      } else {
+        out.operationType = 'sale';
+      }
       if (out.budget != null) {
         out.expectedPrice = out.expectedPrice ?? out.budget;
         out.budget = null;
