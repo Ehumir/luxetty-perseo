@@ -13,6 +13,7 @@ const {
   askExpectedPrice,
   SLOT_COPY,
 } = require('./humanCopyV1');
+const { composeLandingCaptureReply, isLandingCaptureActive } = require('../interpreter/landingCaptureFlow');
 
 function formatMoneyMx(amount) {
   const n = Number(amount);
@@ -99,6 +100,22 @@ function composeHumanResponse(input) {
   const nm = firstName(state);
   const sell = state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
   const buy = state.conversationGoal === CONVERSATION_GOALS.BUY_PROPERTY || state.leadFlow === 'demand';
+
+  if (
+    intent === V3_INTENT.LANDING_CAPTURE ||
+    isLandingCaptureActive(state) ||
+    decision.landingCaptureReply
+  ) {
+    const landingReply = composeLandingCaptureReply(state, decision);
+    if (landingReply) {
+      return {
+        responseText: landingReply,
+        followUpQuestion: null,
+        awaitingField: state.awaitingField ?? null,
+        toneFlags: { consultive: true, mexicanSpanish: true },
+      };
+    }
+  }
 
   if (intent === V3_INTENT.OCCUPANCY_CAPTURE && sell && nm) {
     return composeSellQualificationComplete(state);

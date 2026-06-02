@@ -65,6 +65,8 @@ const V3_INTENT = Object.freeze({
   SOCIAL_RAPPORT: 'SOCIAL_RAPPORT',
   /** M1-D — ajuste de criterios en flujo compra sin reiniciar. */
   DEMAND_REFINEMENT: 'DEMAND_REFINEMENT',
+  /** Campaña / landing de captación (prevaluación Cumbres). */
+  LANDING_CAPTURE: 'LANDING_CAPTURE',
   UNKNOWN: 'UNKNOWN',
 });
 
