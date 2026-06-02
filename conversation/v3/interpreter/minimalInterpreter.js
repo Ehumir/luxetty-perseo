@@ -2,7 +2,12 @@
 
 const { normalizeText, cleanSpaces } = require('../../../utils/text');
 const { createEmptyDecision } = require('../types/conversationDecision');
-const { CONVERSATION_STAGES, V3_INTENT, CONVERSATION_GOALS } = require('../types/constants');
+const {
+  CONVERSATION_STAGES,
+  V3_INTENT,
+  CONVERSATION_GOALS,
+  ADVISOR_CONTACT_CONSENT,
+} = require('../types/constants');
 const { detectFrustration } = require('./frustrationDetector');
 const { normalizeLocationFromUserText, isBareKnownZoneToken } = require('./locationNormalizer');
 const { shouldAcceptAsIdentityName, isAwaitingIdentityName } = require('./nameHeuristics');
@@ -244,7 +249,15 @@ function interpretUserMessage(state, text, options = {}) {
     state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY &&
     isExplicitFlowSwitchToSellFromRent(text);
 
-  if (isLandingCaptureActive(state) || matchesLandingCaptureInbound(t)) {
+  const landingConsentPending =
+    state.awaitingField === 'advisor_contact_consent' ||
+    (state.handoffStage === CONVERSATION_STAGES.HANDOFF_PENDING &&
+      state.advisorContactConsent === ADVISOR_CONTACT_CONSENT.REQUESTED);
+
+  if (
+    !landingConsentPending &&
+    (isLandingCaptureActive(state) || matchesLandingCaptureInbound(t))
+  ) {
     const landingEarly = tryInterpretLandingCapture(state, raw, t, patch, decision);
     if (landingEarly) return landingEarly;
   }

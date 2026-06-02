@@ -153,8 +153,10 @@ function parseNameAndZone(raw) {
     /^soy\s+([a-záéíóúñ][a-záéíóúñ.'-]{1,24})(?:\s+y\s+|\s*[.,…]\s*|\s+)(?:esta|est[aá]|estan|est[aá]n)?\s*(?:en\s+)?(.+)$/i,
   );
   if (soyZone && !name) {
-    name = cleanSpaces(soyZone[1]);
-    zone = resolveZonePhrase(soyZone[2]);
+    name = cleanSpaces(soyZone[1].replace(/\.+$/g, '').replace(/…+$/g, ''));
+    if (!zone) {
+      zone = resolveZonePhrase(soyZone[2]);
+    }
   }
 
   const soyShort = t.match(/^soy\s+([a-záéíóúñ][a-záéíóúñ.'-]{1,24})(?:\s*[.,]|\s+est[aá]|\s+y\s+|$)/);
@@ -387,6 +389,10 @@ function advanceLandingCaptureStage(state, raw) {
  * @param {import('../types/conversationDecision').ConversationDecision} decision
  */
 function tryInterpretLandingCapture(state, raw, t, patch, decision) {
+  if (state.awaitingField === 'advisor_contact_consent') {
+    return null;
+  }
+
   if (isExplicitHumanRequest(raw) || /\b(prefiero\s+hablar|quiero\s+una\s+persona|asesor\s+humano)\b/.test(t)) {
     if (isLandingCaptureActive(state) || matchesLandingCaptureInbound(t)) {
       decision.detectedIntent = V3_INTENT.LANDING_CAPTURE;

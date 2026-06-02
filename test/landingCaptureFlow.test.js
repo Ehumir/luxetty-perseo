@@ -68,6 +68,42 @@ describe('Sprint 2 — landing capture flow', () => {
     assert.notEqual(r.state.operationType, 'sale');
   });
 
+  it('QA: Soy Jorge... mi casa está en Puerta de Hierro — zona limpia', () => {
+    const cid = 's2-qa-jorge-dots';
+    clearV3Session(cid);
+    processV3Turn({ conversationId: cid, phone: '5218111111121', text: OFFICIAL_MSG });
+    const r = processV3Turn({
+      conversationId: cid,
+      phone: '5218111111121',
+      text: 'Soy Jorge... mi casa está en Puerta de Hierro',
+    });
+    assert.equal(r.state.collectedFields?.fullName, 'Jorge');
+    assert.match(String(r.state.locationText), /puerta de hierro/i);
+    assert.doesNotMatch(String(r.state.locationText), /mi casa esta en/i);
+    assert.match(String(r.reply), /Puerta de Hierro/i);
+  });
+
+  it('QA: tras handoff, Sí acepta consentimiento sin repetir mensaje', () => {
+    const cid = 's2-qa-consent';
+    clearV3Session(cid);
+    processV3Turn({ conversationId: cid, phone: '5218111111122', text: OFFICIAL_MSG });
+    processV3Turn({
+      conversationId: cid,
+      phone: '5218111111122',
+      text: 'Soy Jorge... mi casa está en Puerta de Hierro',
+    });
+    processV3Turn({
+      conversationId: cid,
+      phone: '5218111111122',
+      text: 'Quiero hablar con un asesor humano',
+    });
+    const r = processV3Turn({ conversationId: cid, phone: '5218111111122', text: 'Sí' });
+    assert.notEqual(r.responseSource, 'v3_landing_capture_handoff');
+    assert.equal(r.state.advisorContactConsent, 'ACCEPTED');
+    assert.equal(mapV3StateToLegacyAiState(r.state).advisor_contact_consent, 'ACCEPTED');
+    assert.doesNotMatch(String(r.reply), /Está bien si te contactan por este mismo número/i);
+  });
+
   it('nombre + zona compuesto: Jorge en Puerta de Hierro persiste full_name', () => {
     const cid = 's2-jorge-zone';
     clearV3Session(cid);
