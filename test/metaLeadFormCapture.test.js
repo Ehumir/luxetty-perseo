@@ -9,6 +9,7 @@ const {
   isMetaLeadFormStructuredInbound,
   parseLabeledFormFields,
 } = require('../conversation/metaLeadFormCapture');
+const { cleanSpaces } = require('../utils/text');
 const { extractCampaignReferralContext } = require('../services/leadAutomation');
 
 const C1_CAMPAIGN = {
@@ -179,5 +180,97 @@ describe('Meta Lead Form / C1 captación propietarios', () => {
     assert.equal(turn.statePatch.full_name, 'Javier Velázquez');
     assert.equal(turn.statePatch.location_text, 'Cumbres');
     assert.match(String(turn.reply), /canalizar tu caso con un asesor/i);
+  });
+
+  it('Railway path: Edgar colapsado en una línea (cleanSpaces) detecta y responde oficial', () => {
+    const collapsed = cleanSpaces(META_FORM_EDGAR);
+    assert.ok(!/\n/.test(collapsed));
+    assert.equal(
+      isMetaLeadFormStructuredInbound({
+        text: collapsed,
+        message: { type: 'text' },
+        campaignContext: null,
+        previousAiState: {},
+        parsedSignals: {},
+      }),
+      true,
+    );
+    const fields = parseLabeledFormFields(collapsed);
+    assert.ok(Object.keys(fields).length >= 2);
+    const turn = tryMetaLeadFormCaptureTurn({
+      text: collapsed,
+      message: { type: 'text' },
+      campaignContext: null,
+      previousAiState: {},
+      parsedSignals: {},
+    });
+    assert.equal(turn.handled, true);
+    assert.equal(turn.reply, META_LEAD_FORM_ACK_REPLY);
+    assert.equal(turn.statePatch.full_name, 'Edgar R');
+    assert.equal(turn.statePatch.location_text, 'Vistancias segundo sector');
+  });
+
+  it('Railway path: Javier colapsado en una línea (cleanSpaces) detecta y responde oficial', () => {
+    const collapsed = cleanSpaces(META_FORM_JAVIER);
+    const turn = tryMetaLeadFormCaptureTurn({
+      text: collapsed,
+      message: { type: 'text' },
+      campaignContext: null,
+      previousAiState: {},
+      parsedSignals: {},
+    });
+    assert.equal(turn.handled, true);
+    assert.equal(turn.statePatch.full_name, 'Javier Velázquez');
+    assert.equal(turn.statePatch.location_text, 'Cumbres');
+  });
+
+  it('Railway path: orgánico colapsado NO entra al parser Meta', () => {
+    const text = cleanSpaces('Hola, quiero vender mi casa');
+    assert.equal(
+      isMetaLeadFormStructuredInbound({
+        text,
+        message: { type: 'text' },
+        campaignContext: null,
+        previousAiState: {},
+        parsedSignals: {},
+      }),
+      false,
+    );
+  });
+
+  it('Railway path: "Vi su anuncio" colapsado NO entra al parser Meta', () => {
+    const text = cleanSpaces('Vi su anuncio');
+    assert.equal(
+      isMetaLeadFormStructuredInbound({
+        text,
+        message: { type: 'text' },
+        campaignContext: { campaign_type: 'seller_capture' },
+        previousAiState: {},
+        parsedSignals: {},
+      }),
+      false,
+    );
+  });
+
+  it('Railway path: payload parcial colapsado — fallback seguro sin crash', () => {
+    const partial = cleanSpaces('Completé el formulario y me gustaría más información. Nombre: Jorge');
+    assert.equal(
+      isMetaLeadFormStructuredInbound({
+        text: partial,
+        message: { type: 'text' },
+        campaignContext: null,
+        previousAiState: {},
+        parsedSignals: {},
+      }),
+      false,
+    );
+    const turn = tryMetaLeadFormCaptureTurn({
+      text: partial,
+      message: { type: 'text' },
+      campaignContext: null,
+      previousAiState: {},
+      parsedSignals: {},
+    });
+    assert.equal(turn.handled, false);
   });
 });

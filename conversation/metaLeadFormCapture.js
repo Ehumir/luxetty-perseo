@@ -85,7 +85,7 @@ function parseFormLine(trimmed) {
   return null;
 }
 
-function parseLabeledFormFields(text) {
+function parseLabeledFormFieldsFromLines(text) {
   /** @type {Record<string, string>} */
   const out = {};
   const raw = String(text || '');
@@ -100,6 +100,44 @@ function parseLabeledFormFields(text) {
     out[field] = value;
   }
   return out;
+}
+
+/**
+ * Reconstruye segmentos cuando el webhook colapsó saltos de línea (cleanSpaces).
+ * Meta Lead Form real: bullets •, labels snake_case, preguntas ¿...?:
+ */
+function expandCollapsedMetaFormText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return raw;
+
+  const multilineSegments = raw.split(/\n+/).filter((line) => cleanSpaces(line));
+  if (multilineSegments.length >= 2 && Object.keys(parseLabeledFormFieldsFromLines(raw)).length >= 2) {
+    return raw;
+  }
+
+  let expanded = raw;
+
+  if (/\s[•●▪]/.test(expanded) || /[•●▪]\s/.test(expanded)) {
+    expanded = expanded.replace(/\s*[•●▪]\s*/g, '\n• ');
+  }
+
+  expanded = expanded.replace(/\s+(?=¿[^?\n]{2,160}\?\s*:)/g, '\n');
+
+  expanded = expanded.replace(
+    /\s+(?=[\p{L}\p{N}_]+(?:_[\p{L}\p{N}_áéíóúñÁÉÍÓÚÑ]+)+\s*:)/gu,
+    '\n',
+  );
+
+  expanded = expanded.replace(
+    /\s+(?=(?:Nombre(?:\s+completo)?|Colonia|Tipo de propiedad|Operaci[oó]n|T[eé]lefono|Email|Correo)\s*:)/gi,
+    '\n',
+  );
+
+  return expanded.trim();
+}
+
+function parseLabeledFormFields(text) {
+  return parseLabeledFormFieldsFromLines(expandCollapsedMetaFormText(text));
 }
 
 function isMetaLeadFormCompletionText(text) {
@@ -331,6 +369,7 @@ module.exports = {
   isC1SellerCaptureCampaign,
   isMetaLeadFormCompletionText,
   isMetaLeadFormStructuredInbound,
+  expandCollapsedMetaFormText,
   parseLabeledFormFields,
   tryMetaLeadFormCaptureTurn,
 };
