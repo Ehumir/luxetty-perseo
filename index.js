@@ -375,6 +375,12 @@ function enforceNameCapture(reply, context = {}) {
  */
 function hasMinimumSlotsForLegacyCrmWrite(aiState = {}, signals = {}) {
   const { resolvePautaPropertyCrmContext } = require('./conversation/pautaDetection');
+  if (aiState?.meta_lead_form_flow === true) {
+    return !!(
+      cleanSpaces(String(aiState?.full_name || signals?.full_name || '')) ||
+      cleanSpaces(String(aiState?.location_text || signals?.location_text || ''))
+    );
+  }
   if (resolvePautaPropertyCrmContext(aiState).bypassEligible) return true;
   if (propertyIntentResolver.isPropertySpecificConversation(aiState)) return true;
   const flow = aiState?.lead_flow || signals?.lead_flow;
@@ -1070,19 +1076,39 @@ app.post('/webhook', async (req, res) => {
         }
       }
 
-      const v3Try = await v3InboundBridge.tryV3PrimaryReply({
-        conversationId,
-        phone: from,
-        rawPhone: rawFrom,
+      const { tryMetaLeadFormCaptureTurn } = require('./conversation/metaLeadFormCapture');
+      const metaLeadTurn = tryMetaLeadFormCaptureTurn({
         text,
-        media: v3Media,
-        logEvent,
-        saveConversationEvent,
-        campaignHeadline,
-        legacyHydration,
-        persistedLegacyAiState: previousAiState,
-        supabase,
+        message,
+        campaignContext,
+        previousAiState,
+        parsedSignals,
       });
+      if (metaLeadTurn.handled) {
+        reply = metaLeadTurn.reply;
+        Object.assign(nextAiState, metaLeadTurn.statePatch || {});
+        Object.assign(parsedSignals, metaLeadTurn.signalsPatch || {});
+        responseSource = metaLeadTurn.responseSource || 'meta_lead_form_c1';
+        nameFirstHandled = true;
+        logEvent('meta_lead_form_c1_ack', { conversation_id: conversationId });
+      }
+
+      const v3Try =
+        metaLeadTurn.handled
+          ? { handled: false }
+          : await v3InboundBridge.tryV3PrimaryReply({
+              conversationId,
+              phone: from,
+              rawPhone: rawFrom,
+              text,
+              media: v3Media,
+              logEvent,
+              saveConversationEvent,
+              campaignHeadline,
+              legacyHydration,
+              persistedLegacyAiState: previousAiState,
+              supabase,
+            });
       if (v3Try.handled) {
         v3PrimaryHandled = true;
         selectedPipeline = 'v3';

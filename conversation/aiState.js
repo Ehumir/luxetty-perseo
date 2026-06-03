@@ -65,6 +65,8 @@ function getDefaultAiState() {
     risk_flags: [],
     missing_information: [],
     crm_structured_summary: null,
+    meta_lead_form_flow: false,
+    meta_lead_form_ack_sent: false,
     needs_specialized_review: false,
 
     last_media_type: null,
