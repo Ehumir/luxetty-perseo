@@ -1136,7 +1136,25 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
     }
   }
 
+  if (decision?.ambiguousOwnerIntent && intent === V3_INTENT.SELL_PROPERTY) {
+    return {
+      responseText:
+        'Hola, con gusto te ayudo con tu propiedad. ¿Buscas vender, rentar o valorar tu propiedad?',
+      followUpQuestion: null,
+      toneFlags: { consultive: true },
+    };
+  }
+
   if (intent === V3_INTENT.SELL_PROPERTY) {
+    if (state.offerC2Retargeting && !state.collectedFields?.fullName) {
+      return {
+        responseText:
+          'Claro, con gusto te ayudamos. Para canalizarte correctamente con un asesor de Luxetty, ¿me compartes tu nombre y en qué colonia o zona está la propiedad?',
+        followUpQuestion: null,
+        awaitingField: 'full_name',
+        toneFlags: { consultive: true, c2Retargeting: true },
+      };
+    }
     if (!state.collectedFields?.fullName && !state.locationText) {
       return {
         responseText: pickOpeningVariant(state, [
@@ -1159,6 +1177,15 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   }
 
   if (intent === V3_INTENT.RENT_OUT_PROPERTY) {
+    if (state.offerC2Retargeting && !state.collectedFields?.fullName) {
+      return {
+        responseText:
+          'Claro, con gusto te ayudamos. Para canalizarte correctamente con un asesor de Luxetty, ¿me compartes tu nombre y en qué colonia o zona está la propiedad?',
+        followUpQuestion: null,
+        awaitingField: 'full_name',
+        toneFlags: { consultive: true, c2Retargeting: true },
+      };
+    }
     if (!state.collectedFields?.fullName) return composeSlotQuestion(state, 'full_name');
     return composeSlotQuestion(state, 'location_text');
   }

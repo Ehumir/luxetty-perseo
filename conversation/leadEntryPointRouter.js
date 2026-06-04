@@ -9,6 +9,13 @@ const { normalizeText, cleanSpaces } = require('../utils/text');
 const { extractPropertyCode, pickNumericPrice } = require('./propertyIntentResolver');
 const { formatMoney } = require('../utils/formatting');
 const propertyInventoryService = require('../services/propertyInventoryService');
+const {
+  matchesSellerAcquisitionPattern,
+  isAmbiguousOwnerPropertyOrientation,
+  inferOwnerOfferOperation,
+  extractLooseLocationPhrase,
+  mentionsRentDemand,
+} = require('./v3/interpreter/campaignIntake');
 
 function isPropertyContextState(aiState = {}) {
   const code = cleanSpaces(String(aiState?.property_code || aiState?.direct_property_code || ''));
@@ -40,17 +47,52 @@ function isPropertyAdEntry(text = '') {
   return !!(code || t.includes('propiedad') || t.includes('prop.'));
 }
 
+function isPropertyInterestFromAd(text = '') {
+  const t = normalizeText(text);
+  return (
+    (t.includes('me interesa') || t.includes('interesada')) &&
+    t.includes('propiedad') &&
+    (t.includes('anunci') || t.includes('anuncio') || t.includes('vi '))
+  );
+}
+
 function isSellerCaptureAdEntry(text = '') {
   const t = normalizeText(text);
   if (!t) return false;
-  if (t.includes('me interesa') && t.includes('propiedad')) return false;
+  if (isPropertyInterestFromAd(text)) return false;
+  if (t.includes('me interesa') && t.includes('propiedad') && (t.includes('anunci') || t.includes('vi '))) {
+    return false;
+  }
+  if (mentionsRentDemand(t) && !matchesSellerAcquisitionPattern(t)) return false;
+  if (matchesSellerAcquisitionPattern(t)) return true;
+  if (isAmbiguousOwnerPropertyOrientation(text)) return true;
   const helpSell =
     (t.includes('podrian') || t.includes('podrían') || t.includes('pueden') || t.includes('puedo')) &&
     (t.includes('ayudarme') || t.includes('ayuden') || t.includes('ayudar'));
-  const sellHouse = t.includes('vender mi casa') || t.includes('vender la casa') || (t.includes('vender') && t.includes('casa'));
+  const sellHouse =
+    t.includes('vender mi casa') ||
+    t.includes('vender la casa') ||
+    (t.includes('vender') && t.includes('casa'));
   const captacionPhrase =
     t.includes('quiero saber') && t.includes('vender') && (t.includes('casa') || t.includes('propiedad'));
   return (helpSell && (t.includes('vender') || t.includes('venta'))) || sellHouse || captacionPhrase;
+}
+
+function mapOwnerOperationToLegacy(op) {
+  if (op === 'rent') return 'rent';
+  if (op === 'sale') return 'sale';
+  if (op === 'mixed') return 'sale';
+  return 'sale';
+}
+
+function isC2StyleSellerEntry(text = '', entryMeta = {}) {
+  if (entryMeta.c2_retargeting) return true;
+  const t = normalizeText(text);
+  return (
+    /\bluxetty\b/.test(t) ||
+    /\bquiero\s+que\s+(?:me\s+)?contacte\s+(?:un\s+)?asesor\b/.test(t) ||
+    /\b(?:estoy\s+)?(?:pensando|considerando)\s+(?:vender|rentar)\b/.test(t)
+  );
 }
 
 function extractOfferFollowUpLocation(text = '') {
@@ -97,14 +139,43 @@ function classifyEntryPoint(text = '', aiState = {}) {
     next_missing_field: 'full_name',
   };
 
+  if (isAmbiguousOwnerPropertyOrientation(text)) {
+    return {
+      ...base,
+      entry_type: 'seller_capture_ad',
+      lead_flow: 'offer',
+      property_code: null,
+      location_text: cleanSpaces(String(prev.location_text || '')) || null,
+      ambiguous_owner_intent: true,
+      c2_retargeting: false,
+    };
+  }
+
   if (isSellerCaptureAdEntry(text)) {
-    const loc = extractSellerCaptureLocation(text) || cleanSpaces(String(prev.location_text || '')) || null;
+    const loc =
+      extractSellerCaptureLocation(text) ||
+      extractLooseLocationPhrase(text) ||
+      cleanSpaces(String(prev.location_text || '')) ||
+      null;
+    const ownerOp = inferOwnerOfferOperation(t);
     return {
       ...base,
       entry_type: 'seller_capture_ad',
       lead_flow: 'offer',
       property_code: null,
       location_text: loc,
+      operation_hint: ownerOp,
+      c2_retargeting: isC2StyleSellerEntry(text),
+    };
+  }
+
+  if (isPropertyInterestFromAd(text)) {
+    return {
+      ...base,
+      entry_type: 'property_ad',
+      lead_flow: 'demand',
+      property_code: code || null,
+      location_text: cleanSpaces(String(prev.location_text || '')) || null,
     };
   }
 
@@ -134,6 +205,10 @@ function classifyEntryPoint(text = '', aiState = {}) {
     }
   }
 
+  if (mentionsRentDemand(t)) {
+    return { ...base, entry_type: 'buyer_search', lead_flow: 'demand' };
+  }
+
   if (/\bbusco\b/.test(t) || t.includes('quiero comprar') || (t.includes('comprar') && t.includes('casa'))) {
     return { ...base, entry_type: 'buyer_search', lead_flow: 'demand' };
   }
@@ -148,19 +223,33 @@ function applyEntryClassificationToSignals(signals = {}, text = '', prevAiState 
 
   if (meta.entry_type === 'seller_capture_ad') {
     out.lead_flow = 'offer';
-    out.operation_type = out.operation_type || 'sale';
+    const opHint = meta.operation_hint || inferOwnerOfferOperation(normalizeText(text || ''));
+    const mapped = mapOwnerOperationToLegacy(opHint);
+    out.operation_type = out.operation_type || mapped;
     if (meta.location_text) out.location_text = meta.location_text;
     out.low_info_campaign_message = false;
-    out.intent_lock_sale_owner = true;
+    if (opHint === 'rent') {
+      out.intent_lock_rent_out = true;
+    } else {
+      out.intent_lock_sale_owner = true;
+    }
+    if (meta.c2_retargeting) out.entry_c2_retargeting = true;
+    if (meta.ambiguous_owner_intent) out.ambiguous_owner_intent = true;
   }
 
-  if (meta.entry_type === 'property_ad' && meta.property_code) {
-    out.property_code = meta.property_code;
-    out.direct_property_code = meta.property_code;
-    out.direct_property_reference = true;
-    out.property_specific_intent = true;
-    out.lead_flow = out.lead_flow === 'offer' ? 'offer' : 'demand';
+  if (meta.entry_type === 'property_ad') {
+    out.lead_flow = meta.lead_flow === 'offer' ? 'offer' : 'demand';
     out.low_info_campaign_message = false;
+    if (meta.property_code) {
+      out.property_code = meta.property_code;
+      out.direct_property_code = meta.property_code;
+      out.direct_property_reference = true;
+      out.property_specific_intent = true;
+    }
+  }
+
+  if (meta.lead_flow === 'demand' && !out.lead_flow) {
+    out.lead_flow = 'demand';
   }
 
   return out;
@@ -217,6 +306,19 @@ Para registrarte bien y canalizarte con un asesor, ¿me compartes tu nombre?${bu
   }
 
   if (entry.entry_type === 'seller_capture_ad') {
+    if (entry.ambiguous_owner_intent) {
+      return `Hola, soy el asistente de Luxetty. Con gusto te ayudo con tu propiedad.
+
+¿Buscas vender, rentar o valorar tu propiedad?`.trim();
+    }
+    const c2 = entry.c2_retargeting || isC2StyleSellerEntry('', entry);
+    if (c2) {
+      const loc = cleanSpaces(String(entry.location_text || aiState.location_text || ''));
+      if (loc) {
+        return `Claro, con gusto te ayudamos. Para canalizarte correctamente con un asesor de Luxetty sobre tu propiedad en ${loc}, ¿me compartes tu nombre?`.trim();
+      }
+      return `Claro, con gusto te ayudamos. Para canalizarte correctamente con un asesor de Luxetty, ¿me compartes tu nombre y en qué colonia o zona está la propiedad?`.trim();
+    }
     const loc = cleanSpaces(String(entry.location_text || ''));
     const locBit = loc ? ` con la venta de tu casa en ${loc}` : ' con la venta de tu casa';
     return `Hola, soy el asistente de Luxetty. Con gusto te ayudo${locBit}.
@@ -235,6 +337,21 @@ function buildNameAcknowledgementReply(name, context = {}) {
 
   if (entry.entry_type === 'property_ad' || isPropertyContextState(aiState)) {
     return `Gracias, ${first}. Ya tengo tu nombre para continuar. Sobre ${code || 'la propiedad'}, puedo ayudarte a confirmar disponibilidad o coordinar una visita con un asesor.`;
+  }
+
+  if (entry.entry_type === 'seller_capture_ad') {
+    const c2 = entry.c2_retargeting || aiState.entry_c2_retargeting;
+    const loc = cleanSpaces(String(entry.location_text || aiState.location_text || ''));
+    const relation = cleanSpaces(String(aiState.owner_relation || ''));
+    if (c2) {
+      if (!loc) {
+        return `Gracias, ${first}. Para canalizarte correctamente con un asesor de Luxetty, ¿en qué colonia o zona está la propiedad?`;
+      }
+      if (!relation) {
+        return `Gracias, ${first}. Ya tengo la zona de la propiedad. Para orientar mejor al asesor, ¿la propiedad es tuya o estás apoyando a alguien?`;
+      }
+      return `Perfecto, ${first}. Ya tengo la información inicial. Voy a canalizar tu caso con un asesor de Luxetty para que te brinde orientación inmobiliaria sobre la venta, renta o valoración de tu propiedad. En breve te estaremos contactando.`;
+    }
   }
 
   const loc = cleanSpaces(String(entry.location_text || aiState.location_text || ''));

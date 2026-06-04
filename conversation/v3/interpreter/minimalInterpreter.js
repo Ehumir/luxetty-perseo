@@ -24,6 +24,10 @@ const {
   extractLooseLocationPhrase,
   isThinGenericInbound,
   mentionsRentDemand,
+  isRentOutOwnerPhrase,
+  inferOwnerOfferOperation,
+  isC2SellerRetargetingEntry,
+  isAmbiguousOwnerPropertyOrientation,
   isExplicitFlowSwitchToRentDemand,
   isExplicitFlowSwitchToRentOut,
   isExplicitFlowSwitchToSellFromRent,
@@ -153,20 +157,7 @@ function isExplicitFlowSwitchToSell(text) {
 }
 
 function isRentOutIntent(text) {
-  const t = normalizeText(text);
-  if (
-    /\b(?:quiero|necesito)\s+rentar\b/.test(t) &&
-    /\b(?:que\s+tengo|mi\s+casa|mi\s+depa|mi\s+departamento|mi\s+propiedad|una\s+casa\s+que)\b/.test(t)
-  ) {
-    return true;
-  }
-  return (
-    t.includes('poner en renta') ||
-    t.includes('rentar mi') ||
-    t.includes('rentarla') ||
-    (t.includes('renta') &&
-      (t.includes('mi casa') || t.includes('mi departamento') || t.includes('mi propiedad')))
-  );
+  return isRentOutOwnerPhrase(normalizeText(text));
 }
 
 function isOfferFlow(state) {
@@ -360,6 +351,44 @@ function interpretUserMessage(state, text, options = {}) {
     return { patch, decision };
   }
 
+  const ownerOpEarly = inferOwnerOfferOperation(t);
+  const rentOutEarly =
+    !matchesLandingCaptureInbound(t) &&
+    (isRentOutIntent(text) || ownerOpEarly === 'rent') &&
+    matchesSellerAcquisitionPattern(t) &&
+    (!state.conversationGoalLocked || isExplicitFlowSwitchToRentOut(text));
+  if (rentOutEarly) {
+    decision.detectedIntent = V3_INTENT.RENT_OUT_PROPERTY;
+    decision.confidence = 0.9;
+    decision.explicitFlowSwitch = state.conversationGoalLocked ? isExplicitFlowSwitchToRentOut(text) : true;
+    patch.conversationGoal = CONVERSATION_GOALS.RENT_OUT_PROPERTY;
+    patch.leadFlow = 'offer';
+    patch.operationType = 'rent';
+    applyPropertyTypePatch(patch, parsePropertyType(text) || 'house');
+    const zoneRentOut = extractLooseLocationPhrase(raw);
+    if (zoneRentOut) {
+      patch.locationText = zoneRentOut;
+      decision.extractedEntities.locationText = zoneRentOut;
+    }
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    if (isC2SellerRetargetingEntry(raw)) patch.offerC2Retargeting = true;
+    decision.nextSuggestedStage = state.collectedFields?.fullName
+      ? CONVERSATION_STAGES.QUALIFYING
+      : CONVERSATION_STAGES.IDENTITY_PENDING;
+    return { patch, decision };
+  }
+
+  if (isAmbiguousOwnerPropertyOrientation(text) && !state.conversationGoalLocked) {
+    decision.detectedIntent = V3_INTENT.SELL_PROPERTY;
+    decision.confidence = 0.75;
+    patch.conversationGoal = CONVERSATION_GOALS.SELL_PROPERTY;
+    patch.leadFlow = 'offer';
+    patch.operationType = 'sale';
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    decision.ambiguousOwnerIntent = true;
+    return { patch, decision };
+  }
+
   const strongSellEarly =
     !matchesLandingCaptureInbound(t) &&
     (isExplicitFlowSwitchToSell(text) ||
@@ -380,13 +409,14 @@ function interpretUserMessage(state, text, options = {}) {
     }
     patch.conversationGoal = CONVERSATION_GOALS.SELL_PROPERTY;
     patch.leadFlow = 'offer';
-    patch.operationType = 'sale';
+    patch.operationType = ownerOpEarly === 'mixed' ? 'sale' : ownerOpEarly === 'rent' ? 'rent' : 'sale';
     applyPropertyTypePatch(patch, parsePropertyType(text) || 'house');
     const zoneSellEarly = extractLooseLocationPhrase(raw);
     if (zoneSellEarly) {
       patch.locationText = zoneSellEarly;
       decision.extractedEntities.locationText = zoneSellEarly;
     }
+    if (isC2SellerRetargetingEntry(raw)) patch.offerC2Retargeting = true;
     decision.shouldAskName = !state.collectedFields?.fullName;
     decision.nextSuggestedStage = state.collectedFields?.fullName
       ? CONVERSATION_STAGES.QUALIFYING
