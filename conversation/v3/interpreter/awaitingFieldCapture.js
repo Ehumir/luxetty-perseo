@@ -7,7 +7,7 @@ const { tryParseQualificationLocation } = require('./sellLocationCapture');
 const { normalizeLocationFromUserText, isBareKnownZoneToken } = require('./locationNormalizer');
 const { shouldAcceptAsIdentityName, isNonNameUtterance } = require('./nameHeuristics');
 const { extractAffirmationName } = require('./identityNameParser');
-const { isLikelyFirstNameOnly } = require('./identityCompoundCapture');
+const { isLikelyFirstNameOnly, parseChannelPreference } = require('./identityCompoundCapture');
 const { parseAdvisorContactConsent } = require('../planner/consentParser');
 const { parseOccupancyStatus } = require('./occupancyParser');
 const { isSlotFilled } = require('../state/slotFillState');
@@ -171,6 +171,8 @@ function tryResolveAwaitingFieldCapture(state, raw, text, patch, decision) {
     decision.detectedIntent = V3_INTENT.ADVISOR_CONSENT_CAPTURE;
     decision.confidence = 0.94;
     patch.advisorContactConsent = consent;
+    const channel = parseChannelPreference(normalizeText(text));
+    if (channel) patch.channelPreference = channel;
     patch.awaitingField = null;
     patch.lastAskedField = null;
     decision.explicitFlowSwitch = false;
