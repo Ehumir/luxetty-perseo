@@ -77,7 +77,7 @@ function resolveArgosLegacyHydration(input) {
     : null;
   const code =
     fromText[fromText.length - 1] ||
-    (persisted && getPropertyFixture(persisted) ? persisted : null) ||
+    (persisted && getPropertyFixture(persisted) ? persisted : persisted) ||
     fromSetupList[fromSetupList.length - 1] ||
     null;
   if (!code) return null;
@@ -89,10 +89,77 @@ function resolveArgosLegacyHydration(input) {
   };
 }
 
+function toArgosActiveProperty(ap, codeFallback) {
+  const code = normalizeFixtureCode(ap?.code || ap?.listing_id || codeFallback || '');
+  if (!ap?.id) return null;
+  return {
+    id: ap.id,
+    code: code || null,
+    title: ap.title || null,
+    price: ap.price,
+    price_label: ap.price_label,
+    public_url: ap.public_url,
+    location_label: ap.location_label || ap.neighborhood || ap.city || 'Monterrey',
+    is_active: true,
+    is_published: true,
+  };
+}
+
+/**
+ * Hidrata inventario desde Supabase cuando el código no está en fixtures estáticos
+ * (p. ej. listings activos fuera de A0470/A0461/A0462).
+ */
+async function resolveArgosLegacyHydrationAsync(input, db, logger = console) {
+  const sync = resolveArgosLegacyHydration(input);
+  if (sync?.activeProperty?.id) return sync;
+
+  if (!db) return sync;
+
+  const inv = require('../services/propertyInventoryService');
+  const { extractListingCodes } = require('./mustNotValidator');
+  const text = String(input.text || '');
+
+  const codes = extractListingCodes(text);
+  const persisted = input.persistedPropertyCode
+    ? normalizeFixtureCode(input.persistedPropertyCode)
+    : null;
+  const code = codes[codes.length - 1] || sync?.propertyListingCode || persisted || null;
+
+  if (code) {
+    const found = await inv.findPropertyByCode(db, code, logger);
+    if (found.property) {
+      const ap = inv.normalizeInventoryProperty(found.property.raw || found.property);
+      const activeProperty = toArgosActiveProperty(ap, code);
+      if (activeProperty?.code) {
+        PROPERTY_FIXTURES[activeProperty.code] = activeProperty;
+        return { propertyListingCode: activeProperty.code, activeProperty };
+      }
+    }
+  }
+
+  if (inv.shouldAttemptLoosePropertyResolution(text)) {
+    const resolved = await inv.resolveInboundPropertyReference(db, { text }, logger);
+    if (resolved.status === 'found' && resolved.property) {
+      const ap = inv.normalizeInventoryProperty(resolved.property.raw || resolved.property);
+      const activeProperty = toArgosActiveProperty(ap, resolved.code);
+      if (activeProperty?.id) {
+        if (activeProperty.code) PROPERTY_FIXTURES[activeProperty.code] = activeProperty;
+        return {
+          propertyListingCode: activeProperty.code || sync?.propertyListingCode || null,
+          activeProperty,
+        };
+      }
+    }
+  }
+
+  return sync;
+}
+
 module.exports = {
   PROPERTY_FIXTURES,
   getPropertyFixture,
   normalizeFixtureCode,
   extractFixtureCodesFromText,
   resolveArgosLegacyHydration,
+  resolveArgosLegacyHydrationAsync,
 };

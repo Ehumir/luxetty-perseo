@@ -25,7 +25,7 @@ const {
   mergeReplyText,
   normalizeOutboundSignature,
 } = require('../conversation/antiLoopGuardrails');
-const { resolveArgosLegacyHydration } = require('./propertyFixtures');
+const { resolveArgosLegacyHydration, resolveArgosLegacyHydrationAsync } = require('./propertyFixtures');
 const { executeV3CrmIfEligible } = require('../conversation/v3/crm/crmExecutor');
 const { isCrmRuntimePersistentEnabled } = require('../config/perseoM401Flags');
 
@@ -120,11 +120,22 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
 
   const conversationId = argosConversationId(session_id);
   const priorState = getSession(conversationId);
-  const legacyHydration = resolveArgosLegacyHydration({
+  let legacyHydration = resolveArgosLegacyHydration({
     setup: input.scenarioSetup,
     text: input.text,
     persistedPropertyCode: priorState?.propertyListingCode || null,
   });
+  if (input.supabaseRaw && !legacyHydration?.activeProperty?.id) {
+    legacyHydration =
+      (await resolveArgosLegacyHydrationAsync(
+        {
+          setup: input.scenarioSetup,
+          text: input.text,
+          persistedPropertyCode: priorState?.propertyListingCode || null,
+        },
+        input.supabaseRaw
+      )) || legacyHydration;
+  }
   const v3Result = await v3InboundBridge.tryV3PrimaryReply({
     conversationId,
     phone: input.phone_sim,
