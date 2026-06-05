@@ -942,26 +942,77 @@ app.post('/webhook', async (req, res) => {
     let property = null;
     let propertyId = null;
     let resolvedPropertyRow = undefined;
-    if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
-      const codeForFetch = cleanSpaces(String(nextAiState.property_code || nextAiState.direct_property_code || ''));
-      if (codeForFetch) {
-        const hintZone = cleanSpaces(String(parsedSignals.location_text || nextAiState.location_text || ''));
-        const resolved = await propertyInventoryService.findPropertyByInventoryReference(
-          supabase,
-          {
-            code: codeForFetch,
-            text,
-            hintZone: hintZone || propertyInventoryService.extractZoneFromPropertyPhrase(text),
-          },
-          console
-        );
+    let propertyResolutionAmbiguous = false;
+
+    if (previousAiState.awaiting_field === 'property_disambiguation') {
+      const picked = propertyInventoryService.resolveDisambiguationPick(
+        text,
+        previousAiState.property_disambiguation_candidates
+      );
+      if (picked?.id) {
+        const pickedCode = propertyInventoryService.normalizeInventoryCode(picked.code) || picked.code;
+        parsedSignals.property_code = pickedCode;
+        parsedSignals.direct_property_code = pickedCode;
+        parsedSignals.direct_property_reference = true;
+        parsedSignals.property_specific_intent = true;
+        parsedSignals.interested_property_id = picked.id;
+        parsedSignals.property_disambiguation_candidates = null;
+        parsedSignals.awaiting_field = null;
+        Object.assign(nextAiState, {
+          property_code: pickedCode,
+          direct_property_code: pickedCode,
+          direct_property_reference: true,
+          property_specific_intent: true,
+          interested_property_id: picked.id,
+          property_disambiguation_candidates: null,
+          awaiting_field: null,
+        });
+      }
+    }
+
+    const codeForFetch = cleanSpaces(String(nextAiState.property_code || nextAiState.direct_property_code || ''));
+    const shouldResolveProperty =
+      propertyIntentResolver.isPropertySpecificConversation(nextAiState) ||
+      propertyInventoryService.shouldAttemptLoosePropertyResolution(text) ||
+      !!parsedSignals.property_landing_reference;
+
+    if (shouldResolveProperty) {
+      const hintZone = cleanSpaces(String(parsedSignals.location_text || nextAiState.location_text || ''));
+      const resolved = await propertyInventoryService.resolveInboundPropertyReference(
+        supabase,
+        {
+          code: codeForFetch || null,
+          text,
+          hintZone: hintZone || propertyInventoryService.extractZoneFromPropertyPhrase(text),
+        },
+        console
+      );
+
+      if (resolved.status === 'ambiguous') {
+        propertyResolutionAmbiguous = true;
+        nextAiState.property_disambiguation_candidates = resolved.candidates;
+        nextAiState.awaiting_field = 'property_disambiguation';
+      } else if (resolved.status === 'found' && resolved.property) {
         property = resolved.property;
         propertyId = resolved.propertyId;
         resolvedPropertyRow = property;
+        const codeKey =
+          propertyInventoryService.normalizeInventoryCode(resolved.code || codeForFetch) ||
+          resolved.code ||
+          codeForFetch;
+        if (codeKey) {
+          nextAiState.property_code = codeKey;
+          nextAiState.direct_property_code = codeKey;
+          nextAiState.direct_property_reference = true;
+          nextAiState.property_specific_intent = true;
+        }
         nextAiState.interested_property_id = propertyId != null ? propertyId : null;
         nextAiState.property_context = property ? buildPropertyContextSnapshot(property) : null;
-        if (property?.id) {
-          const codeKey = propertyInventoryService.normalizeInventoryCode(codeForFetch) || codeForFetch;
+        nextAiState.property_disambiguation_candidates = null;
+        if (nextAiState.awaiting_field === 'property_disambiguation') {
+          nextAiState.awaiting_field = null;
+        }
+        if (property?.id && codeKey) {
           Object.assign(
             nextAiState,
             propertyInventoryService.pushPropertyHistory(nextAiState, {
@@ -978,6 +1029,9 @@ app.post('/webhook', async (req, res) => {
             )
           );
         }
+      } else if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
+        nextAiState.interested_property_id = null;
+        nextAiState.property_context = null;
       }
     }
 
@@ -1093,8 +1147,20 @@ app.post('/webhook', async (req, res) => {
         logEvent('meta_lead_form_c1_ack', { conversation_id: conversationId });
       }
 
+      if (propertyResolutionAmbiguous && !nameFirstHandled) {
+        reply = propertyInventoryService.buildPropertyDisambiguationReply(
+          nextAiState.property_disambiguation_candidates
+        );
+        responseSource = 'property_disambiguation';
+        nameFirstHandled = true;
+        logEvent('property_disambiguation_prompt', {
+          conversation_id: conversationId,
+          candidates: (nextAiState.property_disambiguation_candidates || []).length,
+        });
+      }
+
       const v3Try =
-        metaLeadTurn.handled
+        metaLeadTurn.handled || propertyResolutionAmbiguous
           ? { handled: false }
           : await v3InboundBridge.tryV3PrimaryReply({
               conversationId,

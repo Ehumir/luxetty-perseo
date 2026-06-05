@@ -74,3 +74,91 @@ test('pushPropertyHistory mantiene máximo 5', () => {
   assert.equal(patch.property_history.length, 2);
   assert.equal(patch.property_history[0].code, 'LUX-A0470');
 });
+
+test('extractPropertyTitleHint: similar sin LUX', () => {
+  const hint = inv.extractPropertyTitleHint(
+    'Hola, me gustaría recibir información sobre Terreno en Privada Renacimiento y opciones relacionadas.'
+  );
+  assert.match(hint || '', /privada renacimiento/i);
+});
+
+test('extractPropertyTitleHint: vendida con comillas', () => {
+  const hint = inv.extractPropertyTitleHint(
+    'Hola, vi la propiedad "Casa en Cumbres" que ya fue vendida. ¿Tienen opciones similares?'
+  );
+  assert.equal(hint, 'Casa en Cumbres');
+});
+
+test('shouldAttemptLoosePropertyResolution: visita landing', () => {
+  assert.equal(
+    inv.shouldAttemptLoosePropertyResolution(
+      'Hola, me gustaría agendar una visita a la propiedad LUX-A0473 — Casa test ($1).'
+    ),
+    true
+  );
+});
+
+test('tokenOverlapScore: match alto', () => {
+  const score = inv.tokenOverlapScore(
+    'Terreno en Privada Renacimiento',
+    'Terreno en Privada Renacimiento · 1,680 m²'
+  );
+  assert.ok(score >= 0.45);
+});
+
+test('resolveDisambiguationPick: ordinal y código', () => {
+  const candidates = [
+    { id: '1', code: 'LUX-A0001', title: 'A' },
+    { id: '2', code: 'LUX-A0002', title: 'B' },
+  ];
+  assert.equal(inv.resolveDisambiguationPick('la opción 2', candidates)?.id, '2');
+  assert.equal(inv.resolveDisambiguationPick('LUX-A0001', candidates)?.id, '1');
+});
+
+test('buildPropertyDisambiguationReply lista opciones', () => {
+  const reply = inv.buildPropertyDisambiguationReply([
+    { code: 'LUX-A0001', title: 'Casa A', location_label: 'Cumbres', price_label: '$1M' },
+  ]);
+  assert.match(reply, /LUX-A0001/);
+  assert.match(reply, /Responde con el número/i);
+});
+
+test('resolveInboundPropertyReference: slug en URL', async () => {
+  const row = {
+    id: 'p-slug',
+    listing_id: 'LUX-A0999',
+    slug: 'casa-en-cumbres-en-venta',
+    title: 'Casa en Cumbres',
+    operation_type: 'sale',
+    price: 5000000,
+    neighborhood: 'Cumbres',
+  };
+  const db = {
+    from() {
+      return {
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        ilike() {
+          return this;
+        },
+        limit() {
+          return this;
+        },
+        async maybeSingle() {
+          return { data: row, error: null };
+        },
+      };
+    },
+  };
+  const out = await inv.resolveInboundPropertyReference(
+    db,
+    { text: 'Mira https://luxetty.com/propiedad/casa-en-cumbres-en-venta' },
+    console
+  );
+  assert.equal(out.status, 'found');
+  assert.equal(out.propertyId, 'p-slug');
+});

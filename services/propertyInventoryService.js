@@ -315,6 +315,16 @@ async function findPropertyByLooseReference(db, text, opts = {}) {
     }
   }
 
+  const titleHint = extractPropertyTitleHint(t);
+  if (titleHint) {
+    const scored = await findPublishedPropertiesByTitleHint(db, titleHint, logger);
+    if (scored.length === 1) {
+      const row = scored[0].row;
+      const normalizedShape = scored[0].normalizedShape;
+      return { property: { ...row, ...normalizedShape, raw: row }, propertyId: row.id, normalized: normalizedShape };
+    }
+  }
+
   return { property: null, propertyId: null, normalized: null };
 }
 
@@ -323,21 +333,326 @@ function extractZoneFromPropertyPhrase(text) {
   return m ? cleanSpaces(m[1]) : '';
 }
 
+const LANDING_REFERENCE_PATTERNS = [
+  /\binformaci[oó]n comparativa sobre/i,
+  /\binformaci[oó]n sobre .+ y opciones relacionadas/i,
+  /\bopciones relacionadas\b/i,
+  /\bopciones similares\b/i,
+  /\bvi la propiedad\b/i,
+  /\bya fue vendida\b/i,
+  /\bya fue rentada\b/i,
+  /\bagendar una visita\b/i,
+  /\bquiero avanzar con la propiedad\b/i,
+  /\bcomparto esta propiedad de luxetty\b/i,
+  /\[propiedad\s+lux-/i,
+  /luxetty\.com\/propiedad\//i,
+];
+
+function normalizePropertyTitleForMatch(text) {
+  return normalizeText(String(text || ''))
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractPropertyTitleHint(text) {
+  const raw = cleanSpaces(String(text || ''));
+  if (!raw) return null;
+
+  const patterns = [
+    /informaci[oó]n comparativa sobre\s+(?:LUX-[A-Z]\d{4}\s*[-—–]\s*)?(.+?)\s+y opciones similares/i,
+    /informaci[oó]n sobre\s+(?:LUX-[A-Z]\d{4}\s*[-—–]\s*)?(.+?)\s+y opciones relacionadas/i,
+    /vi la propiedad\s+(?:LUX-[A-Z]\d{4}\s+)?"([^"]+)"\s+que ya fue/i,
+    /vi la propiedad\s+(?:LUX-[A-Z]\d{4}\s+)?(.+?)\s+que ya fue/i,
+    /propiedad\s+LUX-[A-Z]\d{4}\s*[-—–]\s*(.+?)(?:\s*\(|\.|$)/i,
+    /\[Propiedad\s+LUX-[A-Z]\d{4}\]\s*(.+?)(?:\.|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const m = raw.match(pattern);
+    if (m?.[1]) {
+      let hint = cleanSpaces(m[1]).replace(/^["']|["']$/g, '');
+      hint = hint.replace(/\(\$[\d,.\s]+(?:MXN|USD)?\)\.?$/i, '').trim();
+      if (hint.length >= 8) return hint.slice(0, 180);
+    }
+  }
+
+  const quoted = raw.match(/"([^"]{8,180})"/);
+  if (quoted?.[1]) return cleanSpaces(quoted[1]);
+
+  return null;
+}
+
+function shouldAttemptLoosePropertyResolution(text) {
+  const t = normalizeText(String(text || ''));
+  if (!t) return false;
+  if (extractPropertyCode(text)) return true;
+  if (extractPropertyTitleHint(text)) return true;
+  return LANDING_REFERENCE_PATTERNS.some((re) => re.test(t));
+}
+
+function tokenOverlapScore(hint, title) {
+  const a = normalizePropertyTitleForMatch(hint);
+  const b = normalizePropertyTitleForMatch(title);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (b.includes(a) || a.includes(b)) return 0.92;
+
+  const stop = new Set(['de', 'en', 'la', 'el', 'los', 'las', 'con', 'para', 'una', 'uno', 'del', 'y']);
+  const ta = new Set(a.split(' ').filter((w) => w.length > 2 && !stop.has(w)));
+  const tb = new Set(b.split(' ').filter((w) => w.length > 2 && !stop.has(w)));
+  if (!ta.size || !tb.size) return 0;
+
+  let inter = 0;
+  for (const w of ta) {
+    if (tb.has(w)) inter += 1;
+  }
+  return inter / Math.max(ta.size, tb.size);
+}
+
+async function findPropertyRowsWithTieredSelect(db, applyFilter, logger, limit = 1) {
+  let lastErr = null;
+  for (let i = 0; i < SELECT_TIERS.length; i += 1) {
+    const columns = SELECT_TIERS[i];
+    try {
+      let q = db.from('properties').select(columns);
+      q = applyFilter(q);
+      const { data, error } = await q.limit(limit);
+      if (!error && Array.isArray(data) && data.length) return data;
+      if (error) {
+        lastErr = error;
+        if (i < SELECT_TIERS.length - 1 && columnMissingError(error)) {
+          logInventoryFallback(logger, 'column_or_schema_mismatch', { tier: i, message: error.message });
+          continue;
+        }
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (lastErr) {
+    logInventoryFallback(logger, 'select_failed_retry', { message: String(lastErr.message || lastErr) });
+  }
+  return [];
+}
+
+async function findPublishedPropertiesByTitleHint(db, titleHint, logger = console, opts = {}) {
+  const hint = cleanSpaces(String(titleHint || ''));
+  if (!hint || hint.length < 8) return [];
+
+  const normalizedHint = normalizePropertyTitleForMatch(hint);
+  const keywords = normalizedHint
+    .split(' ')
+    .filter((w) => w.length > 3)
+    .slice(0, 6);
+  if (!keywords.length) return [];
+
+  const seen = new Map();
+  for (const keyword of keywords) {
+    const rows = await findPropertyRowsWithTieredSelect(
+      db,
+      (q) => q.ilike('title', `%${keyword}%`),
+      logger,
+      12
+    );
+    for (const row of rows) {
+      if (row?.id && !seen.has(row.id)) seen.set(row.id, row);
+    }
+  }
+
+  const scored = [...seen.values()]
+    .map((row) => {
+      const normalizedShape = normalizeInventoryProperty(row);
+      const score = tokenOverlapScore(hint, row.title || '');
+      return { row, normalizedShape, score };
+    })
+    .filter((x) => x.score >= (opts.minScore ?? 0.45))
+    .sort((a, b) => b.score - a.score);
+
+  return scored.slice(0, opts.maxResults ?? 5);
+}
+
+function toCandidateSummary(entry) {
+  const n = entry.normalizedShape || normalizeInventoryProperty(entry.row);
+  return {
+    id: String(n?.id || entry.row?.id || ''),
+    code: cleanSpaces(String(n?.code || n?.listing_id || entry.row?.listing_id || '')) || null,
+    title: n?.title || entry.row?.title || null,
+    score: entry.score,
+    location_label: n?.location_label || null,
+    price_label: n?.price_label || null,
+    public_url: n?.public_url || null,
+  };
+}
+
+function resolveDisambiguationPick(text, candidates = []) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  if (!list.length) return null;
+
+  const code = extractPropertyCode(text);
+  if (code) {
+    const hit = list.find((c) => normalizeInventoryCode(c.code) === normalizeInventoryCode(code));
+    if (hit?.id) return hit;
+  }
+
+  const t = normalizeText(String(text || ''));
+  const m1 = t.match(/\b(?:la\s+)?(?:opci[oó]n|numero|n[uú]mero)\s*([1-3])\b/);
+  const m2 = t.match(/^([1-3])\b/);
+  let ordinalDigit = m1?.[1] || m2?.[1] || null;
+  if (!ordinalDigit && /\bprimera\b/.test(t)) ordinalDigit = '1';
+  if (!ordinalDigit && /\bsegunda\b/.test(t)) ordinalDigit = '2';
+  if (!ordinalDigit && /\btercera\b/.test(t)) ordinalDigit = '3';
+  if (ordinalDigit) {
+    const idx = Number(ordinalDigit) - 1;
+    if (list[idx]?.id) return list[idx];
+  }
+
+  return null;
+}
+
+function buildPropertyDisambiguationReply(candidates = []) {
+  const list = (Array.isArray(candidates) ? candidates : []).slice(0, 3);
+  if (!list.length) {
+    return 'Para orientarte bien, ¿me confirmas el código LUX de la propiedad (por ejemplo LUX-A0473)?';
+  }
+  const lines = list.map((c, i) => {
+    const ref = c.code ? `${c.code}` : 'Sin código';
+    const zone = c.location_label ? ` · ${c.location_label}` : '';
+    const price = c.price_label ? ` · ${c.price_label}` : '';
+    return `${i + 1}. ${ref} — ${c.title || 'Propiedad'}${zone}${price}`;
+  });
+  return `Encontré varias propiedades parecidas. ¿Cuál te interesa?\n\n${lines.join('\n')}\n\nResponde con el número o el código LUX (ej. LUX-A0473).`;
+}
+
+function wrapFoundResult(row) {
+  const normalizedShape = normalizeInventoryProperty(row);
+  const code = cleanSpaces(String(normalizedShape?.code || row.listing_id || '')) || null;
+  return {
+    status: 'found',
+    property: { ...row, ...normalizedShape, raw: row },
+    propertyId: row.id,
+    normalized: normalizedShape,
+    code,
+    ambiguous: false,
+    candidates: [],
+  };
+}
+
+/**
+ * Resolución unificada: código, URL/slug, título fuzzy.
+ * @returns {{ status: 'found'|'ambiguous'|'not_found', property, propertyId, normalized, code, ambiguous, candidates }}
+ */
+async function resolveInboundPropertyReference(db, { code, text, hintZone } = {}, logger = console) {
+  const c = cleanSpaces(String(code || ''));
+  const zoneHint = cleanSpaces(String(hintZone || '')) || extractZoneFromPropertyPhrase(text || '');
+
+  if (c) {
+    const byCode = await findPropertyByCode(db, c, logger);
+    if (byCode.property) {
+      return {
+        status: 'found',
+        property: byCode.property,
+        propertyId: byCode.propertyId,
+        normalized: byCode.normalized,
+        code: byCode.normalized?.code || normalizeInventoryCode(c),
+        ambiguous: false,
+        candidates: [],
+      };
+    }
+  }
+
+  const looseText = String(text || '');
+  const urlSlug = looseText.match(/luxetty\.com\/propiedad\/([a-z0-9-]+)/i);
+  if (urlSlug?.[1]) {
+    const bySlug = await findPropertyBySlug(db, urlSlug[1], logger);
+    if (bySlug.property) {
+      return {
+        status: 'found',
+        property: bySlug.property,
+        propertyId: bySlug.propertyId,
+        normalized: bySlug.normalized,
+        code: bySlug.normalized?.code || null,
+        ambiguous: false,
+        candidates: [],
+      };
+    }
+  }
+
+  const titleHint = extractPropertyTitleHint(looseText);
+  if (titleHint) {
+    const scored = await findPublishedPropertiesByTitleHint(db, titleHint, logger);
+    if (scored.length === 1) {
+      return wrapFoundResult(scored[0].row);
+    }
+    if (scored.length > 1) {
+      const top = scored[0].score;
+      const close = scored.filter((s) => top - s.score <= 0.08).slice(0, 3);
+      if (close.length === 1) {
+        return wrapFoundResult(close[0].row);
+      }
+      const candidates = close.map(toCandidateSummary);
+      return {
+        status: 'ambiguous',
+        property: null,
+        propertyId: null,
+        normalized: null,
+        code: null,
+        ambiguous: true,
+        candidates,
+      };
+    }
+  }
+
+  if (zoneHint && /propiedad|casa|depa|depto|interesa|opciones/i.test(normalizeText(looseText))) {
+    const row = await findPropertyRowWithTieredSelect(
+      db,
+      (q) => q.ilike('neighborhood', `%${zoneHint}%`),
+      logger
+    );
+    if (row?.id) {
+      const z = normalizeText(String(row.neighborhood || row.city || row.municipality || row.zone || ''));
+      const zn = normalizeText(zoneHint);
+      if (z && zn && (z.includes(zn) || zn.includes(z))) {
+        return wrapFoundResult(row);
+      }
+    }
+  }
+
+  return {
+    status: 'not_found',
+    property: null,
+    propertyId: null,
+    normalized: null,
+    code: null,
+    ambiguous: false,
+    candidates: [],
+  };
+}
+
 /**
  * Punto de entrada webhook: código activo + texto usuario.
  */
 async function findPropertyByInventoryReference(db, { code, text, hintZone } = {}, logger = console) {
-  const c = cleanSpaces(String(code || ''));
-  const zoneHint = cleanSpaces(String(hintZone || '')) || extractZoneFromPropertyPhrase(text || '');
-  if (c) {
-    const byCode = await findPropertyByCode(db, c, logger);
-    if (byCode.property) return byCode;
+  const resolved = await resolveInboundPropertyReference(db, { code, text, hintZone }, logger);
+  if (resolved.status === 'found') {
+    return {
+      property: resolved.property,
+      propertyId: resolved.propertyId,
+      normalized: resolved.normalized,
+      ambiguous: false,
+      candidates: [],
+    };
   }
-  if (text) {
-    const loose = await findPropertyByLooseReference(db, text, { logger, hintZone: zoneHint });
-    if (loose.property) return loose;
+  if (resolved.status === 'ambiguous') {
+    return {
+      property: null,
+      propertyId: null,
+      normalized: null,
+      ambiguous: true,
+      candidates: resolved.candidates,
+    };
   }
-  return { property: null, propertyId: null, normalized: null };
+  return { property: null, propertyId: null, normalized: null, ambiguous: false, candidates: [] };
 }
 
 function prunePropertyContextByCode(byCode, history, max = 5) {
@@ -382,6 +697,13 @@ function mergePropertyContextCache(prevState, code, snapshot) {
 
 module.exports = {
   normalizeInventoryCode,
+  normalizePropertyTitleForMatch,
+  extractPropertyTitleHint,
+  shouldAttemptLoosePropertyResolution,
+  tokenOverlapScore,
+  resolveInboundPropertyReference,
+  resolveDisambiguationPick,
+  buildPropertyDisambiguationReply,
   buildPublicPropertyUrl,
   getPropertyPublicFacts,
   normalizeInventoryProperty,
@@ -389,6 +711,7 @@ module.exports = {
   findPropertyBySlug,
   findPropertyByLooseReference,
   findPropertyByInventoryReference,
+  findPublishedPropertiesByTitleHint,
   propertyHasPublicLink,
   propertyHasPrice,
   propertyOperationLabel,

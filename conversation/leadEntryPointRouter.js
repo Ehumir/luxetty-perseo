@@ -35,6 +35,47 @@ function isPropertyAdEntry(text = '') {
   const t = normalizeText(text);
   if (!t) return false;
   const code = extractPropertyCode(text);
+
+  const visitIntent =
+    (t.includes('agendar') && t.includes('visita')) ||
+    (t.includes('visita') && (t.includes('propiedad') || !!code));
+  const advanceIntent = t.includes('quiero avanzar') && (t.includes('propiedad') || !!code);
+  const advisorIntent =
+    t.includes('vi la propiedad') ||
+    (t.includes('platicar') && (t.includes('propiedad') || !!code));
+  const shareIntent =
+    t.includes('comparto esta propiedad') ||
+    (t.includes('luxetty') && t.includes('comparto'));
+  const compareIntent =
+    t.includes('comparativa') ||
+    (t.includes('opciones similares') && (t.includes('propiedad') || !!code));
+  const similarIntent =
+    /\binformaci[oó]n sobre .+ y opciones relacionadas/i.test(t) ||
+    (t.includes('opciones relacionadas') && (t.includes('informacion') || t.includes('información')));
+  const soldSimilarIntent =
+    (t.includes('vendida') || t.includes('rentada')) &&
+    (t.includes('opciones similares') || t.includes('opciones relacionadas'));
+
+  if (
+    visitIntent ||
+    advanceIntent ||
+    advisorIntent ||
+    shareIntent ||
+    compareIntent ||
+    similarIntent ||
+    soldSimilarIntent
+  ) {
+    if (t.includes('vender') && t.includes('ayud')) return false;
+    return !!(
+      code ||
+      t.includes('propiedad') ||
+      t.includes('luxetty') ||
+      similarIntent ||
+      soldSimilarIntent ||
+      t.includes('comparativa')
+    );
+  }
+
   const interest =
     t.includes('me interesa') ||
     t.includes('me interesaria') ||
@@ -179,12 +220,12 @@ function classifyEntryPoint(text = '', aiState = {}) {
     };
   }
 
-  if (isPropertyAdEntry(text) && code) {
+  if (isPropertyAdEntry(text)) {
     return {
       ...base,
       entry_type: 'property_ad',
       lead_flow: 'demand',
-      property_code: code,
+      property_code: code || null,
       location_text: cleanSpaces(String(prev.location_text || '')) || null,
     };
   }
@@ -245,6 +286,8 @@ function applyEntryClassificationToSignals(signals = {}, text = '', prevAiState 
       out.direct_property_code = meta.property_code;
       out.direct_property_reference = true;
       out.property_specific_intent = true;
+    } else if (propertyInventoryService.shouldAttemptLoosePropertyResolution(text)) {
+      out.property_landing_reference = true;
     }
   }
 
