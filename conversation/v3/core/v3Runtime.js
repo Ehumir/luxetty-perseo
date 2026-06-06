@@ -4,11 +4,11 @@ const { createInitialConversationState, mergeConversationState } = require('../t
 const { interpretUserMessage } = require('../interpreter/minimalInterpreter');
 const { applyV3StateTransition } = require('../state/stateManager');
 const { composeHumanReplyText, composeHumanResponse } = require('../composer/humanComposer');
-const { getSession, setSession, resetSession } = require('./sessionStore');
+const { getSession, setSession, resetSession, resolveSession } = require('./sessionStore');
 const { hydrateV3StateFromLegacyAiState } = require('../state/legacyToV3State');
 const { v3Log } = require('./v3Logger');
 const { detectFrustration } = require('../interpreter/frustrationDetector');
-const { isV3HandoffEnabled } = require('../../../config/perseoV3Flags');
+const { isV3HandoffEnabled, isSessionDbReadthroughEnabled } = require('../../../config/perseoV3Flags');
 const { runF3Pipeline } = require('./f3Pipeline');
 const { detectForcedHandoffReason } = require('../planner/forcedHandoffDetector');
 const {
@@ -159,7 +159,13 @@ function processV3Turn(input) {
     return mergeConversationState(base, hyd);
   }
 
-  let state = getSession(conversationId);
+  let state = isSessionDbReadthroughEnabled()
+    ? resolveSession(conversationId, {
+        phone,
+        legacyAiState: input.persistedLegacyAiState ?? null,
+        readthrough: true,
+      })
+    : getSession(conversationId);
   if (!state) {
     const persisted =
       input.persistedLegacyAiState && typeof input.persistedLegacyAiState === 'object'

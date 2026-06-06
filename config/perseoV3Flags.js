@@ -156,6 +156,7 @@ function evaluateV3PrimaryGate(input) {
  *   handoffEnabled: boolean,
  *   crmDryRun: boolean,
  *   crmExecute: boolean,
+ *   sessionDbReadthrough: boolean,
  *   qaAllowlist: string[],
  *   logStructured: boolean,
  * }}
@@ -167,6 +168,7 @@ function getPerseoV3Config() {
     handoffEnabled: process.env.PERSEO_V3_HANDOFF_ENABLED === 'true',
     crmDryRun: process.env.PERSEO_V3_CRM_DRY_RUN !== 'false',
     crmExecute: process.env.PERSEO_V3_CRM_EXECUTE === 'true',
+    sessionDbReadthrough: process.env.PERSEO_V3_SESSION_DB_READTHROUGH !== 'false',
     qaAllowlist: splitAllowlist(process.env.PERSEO_V3_QA_ALLOWLIST),
     logStructured: process.env.PERSEO_V3_LOG === 'true',
   };
@@ -174,6 +176,10 @@ function getPerseoV3Config() {
 
 function isV3HandoffEnabled() {
   return getPerseoV3Config().handoffEnabled;
+}
+
+function isSessionDbReadthroughEnabled() {
+  return getPerseoV3Config().sessionDbReadthrough;
 }
 
 function isPhoneOnV3Allowlist(phone) {
@@ -191,6 +197,7 @@ function resolveInboundRoutingMode(phone) {
 module.exports = {
   getPerseoV3Config,
   isV3HandoffEnabled,
+  isSessionDbReadthroughEnabled,
   isPhoneOnV3Allowlist,
   shouldRouteInboundToV3Core,
   evaluateV3PrimaryGate,

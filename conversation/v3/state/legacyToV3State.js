@@ -33,15 +33,20 @@ function hydrateV3StateFromLegacyAiState(conversationId, phone, legacyAiState) {
     legacy.v3_primary_active === true ||
     legacy.conversation_goal != null ||
     legacy.crm_execution_completed === true ||
-    legacy.handoff_stage != null;
+    legacy.handoff_stage != null ||
+    legacy.user_goal != null ||
+    legacy.current_intent != null;
 
   const hasSlots =
     legacy.lead_flow != null ||
+    legacy.lead_id != null ||
     legacy.budget_max != null ||
     legacy.location_text != null ||
     legacy.full_name != null ||
     legacy.property_code != null ||
-    legacy.direct_property_code != null;
+    legacy.direct_property_code != null ||
+    legacy.interested_property_id != null ||
+    legacy.detected_property_id != null;
 
   if (!hasV3Marker && !hasSlots) return null;
 
@@ -106,6 +111,21 @@ function hydrateV3StateFromLegacyAiState(conversationId, phone, legacyAiState) {
       code: patch.propertyListingCode || null,
     };
     patch.propertySpecificIntent = true;
+  }
+
+  if (legacy.detected_property_id && !patch.activeProperty) {
+    patch.activeProperty = {
+      id: String(legacy.detected_property_id),
+      code: patch.propertyListingCode || null,
+    };
+    patch.propertySpecificIntent = true;
+  }
+
+  if (legacy.user_goal || legacy.current_intent) {
+    const intent = String(legacy.intent_type || legacy.current_intent || '').trim().toLowerCase();
+    if (!patch.conversationGoal && intent) {
+      patch.conversationGoal = mapLegacyIntentToGoal({ ...legacy, intent_type: intent });
+    }
   }
 
   return mergeConversationState(seed, patch);

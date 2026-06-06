@@ -50,7 +50,7 @@ const r0ContextContinuity = require('./conversation/r0ContextContinuity');
 const { extractPossibleName } = require('./conversation/parsers');
 const v3InboundBridge = require('./conversation/v3/core/v3InboundBridge');
 const { getSession: getV3Session } = require('./conversation/v3/core/sessionStore');
-const { mapV3StateToLegacyAiState } = require('./conversation/v3/state/v3ToLegacyAiState');
+const { mapV3StateToLegacyAiState, mergeLegacyAiStateWithV3 } = require('./conversation/v3/state/v3ToLegacyAiState');
 const { executeV3CrmIfEligible } = require('./conversation/v3/crm/crmExecutor');
 const { setSession, getSession } = require('./conversation/v3/core/sessionStore');
 const { sanitizeV3PrimaryLegacyAiState } = require('./conversation/v3/state/sanitizeV3PrimaryLegacyAiState');
@@ -1236,7 +1236,10 @@ app.post('/webhook', async (req, res) => {
               block_reason: crmExecuteGate.block_reason,
             });
           }
-          Object.assign(nextAiState, mapV3StateToLegacyAiState(v3StateForCrm));
+          Object.assign(
+            nextAiState,
+            mergeLegacyAiStateWithV3(previousAiState, v3StateForCrm),
+          );
           sanitizeV3PrimaryLegacyAiState(nextAiState);
           if (crmOut?.leadResult?.aiState?.qa_crm_force_new_lead === false) {
             nextAiState.qa_crm_force_new_lead = false;

@@ -111,15 +111,69 @@ function mapV3StateToLegacyAiState(v3State) {
 }
 
 /**
- * Mezcla sesión V3 sobre ai_state persistido (prioridad V3 en campos conversacionales).
+ * Campos comerciales/CRM que no deben borrarse con `null` al proyectar V3 parcial.
+ */
+const MERGE_PROTECT_FROM_NULL = new Set([
+  'crm_contact_id',
+  'crm_lead_id',
+  'lead_id',
+  'crm_execution_completed',
+  'property_code',
+  'direct_property_code',
+  'interested_property_id',
+  'property_specific_intent',
+  'direct_property_reference',
+  'full_name',
+  'budget_max',
+  'location_text',
+  'bedrooms',
+  'lead_flow',
+  'lead_type',
+  'intent_type',
+  'playbook_type',
+  'operation_type',
+  'conversation_goal',
+  'conversation_stage',
+  'handoff_stage',
+  'sticky_lead_flow',
+  'sticky_operation_type',
+  'sticky_conversation_goal',
+  'qualification_complete',
+  'crm_payload_ready',
+  'campaign_context',
+  'source_context',
+  'landing_slug',
+  'v3_primary_active',
+]);
+
+function shouldApplyLegacyPatch(key, baseValue, patchValue) {
+  if (patchValue === null || patchValue === undefined) {
+    if (MERGE_PROTECT_FROM_NULL.has(key) && baseValue != null && baseValue !== undefined) {
+      return false;
+    }
+    return true;
+  }
+  if (key === 'crm_execution_completed' && patchValue === false && baseValue === true) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Mezcla sesión V3 sobre ai_state persistido (prioridad V3; no borra CRM/comercial con null).
  * @param {object} legacyAiState
  * @param {import('../types/conversationState').ConversationState|null} v3State
  */
 function mergeLegacyAiStateWithV3(legacyAiState, v3State) {
-  const base = legacyAiState && typeof legacyAiState === 'object' ? legacyAiState : {};
+  const base = legacyAiState && typeof legacyAiState === 'object' ? { ...legacyAiState } : {};
   const patch = mapV3StateToLegacyAiState(v3State);
   if (!Object.keys(patch).length) return { ...base };
-  return { ...base, ...patch };
+  for (const [key, value] of Object.entries(patch)) {
+    if (shouldApplyLegacyPatch(key, base[key], value)) {
+      base[key] = value;
+    }
+  }
+  return base;
 }
 
 module.exports = {
