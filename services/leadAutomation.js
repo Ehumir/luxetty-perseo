@@ -3,6 +3,7 @@ const { normalizeText } = require('../utils/text');
 const { preferredZonesFromAiState } = require('../utils/preferredZoneSanitizer');
 const { getPerseoV3Config, isPhoneOnV3Allowlist } = require('../config/perseoV3Flags');
 const { resolveAssignmentDecision } = require('./assignmentDecision');
+const { generateLeadNotesSummaryOpenAI } = require('./leadNotesSummaryOpenAI');
 
 function log(logger, label, payload = {}) {
   const writer = logger && typeof logger.info === 'function' ? logger.info.bind(logger) : console.log;
@@ -1984,11 +1985,24 @@ async function createOrReuseLeadFromConversation({
 
     const conversationAssignedAgentProfileId = conversation?.assigned_agent_profile_id || null;
 
-    const detailedNotesSummary = buildDetailedNotesSummary({
+    const templateNotesSummary = buildDetailedNotesSummary({
       aiState,
       conversation,
       property,
       contactOwnerAssigned: hasContactOwnerAssignedAgent,
+    });
+    const detailedNotesSummary = await generateLeadNotesSummaryOpenAI({
+      supabase,
+      conversationId,
+      aiState,
+      conversation,
+      property,
+      referralContext:
+        aiState?.whatsapp_referral ||
+        aiState?.referral ||
+        aiState?.last_referral ||
+        null,
+      fallbackSummary: templateNotesSummary,
     });
 
     await saveConversationEvent(supabase, conversationId, 'lead_intent_detected', {
