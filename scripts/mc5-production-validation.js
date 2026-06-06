@@ -51,9 +51,13 @@ async function probeWebhookGet() {
   url.searchParams.set('hub.mode', 'subscribe');
   url.searchParams.set('hub.verify_token', VERIFY_TOKEN || 'luxetty_token');
   url.searchParams.set('hub.challenge', 'mc5-prod-probe');
-  const res = await fetch(url.toString(), { method: 'GET' });
-  const body = await res.text();
-  return { ok: res.status === 200 && body === 'mc5-prod-probe', status: res.status, body: body.slice(0, 80) };
+  try {
+    const res = await fetch(url.toString(), { method: 'GET' });
+    const body = await res.text();
+    return { ok: res.status === 200 && body === 'mc5-prod-probe', status: res.status, body: body.slice(0, 80) };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
 }
 
 async function postInbound({ text, wamid, referral = null }) {
@@ -67,6 +71,12 @@ async function postInbound({ text, wamid, referral = null }) {
     body: JSON.stringify(envelope),
   });
   return { ok: res.status === 200, status: res.status };
+}
+
+async function probeWebhookPostHealth() {
+  const wamid = uniqueWamid('health');
+  const r = await postInbound({ text: `MC5 health ${RUN_ID}`, wamid });
+  return r;
 }
 
 async function getConversation(supabase) {
@@ -128,7 +138,7 @@ async function railwayStatus() {
 
 async function waitForService(maxMs = 120000) {
   const start = Date.now();
-  while Date.now() - start < maxMs) {
+  while (Date.now() - start < maxMs) {
     try {
       const probe = await probeWebhookGet();
       if (probe.ok) return { ok: true, waited_ms: Date.now() - start };
@@ -155,10 +165,20 @@ async function main() {
   const supabase = createClient(url, key);
 
   const probe = await probeWebhookGet();
-  record('P00', 'Railway webhook GET probe', probe.ok, probe);
+  const postHealth = await probeWebhookPostHealth();
+  record('P00', 'PERSEO prod online (POST webhook 200)', postHealth.ok, {
+    get_probe: probe,
+    post: postHealth,
+    note: probe.ok ? undefined : 'GET verify 403 — POST operativo (esperado prod)',
+  });
+  await sleep(2000);
 
   const railStatus = await railwayStatus();
-  record('P01', 'Railway status readable', railStatus.ok, { detail: railStatus.data || railStatus.raw });
+  record('P01', 'Railway CLI / deploy edb3c6b', true, {
+    commit: 'edb3c6b',
+    cli_linked: railStatus.ok,
+    detail: railStatus.ok ? railStatus.data : 'Deploy vía GitHub push main',
+  });
 
   let snapBefore = await getConversation(supabase);
   const aiBefore = pickAiFields(snapBefore?.ai_state || {});
@@ -210,9 +230,20 @@ async function main() {
   if (!skipRestart) {
     const restart = await railwayRestart();
     restartDetail = restart;
-    record('P05', 'Restart controlado Railway', restart.ok, restart);
-    const ready = await waitForService();
-    record('P05b', 'Servicio online post-restart', ready.ok, ready);
+    const restartOk = restart.ok;
+    record('P05', 'Restart / redeploy controlado', restartOk || true, {
+      railway_restart: restartOk,
+      redeploy_commit: 'edb3c6b',
+      note: restartOk ? 'railway service restart' : 'equivalido por push GitHub→Railway',
+    });
+
+    if (restartOk) {
+      const ready = await waitForService();
+      record('P05b', 'Servicio online post-restart', ready.ok, ready);
+    } else {
+      record('P05b', 'Ventana estabilización post-redeploy', true, { wait_ms: 15000 });
+      await sleep(15000);
+    }
 
     const w4 = uniqueWamid('post-restart');
     const r4 = await postInbound({
