@@ -6,6 +6,8 @@ const assert = require('node:assert/strict');
 const {
   isPautaConversation,
   resolvePautaPropertyCrmContext,
+  resolvePropertyEntryV3Eligibility,
+  isPropertyEntryAutoPrimaryEnabled,
 } = require('../conversation/pautaDetection');
 
 test('isPautaConversation: campaign_context con property_code', () => {
@@ -44,4 +46,31 @@ test('resolvePautaPropertyCrmContext: demand genérico sin propiedad → false',
     location_text: 'San Pedro',
   });
   assert.equal(ctx.bypassEligible, false);
+});
+
+test('resolvePropertyEntryV3Eligibility: pauta con property_code → eligible', () => {
+  const r = resolvePropertyEntryV3Eligibility({
+    aiState: {
+      campaign_context: { property_code: 'LUX-A0453' },
+      property_code: 'LUX-A0453',
+      property_specific_intent: true,
+    },
+    text: 'Hola',
+  });
+  assert.equal(r.eligible, true);
+  assert.equal(r.reason, 'pauta_property');
+});
+
+test('resolvePropertyEntryV3Eligibility: genérico → not eligible', () => {
+  const r = resolvePropertyEntryV3Eligibility({ aiState: {}, text: 'Hola' });
+  assert.equal(r.eligible, false);
+});
+
+test('isPropertyEntryAutoPrimaryEnabled: flag true', () => {
+  const prev = process.env.PERSEO_V3_PROPERTY_ENTRY_AUTO_PRIMARY;
+  process.env.PERSEO_V3_PROPERTY_ENTRY_AUTO_PRIMARY = 'true';
+  delete require.cache[require.resolve('../conversation/pautaDetection')];
+  const mod = require('../conversation/pautaDetection');
+  assert.equal(mod.isPropertyEntryAutoPrimaryEnabled(), true);
+  process.env.PERSEO_V3_PROPERTY_ENTRY_AUTO_PRIMARY = prev;
 });

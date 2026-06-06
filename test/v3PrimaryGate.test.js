@@ -104,6 +104,33 @@ describe('evaluateV3PrimaryGate (F2 hotfix)', () => {
     const g = evaluateV3PrimaryGate({ phone: '5218119086196' });
     assert.equal(g.v3_primary_block_reason, 'v3_disabled');
   });
+
+  it('property entry bypass cuando flag ON y eligible (MC-6)', () => {
+    setupAllowlist();
+    process.env.PERSEO_V3_PROPERTY_ENTRY_AUTO_PRIMARY = 'true';
+    const { evaluateV3PrimaryGate } = load();
+    const g = evaluateV3PrimaryGate({
+      phone: '5219998887777',
+      propertyEntryEligible: true,
+      propertyEntryBypassReason: 'pauta_property',
+    });
+    assert.equal(g.allowlist_match, false);
+    assert.equal(g.v3_primary_allowed, true);
+    assert.equal(g.v3_primary_bypass_reason, 'pauta_property');
+    assert.equal(g.route, 'v3_primary');
+  });
+
+  it('property entry bypass OFF sin flag', () => {
+    setupAllowlist();
+    delete process.env.PERSEO_V3_PROPERTY_ENTRY_AUTO_PRIMARY;
+    const { evaluateV3PrimaryGate } = load();
+    const g = evaluateV3PrimaryGate({
+      phone: '5219998887777',
+      propertyEntryEligible: true,
+    });
+    assert.equal(g.v3_primary_block_reason, 'allowlist_no_match');
+    assert.equal(g.v3_primary_allowed, false);
+  });
 });
 
 describe('tryV3PrimaryReply (regresión async)', () => {
@@ -123,14 +150,13 @@ describe('tryV3PrimaryReply (regresión async)', () => {
     process.env = { ...saved };
   });
 
-  it('retorna objeto síncrono con handled (no Promise)', () => {
+  it('retorna resultado con handled cuando allowlist match (async; index usa await)', async () => {
     const { tryV3PrimaryReply } = require('../conversation/v3/core/v3InboundBridge');
-    const out = tryV3PrimaryReply({
+    const out = await tryV3PrimaryReply({
       conversationId: 'gate-sync-1',
       phone: '5218119086196',
       text: 'Hola',
     });
-    assert.notEqual(typeof out?.then, 'function', 'tryV3PrimaryReply no debe ser async sin await en index');
     assert.equal(out.handled, true);
     assert.equal(out.responseSource, 'v3_core_f2');
   });

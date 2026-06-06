@@ -1159,6 +1159,13 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
+      const { resolvePropertyEntryV3Eligibility } = require('./conversation/pautaDetection');
+      const propertyEntryV3 = resolvePropertyEntryV3Eligibility({
+        aiState: nextAiState,
+        text,
+        propertyId: property?.id || nextAiState.interested_property_id || null,
+      });
+
       const v3Try =
         metaLeadTurn.handled || propertyResolutionAmbiguous
           ? { handled: false }
@@ -1174,6 +1181,8 @@ app.post('/webhook', async (req, res) => {
               legacyHydration,
               persistedLegacyAiState: previousAiState,
               supabase,
+              propertyEntryEligible: propertyEntryV3.eligible === true,
+              propertyEntryBypassReason: propertyEntryV3.reason || null,
             });
       if (v3Try.handled) {
         v3PrimaryHandled = true;

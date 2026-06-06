@@ -94,10 +94,61 @@ function isPautaPropertyBypassEnabled() {
   return process.env.PERSEO_CRM_EXECUTE_PAUTA_PROPERTY_BYPASS !== 'false';
 }
 
+/**
+ * Elegibilidad V3 primary por entrada de propiedad/pauta (MC-6 #46) — sin expandir allowlist.
+ * @param {{ aiState?: object, text?: string, propertyId?: string|null }} input
+ */
+function resolvePropertyEntryV3Eligibility(input = {}) {
+  const aiState = input.aiState && typeof input.aiState === 'object' ? input.aiState : {};
+  const text = String(input.text || '');
+  const propertyId = input.propertyId != null ? input.propertyId : null;
+
+  const pautaCtx = resolvePautaPropertyCrmContext(aiState, { propertyId });
+  if (pautaCtx.bypassEligible) {
+    return {
+      eligible: true,
+      reason: 'pauta_property',
+      propertyCode: pautaCtx.propertyCode || null,
+    };
+  }
+
+  try {
+    const { isPropertyAdEntry } = require('./leadEntryPointRouter');
+    if (isPropertyAdEntry(text)) {
+      return {
+        eligible: true,
+        reason: 'property_ad_entry_text',
+        propertyCode: statePropertyCode(aiState) || null,
+      };
+    }
+  } catch (_e) {
+    /* optional in tests */
+  }
+
+  if (
+    propertyId &&
+    propertyIntentResolver.isPropertySpecificConversation(aiState)
+  ) {
+    return {
+      eligible: true,
+      reason: 'resolved_property_context',
+      propertyCode: statePropertyCode(aiState) || null,
+    };
+  }
+
+  return { eligible: false, reason: pautaCtx.reason || 'not_property_entry', propertyCode: null };
+}
+
+function isPropertyEntryAutoPrimaryEnabled() {
+  return process.env.PERSEO_V3_PROPERTY_ENTRY_AUTO_PRIMARY === 'true';
+}
+
 module.exports = {
   isPautaConversation,
   resolvePautaPropertyCrmContext,
+  resolvePropertyEntryV3Eligibility,
   isPautaPropertyBypassEnabled,
+  isPropertyEntryAutoPrimaryEnabled,
   campaignPropertyCode,
   statePropertyCode,
 };

@@ -46,7 +46,7 @@ function phonesEquivalent(inboundNorm, entryNorm) {
 
 /**
  * Diagnóstico explícito del gate V3 primary (F2 hotfix).
- * @param {{ phone: string, rawPhone?: string|null }} input
+ * @param {{ phone: string, rawPhone?: string|null, argosMode?: boolean, propertyEntryEligible?: boolean, propertyEntryBypassReason?: string|null }} input
  */
 function evaluateV3PrimaryGate(input) {
   const rawPhone = input?.rawPhone != null ? String(input.rawPhone) : String(input?.phone || '');
@@ -130,6 +130,19 @@ function evaluateV3PrimaryGate(input) {
   }
 
   if (!matchedEntry) {
+    if (
+      process.env.PERSEO_V3_PROPERTY_ENTRY_AUTO_PRIMARY === 'true' &&
+      input.propertyEntryEligible === true
+    ) {
+      return {
+        ...base,
+        allowlist_match: false,
+        v3_primary_allowed: true,
+        v3_primary_block_reason: null,
+        v3_primary_bypass_reason: input.propertyEntryBypassReason || 'property_entry',
+        route: 'v3_primary',
+      };
+    }
     return {
       ...base,
       allowlist_match: false,
@@ -169,6 +182,7 @@ function getPerseoV3Config() {
     crmDryRun: process.env.PERSEO_V3_CRM_DRY_RUN !== 'false',
     crmExecute: process.env.PERSEO_V3_CRM_EXECUTE === 'true',
     sessionDbReadthrough: process.env.PERSEO_V3_SESSION_DB_READTHROUGH !== 'false',
+    propertyEntryAutoPrimary: process.env.PERSEO_V3_PROPERTY_ENTRY_AUTO_PRIMARY === 'true',
     qaAllowlist: splitAllowlist(process.env.PERSEO_V3_QA_ALLOWLIST),
     logStructured: process.env.PERSEO_V3_LOG === 'true',
   };

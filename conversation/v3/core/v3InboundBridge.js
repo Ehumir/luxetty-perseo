@@ -44,6 +44,8 @@ async function finishV3PrimaryAttempt(input, gate, result) {
  *   media?: object|null,
  *   argosMode?: boolean,
  *   argosDeterministic?: boolean,
+ *   propertyEntryEligible?: boolean,
+ *   propertyEntryBypassReason?: string|null,
  * }} input
  */
 async function tryV3PrimaryReply(input) {
@@ -51,6 +53,8 @@ async function tryV3PrimaryReply(input) {
     phone: input.phone,
     rawPhone: input.rawPhone,
     argosMode: input.argosMode === true,
+    propertyEntryEligible: input.propertyEntryEligible === true,
+    propertyEntryBypassReason: input.propertyEntryBypassReason ?? null,
   });
 
   v3Log('v3_primary_gate', {
@@ -58,6 +62,7 @@ async function tryV3PrimaryReply(input) {
     allowlist_match: gate.allowlist_match,
     v3_primary_allowed: gate.v3_primary_allowed,
     v3_primary_block_reason: gate.v3_primary_block_reason,
+    v3_primary_bypass_reason: gate.v3_primary_bypass_reason || null,
     inbound_normalized: gate.inbound_normalized,
     allowlist_matched_entry: gate.allowlist_matched_entry || null,
   });

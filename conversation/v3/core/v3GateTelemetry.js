@@ -66,6 +66,7 @@ function buildV3PrimaryGatePayload({ gate, handled, resultExtras = {} }) {
     handled: v3Handled,
     route: gate.route ?? null,
     v3_primary_allowed: gate.v3_primary_allowed === true,
+    v3_primary_bypass_reason: gate.v3_primary_bypass_reason ?? null,
     response_source: resultExtras.responseSource ?? null,
     forced_handoff_reason: resultExtras.forcedHandoffReason ?? null,
     fallback: resultExtras.fallback === true,
