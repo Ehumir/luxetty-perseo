@@ -21,6 +21,7 @@
     "mc6:pauta": "node scripts/mc6-pauta-certification.js",
     "mc6:prod-validate": "node scripts/mc6-production-validation.js",
     "mc6:daily": "node scripts/mc6-daily-observability.js",
+    "mc6:eligibility": "node scripts/mc6-eligibility-analysis.js",
     "staging:query-v3-gate": "node scripts/staging-query-v3-gate.js",
     "gate:no-regression": "bash scripts/gate-no-regression.sh",
     "smoke:referral-persist": "node scripts/smoke-referral-persist.js",
