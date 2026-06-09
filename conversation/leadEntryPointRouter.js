@@ -42,6 +42,8 @@ function isPropertyAdEntry(text = '') {
   const advanceIntent = t.includes('quiero avanzar') && (t.includes('propiedad') || !!code);
   const advisorIntent =
     t.includes('vi la propiedad') ||
+    (t.includes('luxetty.com') && (t.includes('propiedad') || t.includes('tienes la') || !!code)) ||
+    (t.includes('tienes la propiedad') || t.includes('tienes una propiedad')) ||
     (t.includes('platicar') && (t.includes('propiedad') || !!code));
   const shareIntent =
     t.includes('comparto esta propiedad') ||

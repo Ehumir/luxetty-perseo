@@ -66,10 +66,37 @@ test('classifyEntryPoint: advisor landing', () => {
 
 test('classifyEntryPoint: share landing', () => {
   const m = router.classifyEntryPoint(
-    'Te comparto esta propiedad de Luxetty (LUX-A0473):\n\nCasa test\n$1',
+    'Te comparto esta propiedad de Luxetty LUX-A0473:\n\nCasa test\n$1',
     {}
   );
   assert.equal(m.entry_type, 'property_ad');
+});
+
+test('classifyEntryPoint: info landing canónico jun 2026', () => {
+  const m = router.classifyEntryPoint(
+    'Hola, me interesa la propiedad LUX-A0462 de Puerta de Hierro. ¿Me das más información?',
+    {}
+  );
+  assert.equal(m.entry_type, 'property_ad');
+  assert.equal(m.property_code, 'LUX-A0462');
+});
+
+test('classifyEntryPoint: advisor landing luxetty.com jun 2026', () => {
+  const m = router.classifyEntryPoint(
+    'Hola Jorge, vi en luxetty.com que tienes la propiedad LUX-A0462 en Puerta de Hierro, Monterrey. ¿Podemos agendar una visita?',
+    {}
+  );
+  assert.equal(m.entry_type, 'property_ad');
+  assert.equal(m.property_code, 'LUX-A0462');
+});
+
+test('classifyEntryPoint: reserve landing canónico', () => {
+  const m = router.classifyEntryPoint(
+    'Hola, quiero avanzar con la propiedad LUX-A0462 — RESIDENCIA ($6,600,000 MXN). ¿Cuál es el siguiente paso?',
+    {}
+  );
+  assert.equal(m.entry_type, 'property_ad');
+  assert.equal(m.property_code, 'LUX-A0462');
 });
 
 test('classifyEntryPoint: comparativa landing', () => {

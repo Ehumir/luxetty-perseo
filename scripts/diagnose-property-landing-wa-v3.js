@@ -35,13 +35,15 @@ const FOLLOW_UPS = [
   'Gracias',
 ];
 
+const ZONE = 'Puerta de Hierro';
+
 const CASES = [
-  { id: 'info', hasLux: true, opener: `Hola, me interesa la propiedad ${CODE} — ${TITLE} (${PRICE}). ¿Me puedes compartir disponibilidad?` },
+  { id: 'info', hasLux: true, opener: `Hola, me interesa la propiedad ${CODE} de ${ZONE}. ¿Me das más información?` },
   { id: 'visit', hasLux: true, opener: `Hola, me gustaría agendar una visita a la propiedad ${CODE} — ${TITLE} (${PRICE}).` },
   { id: 'reserve', hasLux: true, opener: `Hola, quiero avanzar con la propiedad ${CODE} — ${TITLE} (${PRICE}). ¿Cuál es el siguiente paso?` },
-  { id: 'advisor', hasLux: true, opener: `Hola Jorge, vi la propiedad ${CODE} — ${TITLE} (${PRICE}) y me gustaría platicar contigo.` },
-  { id: 'share', hasLux: true, opener: `Te comparto esta propiedad de Luxetty (${CODE}):\n\n${TITLE}\n${PRICE}` },
-  { id: 'share-url', hasLux: true, opener: `Te comparto esta propiedad de Luxetty (${CODE}):\n\n${TITLE}\n${PRICE}\n\n${URL}` },
+  { id: 'advisor', hasLux: true, opener: `Hola Jorge, vi en luxetty.com que tienes la propiedad ${CODE} en ${ZONE}, Monterrey. ¿Podemos agendar una visita?` },
+  { id: 'share', hasLux: true, opener: `Te comparto esta propiedad de Luxetty ${CODE}:\n\n${TITLE}\n${PRICE}` },
+  { id: 'share-url', hasLux: true, opener: `Te comparto esta propiedad de Luxetty ${CODE}:\n\n${TITLE}\n${PRICE}\n\n${URL}` },
   { id: 'comparison', hasLux: true, opener: `Hola, me gustaría recibir información comparativa sobre ${CODE} — ${TITLE} y opciones similares.` },
   { id: 'similar-no-lux', hasLux: false, opener: `Hola, me gustaría recibir información sobre ${TITLE} y opciones relacionadas.` },
   { id: 'sold-with-lux', hasLux: true, opener: `Hola, vi la propiedad ${CODE} "${TITLE}" que ya fue vendida. ¿Tienen opciones similares?` },
