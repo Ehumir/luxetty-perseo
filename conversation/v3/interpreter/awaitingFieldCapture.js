@@ -117,7 +117,7 @@ function tryResolveAwaitingFieldCapture(state, raw, text, patch, decision) {
   if (
     state.budget == null &&
     state.leadFlow === 'demand' &&
-    (field === 'budget' || field === 'full_name' || field === 'location_text') &&
+    field === 'budget' &&
     parseMoneyAmount(text) != null
   ) {
     const amount = parseMoneyAmount(text);

@@ -2,6 +2,7 @@
 
 const { cleanSpaces, normalizeText } = require('../utils/text');
 const { sanitizeLocationText, extractKnownZoneFromText } = require('./locationSanitizer');
+const { isPhoneLikeBudgetDigits } = require('../utils/phoneMoneyGuard');
 
 const PROPERTY_DESCRIPTION_MARKERS =
   /\b(terreno|industrial|hectarea|hectárea|m2|m²|metros|deslind|topograf|servicio|nave|bodega|fraccion|fracción|escritur|document)\b/i;
@@ -71,6 +72,13 @@ function sanitizeInboundSignals(signals = {}, prevState = {}) {
     } else {
       out.full_name = name;
     }
+  }
+
+  if (out.budget_max != null && isPhoneLikeBudgetDigits(out.budget_max)) {
+    out.budget_max = null;
+  }
+  if (out.budget_min != null && isPhoneLikeBudgetDigits(out.budget_min)) {
+    out.budget_min = null;
   }
 
   return out;

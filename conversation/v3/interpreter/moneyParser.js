@@ -1,6 +1,7 @@
 'use strict';
 
 const { normalizeText } = require('../../../utils/text');
+const { isPhoneLikeText } = require('../../../utils/phoneMoneyGuard');
 const { isConversationalFlexEnabled } = require('../../../config/perseoM405Flags');
 const { parseFlexMoneyAmount } = require('../../flexibility/slangLexicon');
 const { recordFlexApplied } = require('../../flexibility/flexTelemetry');
@@ -10,6 +11,8 @@ const { recordFlexApplied } = require('../../flexibility/flexTelemetry');
  * @returns {number|null}
  */
 function parseMoneyAmount(text) {
+  if (isPhoneLikeText(text)) return null;
+
   const flex = parseFlexMoneyAmount(text);
   if (flex?.amount != null) {
     if (isConversationalFlexEnabled()) {

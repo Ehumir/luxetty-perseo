@@ -279,6 +279,8 @@ function buildMetaLeadFormStatePatch(parsed, campaignContext, previousAiState = 
     meta_lead_form_flow: true,
     meta_lead_form_ack_sent: true,
     source_context: 'meta_lead_form',
+    budget_max: null,
+    budget_min: null,
     lead_flow: 'offer',
     operation_type: parsed.operation_type || 'sale',
     conversation_goal_locked: true,

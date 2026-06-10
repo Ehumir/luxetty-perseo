@@ -1,4 +1,10 @@
 const { normalizeText, cleanSpaces } = require('../utils/text');
+const {
+  isPhoneLikeText,
+  hasMoneyContext,
+  isPhoneLikeBudgetDigits,
+  stripPhoneLabeledSegments,
+} = require('../utils/phoneMoneyGuard');
 const { isUsefulContactName, isInvalidContactName } = require('../utils/helpers');
 const { detectIntent } = require('./intent');
 const { getDefaultAiState } = require('./aiState');
@@ -146,8 +152,11 @@ function extractBudgetCurrency(message) {
 }
 
 function extractMaxPrice(message) {
-  const text = normalizeText(message);
-  const raw = cleanSpaces(message || '');
+  if (isPhoneLikeText(message)) return null;
+
+  const strippedMessage = stripPhoneLabeledSegments(message);
+  const text = normalizeText(strippedMessage);
+  const raw = cleanSpaces(strippedMessage || '');
   const hasPropertyCode = !!normalizePropertyCodeFromText(raw);
 
   if (hasPropertyCode) {
@@ -193,7 +202,16 @@ function extractMaxPrice(message) {
 
   const numberMatch = text.match(/\$?\s*([\d,]{4,10})\s*(mxn|pesos|usd|dolares|dólares)?/i);
   if (numberMatch) {
-    return Number(numberMatch[1].replace(/,/g, ''));
+    const candidateDigits = numberMatch[1].replace(/,/g, '');
+    const matchIndex = text.indexOf(numberMatch[0]);
+    const contextWindow = text.slice(Math.max(0, matchIndex - 24), matchIndex + numberMatch[0].length + 24);
+    if (isPhoneLikeText(candidateDigits) || isPhoneLikeBudgetDigits(candidateDigits)) {
+      return null;
+    }
+    if (!hasMoneyContext(contextWindow) && candidateDigits.length >= 10) {
+      return null;
+    }
+    return Number(candidateDigits);
   }
 
   return null;
