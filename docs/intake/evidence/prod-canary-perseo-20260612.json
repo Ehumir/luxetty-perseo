@@ -1,0 +1,42 @@
+{
+  "run_date": "2026-06-12T18:06:47.431Z",
+  "environment": "production_canary",
+  "railway_service": "luxetty-perseo",
+  "deployment_id": "d5e58975-f77d-458e-b970-cd41520a7c04",
+  "flags": {
+    "PERSEO_APA_INTAKE_HYDRATION": "true",
+    "PERSEO_APA_INTAKE_WINDOW_HOURS": "48",
+    "PERSEO_V3_QA_ALLOWLIST": "5218181877351"
+  },
+  "qa_phone": "5218181877351",
+  "intake_id": "9a826100-fcda-4077-82f1-95b5a5eec228",
+  "lead_id": "8bfe46b6-b897-4291-a07a-afa76f917303",
+  "bridge_token": "bc74cdfc765e48c19aabee1a8c85344a",
+  "turn_summary": {
+    "handled": true,
+    "skipLegacyCrm": true,
+    "resolution": "bridge_token"
+  },
+  "intake_status": "bridged",
+  "leads_count_before": 4,
+  "leads_count_after": 4,
+  "checks": {
+    "rpc_success": true,
+    "hydration_handled": true,
+    "skip_legacy_crm": true,
+    "status_bridged": true,
+    "lead_id_stable": true,
+    "no_new_lead_rows": true,
+    "allowlist_event": true,
+    "skipped_not_allowlisted": false
+  },
+  "non_allowlisted_control": {
+    "phone": "5218119086196",
+    "handled": false,
+    "skipped_not_allowlisted": true,
+    "log_event": "apa_intake_skipped_not_allowlisted"
+  },
+  "pass": true,
+  "events": ["apa_intake_hydration_applied"],
+  "decision_pending": "Canary activo — solo 5218181877351. No activar VITE_APA_INTAKE_LAYER global."
+}

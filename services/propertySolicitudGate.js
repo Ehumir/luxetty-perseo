@@ -14,6 +14,33 @@ function isPropertyAdContext({ parsedSignals = {}, aiState = {}, propertyId = nu
   return leadEntryPointRouter.isPropertyAdEntry(text || '');
 }
 
+async function findRecentPropertySolicitudWithIntake(supabase, { normalizedPhone, propertyId }) {
+  try {
+    const intakeHydration = require('./intake/intakeHydration');
+    if (intakeHydration.isApaIntakeHydrationEnabledForPhone(normalizedPhone)) {
+      const intake = await intakeHydration.findRecentIntakeSubmission(supabase, {
+        normalizedPhone,
+        landingKey: 'property_demand',
+        propertyId,
+      });
+      if (intake && !intake.expired && intake.context?.lead_id) {
+        return {
+          id: intake.context.lead_id,
+          intake_id: intake.row.id,
+          source: 'intake_submissions',
+          campaign_metadata: { intake_answers: intake.context.answers || {} },
+        };
+      }
+    }
+  } catch (err) {
+    console.error('PROPERTY_SOLICITUD_INTAKE_DELEGATE_ERROR', {
+      error: String(err && err.message ? err.message : err),
+    });
+  }
+
+  return findRecentPropertySolicitud(supabase, { normalizedPhone, propertyId });
+}
+
 async function findRecentPropertySolicitud(supabase, { normalizedPhone, propertyId }) {
   if (!supabase || !normalizedPhone || !propertyId) return null;
 
@@ -82,17 +109,26 @@ async function evaluatePropertySolicitudGate({
     return { requiresCapture: false, leadId: existingLeadId };
   }
 
-  const solicitud = await findRecentPropertySolicitud(supabase, {
+  const solicitud = await findRecentPropertySolicitudWithIntake(supabase, {
     normalizedPhone,
     propertyId: resolvedPropertyId,
   });
 
   if (solicitud?.id) {
+    const statePatch = {
+      lead_id: solicitud.id,
+      property_solicitud_verified: true,
+    };
+    if (solicitud.intake_id) {
+      statePatch.intake_id = solicitud.intake_id;
+      statePatch.intake_source = 'property_demand';
+      statePatch.apa_intake_hydrated = true;
+    }
     return {
       requiresCapture: false,
       leadId: solicitud.id,
       solicitud,
-      statePatch: { lead_id: solicitud.id, property_solicitud_verified: true },
+      statePatch,
     };
   }
 
@@ -113,4 +149,5 @@ module.exports = {
   buildCaptureUrl,
   buildGateMessages,
   findRecentPropertySolicitud,
+  findRecentPropertySolicitudWithIntake,
 };

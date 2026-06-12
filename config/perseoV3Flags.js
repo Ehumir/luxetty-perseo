@@ -200,6 +200,23 @@ function isPhoneOnV3Allowlist(phone) {
   return evaluateV3PrimaryGate({ phone }).allowlist_match;
 }
 
+/** Match contra PERSEO_V3_QA_ALLOWLIST sin exigir PERSEO_V3_ENABLED (canary APA Intake). */
+function isPhoneOnPerseoQaAllowlist(phone) {
+  const cfg = getPerseoV3Config();
+  if (!cfg.qaAllowlist.length) return false;
+
+  const normalizedInbound = normalizeInboundPhoneForV3(phone);
+  if (!normalizedInbound) return false;
+
+  for (const entry of cfg.qaAllowlist) {
+    const entryNorm = normalizeAllowlistEntry(entry);
+    if (phonesEquivalent(normalizedInbound, entryNorm)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function shouldRouteInboundToV3Core(phone) {
   return evaluateV3PrimaryGate({ phone }).v3_primary_allowed;
 }
@@ -213,6 +230,7 @@ module.exports = {
   isV3HandoffEnabled,
   isSessionDbReadthroughEnabled,
   isPhoneOnV3Allowlist,
+  isPhoneOnPerseoQaAllowlist,
   shouldRouteInboundToV3Core,
   evaluateV3PrimaryGate,
   resolveInboundRoutingMode,

@@ -1186,6 +1186,40 @@ app.post('/webhook', async (req, res) => {
         logEvent('meta_lead_form_c1_ack', { conversation_id: conversationId });
       }
 
+      const { tryIntakeHydrationTurn } = require('./services/intake/intakeHydration');
+      let intakeHydrationTurn = { handled: false };
+      if (!metaLeadTurn.handled) {
+        intakeHydrationTurn = await tryIntakeHydrationTurn({
+          supabase,
+          phone: from,
+          text,
+          referral: previousAiState?.whatsapp_referral || null,
+          previousAiState,
+          parsedSignals,
+          property,
+          propertyId: property?.id || propertyId || nextAiState.interested_property_id || null,
+          logEvent,
+        });
+        if (intakeHydrationTurn.handled) {
+          Object.assign(nextAiState, intakeHydrationTurn.statePatch || {});
+          if (
+            intakeHydrationTurn.signalsPatch &&
+            typeof intakeHydrationTurn.signalsPatch === 'object'
+          ) {
+            Object.assign(parsedSignals, intakeHydrationTurn.signalsPatch);
+          }
+          if (intakeHydrationTurn.skipLegacyCrm) {
+            skipLegacyCrm = true;
+          }
+          logEvent('apa_intake_hydration_turn', {
+            conversation_id: conversationId,
+            intake_id: intakeHydrationTurn.intake_id || null,
+            resolution: intakeHydrationTurn.resolution || null,
+            skip_legacy_crm: !!intakeHydrationTurn.skipLegacyCrm,
+          });
+        }
+      }
+
       if (propertyResolutionAmbiguous && !nameFirstHandled) {
         reply = propertyInventoryService.buildPropertyDisambiguationReply(
           nextAiState.property_disambiguation_candidates
