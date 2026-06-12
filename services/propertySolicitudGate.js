@@ -1,0 +1,116 @@
+'use strict';
+
+const { normalizePhoneNumber } = require('../utils/helpers');
+const { cleanSpaces } = require('../utils/text');
+const leadEntryPointRouter = require('../conversation/leadEntryPointRouter');
+
+const DEFAULT_WINDOW_HOURS = Number(process.env.PERSEO_PROPERTY_SOLICITUD_WINDOW_HOURS || 48);
+const PUBLIC_SITE_URL = (process.env.PUBLIC_SITE_URL || process.env.LUXETTY_PUBLIC_URL || 'https://luxetty.com').replace(/\/$/, '');
+
+function isPropertyAdContext({ parsedSignals = {}, aiState = {}, propertyId = null, text = '' }) {
+  const entryType = parsedSignals.__entry_point_meta?.entry_type || aiState.entry_type || null;
+  if (entryType === 'property_ad') return true;
+  if (propertyId && (aiState.property_specific_intent || aiState.direct_property_reference)) return true;
+  return leadEntryPointRouter.isPropertyAdEntry(text || '');
+}
+
+async function findRecentPropertySolicitud(supabase, { normalizedPhone, propertyId }) {
+  if (!supabase || !normalizedPhone || !propertyId) return null;
+
+  const since = new Date(Date.now() - DEFAULT_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('leads')
+    .select('id, created_at, campaign_metadata, source')
+    .or(`phone.eq.${normalizedPhone},whatsapp.eq.${normalizedPhone}`)
+    .eq('interested_property_id', propertyId)
+    .eq('is_active', true)
+    .eq('is_archived', false)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error('PROPERTY_SOLICITUD_GATE_QUERY_ERROR', { error: error.message });
+    return null;
+  }
+
+  return Array.isArray(data) && data.length > 0 ? data[0] : null;
+}
+
+function buildCaptureUrl(property) {
+  const slug = cleanSpaces(String(property?.slug || property?.raw?.slug || ''));
+  if (!slug) return `${PUBLIC_SITE_URL}/propiedades`;
+  return `${PUBLIC_SITE_URL}/propiedad/${slug}?captura=1`;
+}
+
+function buildGateMessages(captureUrl) {
+  return [
+    'Antes de continuar necesito registrar tu solicitud para esta propiedad.',
+    `Completa el formulario aquí:\n${captureUrl}`,
+    'Cuando la envíes, escríbeme de nuevo y seguimos con gusto.',
+  ];
+}
+
+/**
+ * Gate elegante: property_ad sin Solicitud previa → mensaje + URL de captura.
+ * Con Solicitud reciente → continúa flujo normal.
+ */
+async function evaluatePropertySolicitudGate({
+  supabase,
+  phone,
+  parsedSignals = {},
+  aiState = {},
+  property = null,
+  propertyId = null,
+  conversationRow = null,
+  text = '',
+}) {
+  const normalizedPhone = normalizePhoneNumber(phone) || phone;
+  const resolvedPropertyId = propertyId || aiState.interested_property_id || null;
+
+  if (!isPropertyAdContext({ parsedSignals, aiState, propertyId: resolvedPropertyId, text })) {
+    return { requiresCapture: false, leadId: conversationRow?.lead_id || aiState.lead_id || null };
+  }
+
+  if (!resolvedPropertyId) {
+    return { requiresCapture: false, leadId: null };
+  }
+
+  const existingLeadId = conversationRow?.lead_id || aiState.lead_id || null;
+  if (existingLeadId) {
+    return { requiresCapture: false, leadId: existingLeadId };
+  }
+
+  const solicitud = await findRecentPropertySolicitud(supabase, {
+    normalizedPhone,
+    propertyId: resolvedPropertyId,
+  });
+
+  if (solicitud?.id) {
+    return {
+      requiresCapture: false,
+      leadId: solicitud.id,
+      solicitud,
+      statePatch: { lead_id: solicitud.id, property_solicitud_verified: true },
+    };
+  }
+
+  const captureUrl = buildCaptureUrl(property);
+  return {
+    requiresCapture: true,
+    messages: buildGateMessages(captureUrl),
+    captureUrl,
+    statePatch: {
+      property_solicitud_pending: true,
+      property_solicitud_capture_url: captureUrl,
+    },
+  };
+}
+
+module.exports = {
+  evaluatePropertySolicitudGate,
+  buildCaptureUrl,
+  buildGateMessages,
+  findRecentPropertySolicitud,
+};

@@ -1593,6 +1593,37 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
+    const propertySolicitudGate = require('./services/propertySolicitudGate');
+    const solicitudGate = await propertySolicitudGate.evaluatePropertySolicitudGate({
+      supabase,
+      phone: from,
+      parsedSignals,
+      aiState: nextAiState,
+      property,
+      propertyId,
+      conversationRow,
+      text,
+    });
+
+    if (solicitudGate.statePatch && typeof solicitudGate.statePatch === 'object') {
+      Object.assign(nextAiState, solicitudGate.statePatch);
+    }
+
+    if (solicitudGate.requiresCapture) {
+      reply = solicitudGate.messages;
+      responseSource = 'property_solicitud_gate';
+      skipLegacyCrm = true;
+      logEvent('property_solicitud_gate_applied', {
+        conversation_id: conversationId,
+        property_id: propertyId,
+        capture_url: solicitudGate.captureUrl || null,
+      });
+      await saveConversationEvent(conversationId, 'property_solicitud_gate', {
+        capture_url: solicitudGate.captureUrl || null,
+        property_id: propertyId,
+      });
+    }
+
     await saveConversationState(conversationId, nextAiState);
 
     if (nextAiState.handoff_summary && !previousAiState.handoff_summary) {
