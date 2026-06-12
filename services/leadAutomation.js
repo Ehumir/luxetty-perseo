@@ -4,7 +4,7 @@ const { preferredZonesFromAiState } = require('../utils/preferredZoneSanitizer')
 const { getPerseoV3Config, isPhoneOnV3Allowlist } = require('../config/perseoV3Flags');
 const { resolveAssignmentDecision } = require('./assignmentDecision');
 const { generateLeadNotesSummaryOpenAI } = require('./leadNotesSummaryOpenAI');
-const { emitLeadAssigned } = require('./notificationEmitter');
+const { emitLeadUnassigned, emitCrmError } = require('./notificationEmitter');
 
 function log(logger, label, payload = {}) {
   const writer = logger && typeof logger.info === 'function' ? logger.info.bind(logger) : console.log;
@@ -14,6 +14,14 @@ function log(logger, label, payload = {}) {
 function logWarn(logger, label, payload = {}) {
   const writer = logger && typeof logger.warn === 'function' ? logger.warn.bind(logger) : console.warn;
   writer(label, payload);
+}
+
+function notifyLeadUnassigned(supabase, ctx, logger) {
+  emitLeadUnassigned(
+    supabase,
+    ctx,
+    (type, payload) => log(logger, type, payload)
+  );
 }
 
 async function saveConversationEvent(supabase, conversationId, type, payload = {}) {
@@ -1299,6 +1307,12 @@ async function applyAgentAssignment({
       source: 'ai_agent',
     });
 
+    notifyLeadUnassigned(supabase, {
+      conversationId,
+      leadId,
+      reason: 'lead_assignment_update_failed',
+    }, logger);
+
     await createAssignmentAuditLog(supabase, {
       lead_id: leadId,
       conversation_id: conversationId,
@@ -1353,23 +1367,6 @@ async function applyAgentAssignment({
     strategy,
     reason,
   });
-
-  emitLeadAssigned(
-    supabase,
-    {
-      conversationId,
-      contactId: updatedLead?.contact_id || null,
-      leadId,
-      assignedAgentProfileId,
-      contactName: updatedLead?.full_name || null,
-      leadType: updatedLead?.lead_type || null,
-      operation: updatedLead?.interested_in_operation || null,
-      zoneOrProperty: Array.isArray(updatedLead?.preferred_zones)
-        ? updatedLead.preferred_zones[0]
-        : null,
-    },
-    (type, payload) => log(logger, type, payload)
-  );
 
   return {
     assignedAgentProfileId: assignedAgentProfileId,
@@ -1488,6 +1485,11 @@ async function assignLeadViaEngineOnly(supabase, leadId, conversationId, logger,
       reason: 'assignment_rpc_error',
       error: error.message,
     });
+    notifyLeadUnassigned(supabase, {
+      conversationId,
+      leadId,
+      reason: 'assignment_rpc_error',
+    }, logger);
     return {
       assignedAgentProfileId: null,
       assignmentResult: { success: false, reason: 'assignment_rpc_error', error: error.message },
@@ -1550,6 +1552,12 @@ async function assignLeadViaEngineOnly(supabase, leadId, conversationId, logger,
       source: 'ai_agent',
     });
 
+    notifyLeadUnassigned(supabase, {
+      conversationId,
+      leadId,
+      reason: 'fallback_assignment_failed',
+    }, logger);
+
     return {
       assignedAgentProfileId: null,
       assignmentResult: {
@@ -1565,6 +1573,12 @@ async function assignLeadViaEngineOnly(supabase, leadId, conversationId, logger,
     strategy: data?.strategy || null,
     source: 'ai_agent',
   });
+
+  notifyLeadUnassigned(supabase, {
+    conversationId,
+    leadId,
+    reason: 'no_assignment_available',
+  }, logger);
 
   await createAssignmentAuditLog(supabase, {
     lead_id: leadId,
@@ -1748,6 +1762,12 @@ async function assignLeadToContactOwner({
       error: error.message,
       source: 'contact_owner',
     });
+
+    notifyLeadUnassigned(supabase, {
+      conversationId,
+      leadId: lead.id,
+      reason: 'contact_owner_assignment_update_failed',
+    }, logger);
 
     return {
       assignedAgentProfileId: null,
@@ -2586,6 +2606,16 @@ async function createOrReuseLeadFromConversation({
       error: err?.message || String(err),
       source: 'ai_agent',
     });
+
+    emitCrmError(
+      supabase,
+      {
+        conversationId,
+        errorCode: 'lead_automation_error',
+        errorMessage: err?.message || String(err),
+      },
+      (type, payload) => logWarn(logger, type, payload)
+    );
 
     return {
       success: false,

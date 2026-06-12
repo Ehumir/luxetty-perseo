@@ -179,6 +179,7 @@ function emitOwnerOfferDetected(supabase, ctx, logFn) {
 }
 
 function emitLeadAssigned(supabase, ctx, logFn) {
+  // @deprecated P1B — asignaciones vía trg_emit_lead_assignment_apa en DB. Mantener 1 sprint rollback.
   const {
     conversationId,
     contactId,
@@ -219,12 +220,89 @@ function isOwnerOfferSignal(parsedSignals = {}, nextAiState = {}) {
   return false;
 }
 
+function emitLeadUnassigned(supabase, ctx, logFn) {
+  const { conversationId, contactId, leadId, reason, contactName, phone } = ctx;
+  if (!leadId) {
+    return Promise.resolve({ ok: false, reason: 'missing_lead_id' });
+  }
+  return emitNotificationEvent(
+    supabase,
+    {
+      eventType: 'lead_unassigned',
+      dedupeKey: buildDedupeKey('lead_unassigned', [leadId]),
+      conversationId,
+      contactId,
+      leadId,
+      payload: {
+        phone: phone || '',
+        contact_name_or_phone: contactName || phone || '',
+        reason: reason || 'lead_assignment_failed',
+      },
+      priority: 'critical',
+    },
+    logFn
+  );
+}
+
+function emitCrmError(supabase, ctx, logFn) {
+  const { conversationId, contactId, errorCode, errorMessage, phone, contactName } = ctx;
+  if (!conversationId) {
+    return Promise.resolve({ ok: false, reason: 'missing_conversation_id' });
+  }
+  const code = errorCode || 'crm_creation_failed';
+  return emitNotificationEvent(
+    supabase,
+    {
+      eventType: 'crm_error',
+      dedupeKey: buildDedupeKey('crm_error', [conversationId, code]),
+      conversationId,
+      contactId: contactId || null,
+      payload: {
+        phone: phone || '',
+        contact_name_or_phone: contactName || phone || '',
+        reason: code,
+        error: errorMessage || '',
+        error_detail: errorMessage || '',
+      },
+      priority: 'critical',
+    },
+    logFn
+  );
+}
+
+function emitHumanHandoffRequired(supabase, ctx, logFn) {
+  const { conversationId, contactId, reason, phone, contactName } = ctx;
+  if (!conversationId) {
+    return Promise.resolve({ ok: false, reason: 'missing_conversation_id' });
+  }
+  const handoffReason = reason || 'human_handoff_required';
+  return emitNotificationEvent(
+    supabase,
+    {
+      eventType: 'human_handoff_required',
+      dedupeKey: buildDedupeKey('human_handoff', [conversationId, handoffReason]),
+      conversationId,
+      contactId: contactId || null,
+      payload: {
+        phone: phone || '',
+        contact_name_or_phone: contactName || phone || '',
+        reason: handoffReason,
+      },
+      priority: 'high',
+    },
+    logFn
+  );
+}
+
 module.exports = {
   buildDedupeKey,
   emitNotificationEvent,
   emitInboundNewContact,
   emitOwnerOfferDetected,
   emitLeadAssigned,
+  emitLeadUnassigned,
+  emitCrmError,
+  emitHumanHandoffRequired,
   isOwnerOfferSignal,
   dispatchImmediate,
 };

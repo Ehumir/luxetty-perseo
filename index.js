@@ -25,6 +25,7 @@ const { createOrReuseLeadFromConversation, extractCampaignReferralContext } = re
 const {
   emitInboundNewContact,
   emitOwnerOfferDetected,
+  emitHumanHandoffRequired,
   isOwnerOfferSignal,
 } = require('./services/notificationEmitter');
 
@@ -1431,6 +1432,17 @@ app.post('/webhook', async (req, res) => {
         nameFirstHandled = true;
         responseSource = humanEsc.responseSource || 'wants_human_auto_escalation';
         logEvent('wants_human_auto_escalation', { conversation_id: conversationId });
+        emitHumanHandoffRequired(
+          supabase,
+          {
+            conversationId,
+            contactId: contact?.id || conversationRow?.contact_id || null,
+            phone: from,
+            contactName: contact?.full_name || waProfileName || from,
+            reason: humanEsc.reason || 'wants_human_auto_escalation',
+          },
+          logEvent
+        );
       }
       }
 
