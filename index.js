@@ -22,6 +22,11 @@ const { scheduleInboundMediaIngest } = require('./services/inboundMediaStorageIn
 const { saveConversationMessage, inboundMessageAlreadyProcessed } = require('./services/saveConversationMessage');
 const { ensureContactForConversationCore } = require('./services/contactProvisioning');
 const { createOrReuseLeadFromConversation, extractCampaignReferralContext } = require('./services/leadAutomation');
+const {
+  emitInboundNewContact,
+  emitOwnerOfferDetected,
+  isOwnerOfferSignal,
+} = require('./services/notificationEmitter');
 
 const { getDefaultAiState, normalizeAiState } = require('./conversation/aiState');
 const { processSprint1QaInbound, parseSprint1StrictCommand, isSprint1QaTesterPhone } = require('./conversation/qaSprint1Commands');
@@ -920,6 +925,19 @@ app.post('/webhook', async (req, res) => {
       has_valid_name: hasValidHumanName(contact, previousAiState),
     });
 
+    if (!contact) {
+      emitInboundNewContact(
+        supabase,
+        {
+          conversationId,
+          phone: from,
+          contactName: contact?.full_name || previousAiState?.contact_name || null,
+          messagePreview: text,
+        },
+        logEvent
+      );
+    }
+
     const inboundContext = { media: { type: message?.type || 'text' } };
     const slotSanitizer = require('./conversation/slotSanitizer');
     let parsedSignals = mergeSignalsWithMulti(
@@ -938,6 +956,27 @@ app.post('/webhook', async (req, res) => {
     let nextAiState = buildNextState(previousAiState, parsedSignals, changeType);
     Object.assign(nextAiState, contextualMemoryResolver.mergeContextualSignals(parsedSignals, previousAiState, nextAiState, text));
     Object.assign(nextAiState, leadEntryPointRouter.reassertEntryLeadFlow(nextAiState, parsedSignals.__entry_point_meta));
+
+    if (
+      isOwnerOfferSignal(parsedSignals, nextAiState) &&
+      !previousAiState?.__owner_offer_notified
+    ) {
+      nextAiState.__owner_offer_notified = true;
+      emitOwnerOfferDetected(
+        supabase,
+        {
+          conversationId,
+          phone: from,
+          contactId: contact?.id || conversationRow?.contact_id || null,
+          contactName: contact?.full_name || previousAiState?.contact_name || null,
+          entryType: parsedSignals.__entry_point_meta?.entry_type || 'seller_capture_ad',
+          intentSummary:
+            parsedSignals.__entry_point_meta?.campaign_type ||
+            'Captación / oferta de propietario',
+        },
+        logEvent
+      );
+    }
 
     let property = null;
     let propertyId = null;

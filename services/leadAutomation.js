@@ -4,6 +4,7 @@ const { preferredZonesFromAiState } = require('../utils/preferredZoneSanitizer')
 const { getPerseoV3Config, isPhoneOnV3Allowlist } = require('../config/perseoV3Flags');
 const { resolveAssignmentDecision } = require('./assignmentDecision');
 const { generateLeadNotesSummaryOpenAI } = require('./leadNotesSummaryOpenAI');
+const { emitLeadAssigned } = require('./notificationEmitter');
 
 function log(logger, label, payload = {}) {
   const writer = logger && typeof logger.info === 'function' ? logger.info.bind(logger) : console.log;
@@ -1352,6 +1353,23 @@ async function applyAgentAssignment({
     strategy,
     reason,
   });
+
+  emitLeadAssigned(
+    supabase,
+    {
+      conversationId,
+      contactId: updatedLead?.contact_id || null,
+      leadId,
+      assignedAgentProfileId,
+      contactName: updatedLead?.full_name || null,
+      leadType: updatedLead?.lead_type || null,
+      operation: updatedLead?.interested_in_operation || null,
+      zoneOrProperty: Array.isArray(updatedLead?.preferred_zones)
+        ? updatedLead.preferred_zones[0]
+        : null,
+    },
+    (type, payload) => log(logger, type, payload)
+  );
 
   return {
     assignedAgentProfileId: assignedAgentProfileId,
