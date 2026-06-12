@@ -15,10 +15,16 @@ function isApaIntakeHydrationEnabled() {
   return process.env.PERSEO_APA_INTAKE_HYDRATION === 'true';
 }
 
-/** Flag global ON + teléfono inbound en PERSEO_V3_QA_ALLOWLIST (canary prod). */
+/**
+ * Flag global ON. Con PERSEO_APA_INTAKE_ALLOWLIST_ONLY=true restringe a PERSEO_V3_QA_ALLOWLIST (canary).
+ * Producción global: flag OFF → hidrata todo tráfico real.
+ */
 function isApaIntakeHydrationEnabledForPhone(phone) {
   if (!isApaIntakeHydrationEnabled()) return false;
-  return isPhoneOnPerseoQaAllowlist(phone);
+  if (process.env.PERSEO_APA_INTAKE_ALLOWLIST_ONLY === 'true') {
+    return isPhoneOnPerseoQaAllowlist(phone);
+  }
+  return true;
 }
 
 function logApaIntakeSkippedNotAllowlisted(phone, logEvent) {
@@ -307,7 +313,7 @@ async function tryIntakeHydrationTurn({
     return { handled: false, disabled: true };
   }
 
-  if (!isPhoneOnPerseoQaAllowlist(phone)) {
+  if (!isApaIntakeHydrationEnabledForPhone(phone)) {
     logApaIntakeSkippedNotAllowlisted(phone, logEvent);
     return { handled: false, skipped_not_allowlisted: true };
   }

@@ -20,6 +20,7 @@ const PHONE_RAW = '528199971001';
 
 const PREV_FLAG = process.env.PERSEO_APA_INTAKE_HYDRATION;
 const PREV_ALLOWLIST = process.env.PERSEO_V3_QA_ALLOWLIST;
+const PREV_ALLOWLIST_ONLY = process.env.PERSEO_APA_INTAKE_ALLOWLIST_ONLY;
 const QA_ALLOWLIST = `${PHONE},5218181877351`;
 
 function recentIso(hoursAgo = 1) {
@@ -175,6 +176,7 @@ describe('intakeHydration', () => {
   beforeEach(() => {
     process.env.PERSEO_APA_INTAKE_HYDRATION = 'true';
     process.env.PERSEO_V3_QA_ALLOWLIST = QA_ALLOWLIST;
+    delete process.env.PERSEO_APA_INTAKE_ALLOWLIST_ONLY;
   });
 
   afterEach(() => {
@@ -182,6 +184,8 @@ describe('intakeHydration', () => {
     else process.env.PERSEO_APA_INTAKE_HYDRATION = PREV_FLAG;
     if (PREV_ALLOWLIST === undefined) delete process.env.PERSEO_V3_QA_ALLOWLIST;
     else process.env.PERSEO_V3_QA_ALLOWLIST = PREV_ALLOWLIST;
+    if (PREV_ALLOWLIST_ONLY === undefined) delete process.env.PERSEO_APA_INTAKE_ALLOWLIST_ONLY;
+    else process.env.PERSEO_APA_INTAKE_ALLOWLIST_ONLY = PREV_ALLOWLIST_ONLY;
   });
 
   it('flag off = no-op', async () => {
@@ -195,7 +199,8 @@ describe('intakeHydration', () => {
     assert.equal(turn.disabled, true);
   });
 
-  it('flag on pero teléfono fuera de allowlist = no-op legacy', async () => {
+  it('flag on pero teléfono fuera de allowlist = no-op legacy (canary only)', async () => {
+    process.env.PERSEO_APA_INTAKE_ALLOWLIST_ONLY = 'true';
     process.env.PERSEO_V3_QA_ALLOWLIST = '5218119086196';
     const events = [];
     const turn = await intakeHydration.tryIntakeHydrationTurn({
