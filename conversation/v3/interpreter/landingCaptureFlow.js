@@ -3,7 +3,7 @@
 const { normalizeText, cleanSpaces } = require('../../../utils/text');
 const { CONVERSATION_GOALS, CONVERSATION_STAGES, V3_INTENT, IDENTITY_STATES } = require('../types/constants');
 const { normalizeLocationFromUserText } = require('./locationNormalizer');
-const { extractLooseLocationPhrase } = require('./campaignIntake');
+const { extractLooseLocationPhrase, isDemandSearchInbound } = require('./campaignIntake');
 const { parsePropertyType } = require('./propertyTypeParser');
 const { isExplicitHumanRequest } = require('./objectionClassifier');
 const {
@@ -39,6 +39,7 @@ const REPLY_NOT_APPRAISAL =
 function matchesLandingCaptureInbound(input) {
   const text = normalizeText(String(input || ''));
   if (!text) return false;
+  if (isDemandSearchInbound(text)) return false;
 
   let score = 0;
   if (/prevaluaci[oó]n/.test(text)) score += 1;

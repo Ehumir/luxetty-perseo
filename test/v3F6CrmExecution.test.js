@@ -8,12 +8,16 @@ const PREV_CRM = process.env.PERSEO_V3_CRM_DRY_RUN;
 const PREV_V3 = process.env.PERSEO_V3_ENABLED;
 const PREV_EXECUTE = process.env.PERSEO_V3_CRM_EXECUTE;
 const PREV_ALLOWLIST = process.env.PERSEO_V3_QA_ALLOWLIST;
+const PREV_CRM_RUNTIME = process.env.PERSEO_CRM_RUNTIME_PERSISTENT_ENABLED;
+const PREV_CRM_WORKER_ASYNC = process.env.PERSEO_CRM_WORKER_ASYNC_ENABLED;
 
 before(() => {
   process.env.PERSEO_V3_HANDOFF_ENABLED = 'true';
   process.env.PERSEO_V3_CRM_DRY_RUN = 'true';
   process.env.PERSEO_V3_ENABLED = 'true';
   process.env.PERSEO_V3_QA_ALLOWLIST = '5218119086196';
+  process.env.PERSEO_CRM_RUNTIME_PERSISTENT_ENABLED = 'false';
+  process.env.PERSEO_CRM_WORKER_ASYNC_ENABLED = 'false';
 });
 
 after(() => {
@@ -27,6 +31,10 @@ after(() => {
   else process.env.PERSEO_V3_CRM_EXECUTE = PREV_EXECUTE;
   if (PREV_ALLOWLIST === undefined) delete process.env.PERSEO_V3_QA_ALLOWLIST;
   else process.env.PERSEO_V3_QA_ALLOWLIST = PREV_ALLOWLIST;
+  if (PREV_CRM_RUNTIME === undefined) delete process.env.PERSEO_CRM_RUNTIME_PERSISTENT_ENABLED;
+  else process.env.PERSEO_CRM_RUNTIME_PERSISTENT_ENABLED = PREV_CRM_RUNTIME;
+  if (PREV_CRM_WORKER_ASYNC === undefined) delete process.env.PERSEO_CRM_WORKER_ASYNC_ENABLED;
+  else process.env.PERSEO_CRM_WORKER_ASYNC_ENABLED = PREV_CRM_WORKER_ASYNC;
 });
 
 const { evaluateV3CrmExecutionGate } = require('../conversation/v3/crm/executionGate');

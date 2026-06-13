@@ -76,6 +76,14 @@ function matchesBuyOpenSearchPattern(t, raw) {
   if (/\bbusco\b/.test(t) && /\b(depa|depto|departamento)\b/.test(t) && !/\brenta\b/.test(t)) return true;
   if (/\bbusco\b/.test(t) && /\bcomprar\b/.test(t)) return true;
   if (/\b(?:quiero|necesito)\s+comprar\b/.test(t)) return true;
+  if (/\bme\s+interesa\s+comprar\b/.test(t)) return true;
+  if (
+    /\b(?:estoy\s+)?buscando\b/.test(t) &&
+    /\b(?:casa|depa|departamento|inmueble)\b/.test(t) &&
+    !/\b(?:vender|mi\s+)\b/.test(t)
+  ) {
+    return true;
+  }
   if (/\bbusco\b/.test(t) && /\ben\s+[a-záéíóúñ]/i.test(String(raw || ''))) return true;
   if (/\bbusco\b/.test(t) && /\balgo\b/.test(t)) return true;
   if (/\bbusco\b/.test(t) && parseMoneyAmount(raw) != null) return true;

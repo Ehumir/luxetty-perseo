@@ -63,7 +63,7 @@ describe('F3.2 BUY_PROPERTY open search', () => {
     assert.equal(r.state.conversationGoal, CONVERSATION_GOALS.BUY_PROPERTY);
     assert.match(String(r.state.locationText || ''), /Cumbres/i);
     assert.ok(
-      /presupuesto|nombre/i.test(String(r.reply)),
+      /presupuesto|nombre|llamas|llama/i.test(String(r.reply)),
       `reply debe pedir presupuesto o nombre: ${r.reply}`
     );
     assert.doesNotMatch(String(r.reply), /dime en una frase/i);

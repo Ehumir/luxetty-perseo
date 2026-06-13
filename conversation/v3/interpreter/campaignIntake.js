@@ -162,6 +162,32 @@ function mentionsRentDemand(normalizedText) {
   );
 }
 
+/**
+ * Búsqueda/demanda (compra o renta como cliente) — no debe activar landing de captación vendedor.
+ */
+function isDemandSearchInbound(text) {
+  const t = normalizeText(String(text || ''));
+  if (!t) return false;
+  if (mentionsRentDemand(t) && !/\b(?:mi\s+)?(?:casa|propiedad|inmueble)\b/.test(t)) return true;
+  if (
+    /\bbusco\b/.test(t) &&
+    /\b(?:casa|depa|depto|departamento|inmueble|propiedad)\b/.test(t) &&
+    !/\b(?:vender|rentar\s+mi|mi\s+casa|mi\s+propiedad|poner en)\b/.test(t)
+  ) {
+    return true;
+  }
+  if (
+    /\b(?:estoy\s+)?buscando\b/.test(t) &&
+    /\b(?:casa|depa|departamento|inmueble)\b/.test(t) &&
+    !/\b(?:vender|mi\s+)\b/.test(t)
+  ) {
+    return true;
+  }
+  if (/\bquiero\s+comprar\b/.test(t) || /\bme\s+interesa\s+comprar\b/.test(t)) return true;
+  if (/\bbusco\b/.test(t) && /\bcomprar\b/.test(t)) return true;
+  return false;
+}
+
 function isExplicitFlowSwitchToRentDemand(text) {
   const t = normalizeText(text);
   return (
@@ -215,6 +241,7 @@ module.exports = {
   extractLooseLocationPhrase,
   isThinGenericInbound,
   mentionsRentDemand,
+  isDemandSearchInbound,
   isRentOutOwnerPhrase,
   isExplicitFlowSwitchToRentDemand,
   isExplicitFlowSwitchToRentOut,
