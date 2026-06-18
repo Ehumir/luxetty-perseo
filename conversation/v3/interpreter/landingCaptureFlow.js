@@ -3,7 +3,13 @@
 const { normalizeText, cleanSpaces } = require('../../../utils/text');
 const { CONVERSATION_GOALS, CONVERSATION_STAGES, V3_INTENT, IDENTITY_STATES } = require('../types/constants');
 const { normalizeLocationFromUserText } = require('./locationNormalizer');
-const { extractLooseLocationPhrase, isDemandSearchInbound } = require('./campaignIntake');
+const {
+  extractLooseLocationPhrase,
+  isDemandSearchInbound,
+  isExplicitPropertyInquiryPhrase,
+} = require('./campaignIntake');
+const { extractPropertyListingCode } = require('./propertyListingCode');
+const { extractBridgeToken } = require('../../../services/intake/extractBridgeToken');
 const { parsePropertyType } = require('./propertyTypeParser');
 const { isExplicitHumanRequest } = require('./objectionClassifier');
 const {
@@ -34,12 +40,28 @@ const REPLY_NOT_APPRAISAL =
   'No. Es una prevaluación comercial inicial, no un avalúo bancario, fiscal, catastral ni pericial. Te ayuda a tener una primera referencia comercial antes de decidir vender o rentar.';
 
 /**
+ * Handoff post-formulario APA (property_demand) o consulta explícita por listing.
+ * No debe activar captación Cumbres aunque la zona diga "Cumbres".
+ * @param {string} input
+ */
+function isPropertyDemandHandoffInbound(input) {
+  const raw = String(input || '');
+  const text = normalizeText(raw);
+  if (!text) return false;
+  if (extractBridgeToken(raw)) return true;
+  if (extractPropertyListingCode(raw)) return true;
+  if (isExplicitPropertyInquiryPhrase(raw)) return true;
+  return false;
+}
+
+/**
  * @param {string} t normalized
  */
 function matchesLandingCaptureInbound(input) {
   const text = normalizeText(String(input || ''));
   if (!text) return false;
   if (isDemandSearchInbound(text)) return false;
+  if (isPropertyDemandHandoffInbound(input)) return false;
 
   let score = 0;
   if (/prevaluaci[oó]n/.test(text)) score += 1;
@@ -422,7 +444,7 @@ function tryInterpretLandingCapture(state, raw, t, patch, decision) {
     return { patch, decision };
   }
 
-  if (matchesLandingCaptureInbound(t)) {
+  if (matchesLandingCaptureInbound(raw)) {
     Object.assign(patch, buildLandingCaptureBootstrapPatch());
     decision.detectedIntent = V3_INTENT.LANDING_CAPTURE;
     decision.confidence = 0.94;
@@ -466,6 +488,7 @@ module.exports = {
   LANDING_CAPTURE_HANDOFF_REPLY,
   LANDING_CAPTURE_FALLBACK_REPLY,
   applyLandingCaptureHandoffState,
+  isPropertyDemandHandoffInbound,
   matchesLandingCaptureInbound,
   isLandingCaptureActive,
   tryInterpretLandingCapture,

@@ -205,4 +205,16 @@ describe('Sprint 2 — landing capture flow', () => {
     assert.equal(r.state.operationType, 'sale');
     assert.match(String(r.reply), /precio aproximado|rango/i);
   });
+
+  it('regresión: post-form property_demand LUX-A0474 Cumbres + intake no activa prevaluación', () => {
+    const cid = 's2-property-demand-cumbres';
+    clearV3Session(cid);
+    const msg =
+      'Hola, me interesa la propiedad LUX-A0474 de Cumbres San Agustín. ¿Me das más información? (Intención: Solicitar información) intake=24ac616aa979445fa07557483e88c16f';
+    assert.equal(matchesLandingCaptureInbound(msg), false);
+    const r = processV3Turn({ conversationId: cid, phone: '5218118026188', text: msg });
+    assert.notEqual(r.state.landingCaptureFlow, true);
+    assert.equal(r.state.propertyListingCode, 'LUX-A0474');
+    assert.doesNotMatch(String(r.reply), /prevaluaci[oó]n comercial/i);
+  });
 });
