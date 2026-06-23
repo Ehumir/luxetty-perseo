@@ -58,6 +58,8 @@ router.post('/simulate-turn', async (req, res) => {
       text: body.text,
       flags: body.flags || {},
       supabaseRaw: supabase,
+      referral: body.referral || null,
+      raw_payload: body.raw_payload || null,
     });
     if (result.error_code) {
       return res.status(409).json(result);

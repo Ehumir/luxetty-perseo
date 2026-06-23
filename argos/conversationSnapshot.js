@@ -82,6 +82,9 @@ function buildConversationSnapshot(v3State, legacyAiState = {}) {
     terminal_ack_close: v3State?.terminalAckClose === true || legacy.terminal_ack_close === true,
     handoff_completed_at: v3State?.handoffCompletedAt || legacy.handoff_completed_at || null,
     explicit_reopen: v3State?.explicitReopen === true || legacy.explicit_reopen === true,
+    inbound_source_type: legacy.inbound_source?.sourceType || null,
+    inbound_source_confidence: legacy.inbound_source?.confidence || null,
+    inbound_organic_reason: legacy.inbound_source?.organicReason || null,
   };
 }
 

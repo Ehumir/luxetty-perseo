@@ -22,6 +22,7 @@ const { scheduleInboundMediaIngest } = require('./services/inboundMediaStorageIn
 const { saveConversationMessage, inboundMessageAlreadyProcessed } = require('./services/saveConversationMessage');
 const { ensureContactForConversationCore } = require('./services/contactProvisioning');
 const { createOrReuseLeadFromConversation, extractCampaignReferralContext } = require('./services/leadAutomation');
+const { applyInboundSourceToAiState } = require('./conversation/inboundSourceClassifier');
 const {
   emitInboundNewContact,
   emitOwnerOfferDetected,
@@ -1669,6 +1670,13 @@ app.post('/webhook', async (req, res) => {
         property_id: propertyId,
       });
     }
+
+    nextAiState = applyInboundSourceToAiState(nextAiState, {
+      messageText: text,
+      aiState: previousAiState,
+      referral: previousAiState?.whatsapp_referral || null,
+      rawPayload: inboundRow?.raw_payload || req.body || {},
+    });
 
     await saveConversationState(conversationId, nextAiState);
 

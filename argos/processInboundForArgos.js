@@ -7,6 +7,7 @@ const { evaluateV3CrmExecutionGate } = require('../conversation/v3/crm/execution
 const { createArgosNoWriteSupabase } = require('./argosNoWriteSupabase');
 const { createArgosTrace, traceEvent, flushTrace } = require('./argosTrace');
 const { buildConversationSnapshot } = require('./conversationSnapshot');
+const { applyInboundSourceToAiState } = require('../conversation/inboundSourceClassifier');
 const { buildTechnicalPanel } = require('./technicalPanelBuilder');
 const { previewCrmPipeline } = require('./previewCrmPipeline');
 const { isDeterministicMode, applyArgosSimulationEnv } = require('./deterministicMode');
@@ -337,6 +338,14 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
       });
     }
   }
+
+  session.legacy_ai_state = applyInboundSourceToAiState(session.legacy_ai_state || {}, {
+    messageText: input.text,
+    aiState: session.legacy_ai_state || {},
+    referral: input.referral || null,
+    rawPayload: input.raw_payload || null,
+  });
+  updateSession(session_id, session);
 
   const conversation_snapshot = buildConversationSnapshot(v3State, session.legacy_ai_state);
   const technical_panel = buildTechnicalPanel({
