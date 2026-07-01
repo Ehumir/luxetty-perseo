@@ -240,8 +240,24 @@ function isMetaLeadFormStructuredInbound({
   previousAiState = {},
   parsedSignals = {},
 }) {
-  void campaignContext;
   void parsedSignals;
+
+  try {
+    const { isPropertyDemandMetaLeadForm } = require('./propertyPautaHandoff');
+    if (
+      isPropertyDemandMetaLeadForm({
+        text,
+        message,
+        campaignContext,
+        parsedSignals,
+        previousAiState,
+      })
+    ) {
+      return false;
+    }
+  } catch (_e) {
+    /* optional in isolated tests */
+  }
 
   if (previousAiState.meta_lead_form_ack_sent === true) return false;
   if (previousAiState.meta_lead_form_flow === true && previousAiState.handoff_sent === true) {
@@ -373,5 +389,6 @@ module.exports = {
   isMetaLeadFormStructuredInbound,
   expandCollapsedMetaFormText,
   parseLabeledFormFields,
+  mergeParsedLeadForm,
   tryMetaLeadFormCaptureTurn,
 };

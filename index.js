@@ -448,6 +448,11 @@ function buildConsultiveFallbackReply({
   const conversationNameOk = hasConversationCapturedFullName(aiState);
   const hasName = hasValidHumanName(contact, aiState);
 
+  const { isPropertyPautaHandoffThread, PROPERTY_PAUTA_HANDOFF_REPLY } = require('./conversation/propertyPautaHandoff');
+  if (isPropertyPautaHandoffThread(aiState)) {
+    return PROPERTY_PAUTA_HANDOFF_REPLY;
+  }
+
   if (propertyIntentResolver.isPropertySpecificConversation(aiState)) {
     return propertyIntentResolver.buildPropertyModeReply({
       text,
@@ -1171,14 +1176,36 @@ app.post('/webhook', async (req, res) => {
         }
       }
 
-      const { tryMetaLeadFormCaptureTurn } = require('./conversation/metaLeadFormCapture');
-      const metaLeadTurn = tryMetaLeadFormCaptureTurn({
+      const { tryPropertyPautaHandoffTurn } = require('./conversation/propertyPautaHandoff');
+      const propertyPautaTurn = tryPropertyPautaHandoffTurn({
         text,
         message,
         campaignContext,
         previousAiState,
         parsedSignals,
       });
+      if (propertyPautaTurn.handled) {
+        reply = propertyPautaTurn.reply;
+        Object.assign(nextAiState, propertyPautaTurn.statePatch || {});
+        Object.assign(parsedSignals, propertyPautaTurn.signalsPatch || {});
+        responseSource = propertyPautaTurn.responseSource || 'property_pauta_handoff';
+        nameFirstHandled = true;
+        logEvent('property_pauta_handoff_turn', {
+          conversation_id: conversationId,
+          source: responseSource,
+        });
+      }
+
+      const { tryMetaLeadFormCaptureTurn } = require('./conversation/metaLeadFormCapture');
+      const metaLeadTurn = propertyPautaTurn.handled
+        ? { handled: false }
+        : tryMetaLeadFormCaptureTurn({
+            text,
+            message,
+            campaignContext,
+            previousAiState,
+            parsedSignals,
+          });
       if (metaLeadTurn.handled) {
         reply = metaLeadTurn.reply;
         Object.assign(nextAiState, metaLeadTurn.statePatch || {});
@@ -1190,7 +1217,7 @@ app.post('/webhook', async (req, res) => {
 
       const { tryIntakeHydrationTurn } = require('./services/intake/intakeHydration');
       let intakeHydrationTurn = { handled: false };
-      if (!metaLeadTurn.handled) {
+      if (!metaLeadTurn.handled && !propertyPautaTurn.handled) {
         intakeHydrationTurn = await tryIntakeHydrationTurn({
           supabase,
           phone: from,
@@ -1242,7 +1269,7 @@ app.post('/webhook', async (req, res) => {
       });
 
       const v3Try =
-        metaLeadTurn.handled || propertyResolutionAmbiguous
+        propertyPautaTurn.handled || metaLeadTurn.handled || propertyResolutionAmbiguous
           ? { handled: false }
           : await v3InboundBridge.tryV3PrimaryReply({
               conversationId,

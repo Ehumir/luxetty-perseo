@@ -322,6 +322,14 @@ function applyFallbackStreakRecovery(reply, ctx = {}) {
     return { reply, patch };
   }
 
+  if (nextAiState?.property_pauta_handoff_sent === true) {
+    const { PROPERTY_PAUTA_HANDOFF_REPLY } = require('./propertyPautaHandoff');
+    return {
+      reply: PROPERTY_PAUTA_HANDOFF_REPLY,
+      patch: { ...patch, anti_loop_fallback_streak: 0 },
+    };
+  }
+
   const loc = cleanSpaces(String(nextAiState.location_text || ''));
   const flow = nextAiState.lead_flow || null;
   const t = normalizeText(text || '');
