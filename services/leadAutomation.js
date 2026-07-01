@@ -2264,7 +2264,7 @@ async function createOrReuseLeadFromConversation({
         phone: normalizedConversationPhone,
         whatsapp: conversation?.channel === 'whatsapp' ? normalizedConversationPhone : null,
         next_action: leadType === 'supply' ? 'Contactar propietario' : 'Contactar lead',
-        next_action_due_at: nowIso(),
+        next_action_due_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         // Sprint 5C: incluir assigned_agent_profile_id en el INSERT inicial para respetar
         // la regla ATENA de "lead sin assigned_agent_profile_id no debe existir".
         // Se usa el mejor valor disponible en este punto del flujo.

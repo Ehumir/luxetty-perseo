@@ -1471,6 +1471,10 @@ app.post('/webhook', async (req, res) => {
           },
           logEvent
         );
+        supabase
+          .rpc('ensure_handoff_followup_task', { p_conversation_id: conversationId })
+          .then(() => {})
+          .catch(() => {});
       }
       }
 
