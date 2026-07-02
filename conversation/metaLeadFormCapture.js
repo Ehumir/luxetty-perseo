@@ -16,10 +16,16 @@ const META_LEAD_FORM_ACK_REPLY =
 
 const META_FORM_COMPLETION_PHRASES = [
   'complete el formulario',
+  'completé el formulario',
+  'completo el formulario',
   'llene el formulario',
   'llene el form',
   'formulario y me gustaria obtener',
   'formulario y me gustaría obtener',
+  'filled out your form',
+  'filled out the form',
+  'completed the form',
+  'completed your form',
 ];
 
 function normalizeLabelKey(label) {
@@ -33,12 +39,14 @@ function normalizeLabelKey(label) {
 function matchLabelField(labelNorm) {
   if (!labelNorm) return null;
   if (/nombre completo|^nombre$|full name/.test(labelNorm)) return 'full_name';
-  if (/numero de telefono|telefono|celular|whatsapp|^phone$/.test(labelNorm)) return 'phone';
+  if (/numero de telefono|telefono|celular|whatsapp|phone number|^phone$/.test(labelNorm)) return 'phone';
   if (/en que colonia|colonia se encuentra|^colonia$|^zona$|ubicacion|sector/.test(labelNorm)) {
     return 'location_text';
   }
   if (/que tipo de propiedad|tipo de propiedad|^tipo$/.test(labelNorm)) return 'property_type_raw';
-  if (/que te gustaria hacer|gustaria hacer|objetivo|operacion/.test(labelNorm)) return 'operation_raw';
+  if (/que te gustaria hacer|gustaria hacer|objetivo|operacion|que deseas hacer|qu[eé] deseas hacer/.test(labelNorm)) {
+    return 'operation_raw';
+  }
   if (/decision sobre la venta|venta o renta/.test(labelNorm)) return 'sale_decision_raw';
   if (/cuanto tiempo|en cuanto tiempo|timeline/.test(labelNorm)) return 'timeline_raw';
   if (/cumbres.*garcia|zona poniente|esta en cumbres/.test(labelNorm)) return 'priority_zone_raw';
@@ -129,7 +137,7 @@ function expandCollapsedMetaFormText(text) {
   );
 
   expanded = expanded.replace(
-    /\s+(?=(?:Nombre(?:\s+completo)?|Colonia|Tipo de propiedad|Operaci[oó]n|T[eé]lefono|Email|Correo)\s*:)/gi,
+    /\s+(?=(?:Nombre(?:\s+completo)?|Full name|Phone number|Colonia|Tipo de propiedad|Operaci[oó]n|N[uú]mero de tel[eé]fono|T[eé]lefono|Email|Correo|E mail)\s*:)/gi,
     '\n',
   );
 

@@ -88,6 +88,48 @@ describe('property pauta handoff', () => {
     );
   });
 
+  it('detecta Meta Lead Form colapsado (cleanSpaces del webhook)', () => {
+    const { cleanSpaces } = require('../utils/text');
+    const collapsed = cleanSpaces(LAURO_FORM);
+
+    assert.equal(
+      isPropertyDemandMetaLeadForm({
+        text: collapsed,
+        message: { type: 'text' },
+        campaignContext: null,
+        previousAiState: {},
+        parsedSignals: {},
+      }),
+      true,
+    );
+
+    const turn = tryPropertyPautaHandoffTurn({
+      text: collapsed,
+      message: { type: 'text' },
+      campaignContext: null,
+      previousAiState: {},
+      parsedSignals: {},
+    });
+    assert.equal(turn.handled, true);
+    assert.equal(turn.reply, PROPERTY_PAUTA_HANDOFF_REPLY);
+  });
+
+  it('detecta Meta Lead Form en inglés (pauta demanda)', () => {
+    const englishForm =
+      'Hello! I filled out your form and would like to know more about your business. Email: montgzz11@gmail.com Full name: Aurora Castillo Phone number: +528120930143 ¿Qué deseas hacer?: Recibir más información';
+
+    assert.equal(
+      isPropertyDemandMetaLeadForm({
+        text: englishForm,
+        message: { type: 'text' },
+        campaignContext: null,
+        previousAiState: {},
+        parsedSignals: {},
+      }),
+      true,
+    );
+  });
+
   it('no intercepta Meta Lead Form de captación propietarios (C1)', () => {
     const sellerForm = `¡Hola! Completé el formulario y me gustaría obtener más información sobre tu negocio.
 • nombre_completo: Javier Velázquez

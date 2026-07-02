@@ -62,7 +62,7 @@ const { executeV3CrmIfEligible } = require('./conversation/v3/crm/crmExecutor');
 const { setSession, getSession } = require('./conversation/v3/core/sessionStore');
 const { sanitizeV3PrimaryLegacyAiState } = require('./conversation/v3/state/sanitizeV3PrimaryLegacyAiState');
 
-const { normalizeText, cleanSpaces } = require('./utils/text');
+const { normalizeText, cleanSpaces, normalizeMultilineText } = require('./utils/text');
 const {
   nowIso,
   safeJsonStringify,
@@ -238,7 +238,7 @@ function extractFromPhone(message) {
 
 function extractTextFromInbound(message) {
   const type = message?.type || null;
-  if (type === 'text') return cleanSpaces(message?.text?.body || '');
+  if (type === 'text') return normalizeMultilineText(message?.text?.body || '');
   if (type === 'button') return cleanSpaces(message?.button?.text || '');
   if (type === 'interactive') {
     const i = message?.interactive || {};

@@ -33,6 +33,15 @@ function normalizeOperationRaw(value) {
   return normalizeText(String(value || '')).replace(/[^\w\sáéíóúñ]/gi, ' ');
 }
 
+function hasMetaPropertyDemandFormBagSignals(raw) {
+  const bag = normalizeText(String(raw || ''));
+  if (!isMetaLeadFormCompletionText(raw)) return false;
+  if (!/[\w.+-]+@[\w-]+\.[\w.-]+/.test(String(raw || ''))) return false;
+  if (DEMAND_FORM_ACTION_PATTERNS.some((re) => re.test(bag))) return true;
+  if (/que deseas hacer|full name|phone number/.test(bag)) return true;
+  return false;
+}
+
 function isPropertyDemandMetaLeadForm({ text, message, campaignContext, parsedSignals = {}, previousAiState = {} }) {
   void message;
   void parsedSignals;
@@ -43,7 +52,7 @@ function isPropertyDemandMetaLeadForm({ text, message, campaignContext, parsedSi
 
   const labeled = parseLabeledFormFields(raw);
   const fieldCount = Object.keys(labeled).length;
-  if (fieldCount < 2) return false;
+  if (fieldCount < 2 && !hasMetaPropertyDemandFormBagSignals(raw)) return false;
 
   const camp =
     campaignContext && typeof campaignContext === 'object'
