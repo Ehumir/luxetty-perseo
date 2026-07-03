@@ -3,6 +3,26 @@ const { normalizeAiState } = require('./aiState');
 const { getNextStep } = require('./nextStep');
 const { getPlaybookForIntent } = require('./playbooks');
 
+/** Señales explícitas de captación/venta — bloquean inferencia demand por zona ("en garcía"). */
+function hasExplicitSellerKeywords(text = '') {
+  const t = normalizeText(String(text || ''));
+  if (!t) return false;
+  return (
+    /\bvender\b/.test(t) ||
+    /\bvendo\b/.test(t) ||
+    t === 'venta' ||
+    t.startsWith('venta ') ||
+    t.endsWith(' venta') ||
+    t.includes(' promover') ||
+    t.startsWith('promover') ||
+    t.includes('captacion') ||
+    t.includes('captación') ||
+    t.includes('valuar') ||
+    t.includes('valuacion') ||
+    t.includes('valuación')
+  );
+}
+
 function detectIntent(message, prevState = null) {
   const text = normalizeText(message);
   const prev = normalizeAiState(prevState);
@@ -32,10 +52,26 @@ function detectIntent(message, prevState = null) {
     text.includes('vendo mi propiedad') ||
     text.includes('venta mi casa') ||
     text.includes('venta mi propiedad') ||
-    text.includes('necesito vender mi');
+    text.includes('necesito vender mi') ||
+    text.includes('vender una propiedad') ||
+    text.includes('vender una casa') ||
+    text.includes('vender un departamento') ||
+    text.includes('vender un depa') ||
+    text.includes('vender un terreno') ||
+    (/\bvender\b/.test(text) &&
+      (text.includes('propiedad') ||
+        text.includes('casa') ||
+        text.includes('depa') ||
+        text.includes('departamento') ||
+        text.includes('terreno')));
 
   const wantsSellerGeneric =
     text.includes('quiero vender una propiedad') ||
+    text.includes('promover una propiedad') ||
+    text.includes('promover mi propiedad') ||
+    text.includes('informacion para promover') ||
+    text.includes('información para promover') ||
+    text.includes('info para promover') ||
     text.includes('quiero informacion') ||
     text.includes('quiero información') ||
     text.includes('compran terrenos') ||
@@ -174,18 +210,21 @@ function detectIntent(message, prevState = null) {
     leadType = 'offer';
   }
 
-  if (!leadType && implicitDemand) {
+  if (!leadType && implicitDemand && !hasExplicitSellerKeywords(text)) {
     leadType = 'demand';
   }
 
-  if (!leadType && hasPriceExpressions && (
-    text.includes('casa') ||
-    text.includes('casas') ||
-    text.includes('depa') ||
-    text.includes('departamento') ||
-    text.includes('terreno') ||
-    text.includes('propiedad')
-  )) {
+  if (
+    !leadType &&
+    !hasExplicitSellerKeywords(text) &&
+    hasPriceExpressions &&
+    (text.includes('casa') ||
+      text.includes('casas') ||
+      text.includes('depa') ||
+      text.includes('departamento') ||
+      text.includes('terreno') ||
+      text.includes('propiedad'))
+  ) {
     leadType = 'demand';
   }
 
@@ -217,4 +256,5 @@ function detectIntent(message, prevState = null) {
 
 module.exports = {
   detectIntent,
+  hasExplicitSellerKeywords,
 };

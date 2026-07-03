@@ -80,4 +80,52 @@ describe('R0 P0.1.2 context continuity', () => {
     assert.doesNotMatch(String(r), /búsqueda|buscar casa/i);
     assert.match(String(r), /venta|Jorge/i);
   });
+
+  it('regresión Evelin: vender en García + proceso no pide presupuesto de compra', () => {
+    const { parseMessageSignals } = require('../conversation/parsers');
+    const { buildNextState, detectStateChange } = require('../conversation/stateUpdater');
+    const { mergeContextualSignals, substituteForbiddenGenericDemandReply } = require('../conversation/contextualMemoryResolver');
+
+    const msgs = [
+      'Buenas noches me comparten información para promover una propiedad',
+      'Vender una propiedad ubicada en garcia por la reserva',
+      'Cual es el proceso',
+    ];
+    let prev = { ...getDefaultAiState() };
+    let lastReply = '';
+    for (const m of msgs) {
+      let sig = parseMessageSignals(m, prev);
+      sig = r0.applyR0StickySignalsGuard(prev, sig, m);
+      const ct = detectStateChange(prev, sig);
+      let next = buildNextState(prev, sig, ct);
+      Object.assign(next, mergeContextualSignals(sig, prev, next, m));
+      let reply = idx.buildConsultiveFallbackReply({
+        text: m,
+        signals: sig,
+        aiState: next,
+        contact: null,
+        waProfileName: null,
+      });
+      const fbLoop = require('../conversation/antiLoopGuardrails').applyFallbackStreakRecovery(reply, {
+        nextAiState: next,
+        text: m,
+        contact: null,
+        waProfileName: null,
+      });
+      reply = fbLoop.reply;
+      const sub = substituteForbiddenGenericDemandReply(reply, {
+        text: m,
+        aiState: next,
+        hasValidName: false,
+        matchedProperties: [],
+      });
+      lastReply = String(sub.messages);
+      prev = next;
+    }
+
+    assert.equal(prev.lead_flow, 'offer');
+    assert.equal(prev.location_text, 'García');
+    assert.doesNotMatch(lastReply, /búsqueda|presupuesto aproximado|buscar casa/i);
+    assert.match(lastReply, /proceso|prevaluaci|venta/i);
+  });
 });

@@ -500,7 +500,7 @@ function buildConsultiveFallbackReply({
     return `Claro, te puedo orientar con la venta.${zoneAsk}`;
   }
 
-  if ((signals?.lead_flow === 'demand' || t.includes('busco') || t.includes('comprar') || t.includes('rentar')) && loc) {
+  if ((signals?.lead_flow === 'demand' || t.includes('busco') || t.includes('comprar') || t.includes('rentar')) && loc && !r0ContextContinuity.isR0StickySaleCaptureThread(aiState)) {
     const hasBudget = aiState?.budget_max != null && Number.isFinite(Number(aiState.budget_max));
     if (hasBudget) {
       if (hasName) {
@@ -550,11 +550,20 @@ function consultiveFallbackAwaitingFieldPatch(reply, { signals, aiState, text })
     t.includes('vender') ||
     t.includes('venta') ||
     t.includes('valu');
-  if (!offerish || loc) return {};
-  if (/colonia|municipio|zona.*propiedad|en qué zona|en que zona/i.test(m)) {
-    return { awaiting_field: 'location_text' };
+  const patch = {};
+  if (offerish) {
+    patch.lead_flow = 'offer';
+    patch.intent_type = 'supply';
+    if (!signals?.operation_type && !aiState?.operation_type) {
+      patch.operation_type = 'sale';
+    }
   }
-  return {};
+  if (!offerish) return patch;
+  if (loc) return patch;
+  if (/colonia|municipio|zona.*propiedad|en qué zona|en que zona/i.test(m)) {
+    patch.awaiting_field = 'location_text';
+  }
+  return patch;
 }
 
 async function saveConversationState(conversationId, nextState) {

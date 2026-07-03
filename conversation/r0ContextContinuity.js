@@ -76,6 +76,19 @@ function applyR0StickySignalsGuard(previousAiState = {}, parsedSignals = {}, inb
   return sig;
 }
 
+function isSaleProcessQuestion(text = '') {
+  const t = normalizeText(String(text || ''));
+  if (!t) return false;
+  return (
+    t.includes('cual es el proceso') ||
+    t.includes('cuál es el proceso') ||
+    t.includes('como es el proceso') ||
+    t.includes('cómo es el proceso') ||
+    (t.includes('proceso') &&
+      (t.includes('cual') || t.includes('cuál') || t.includes('como') || t.includes('cómo')))
+  );
+}
+
 /**
  * Fallback consultivo cuando el hilo ya es venta/captación y el mensaje no es cambio explícito a demanda.
  */
@@ -91,6 +104,14 @@ function buildSaleCaptiveContinuityReply({ text = '', aiState = {}, loc = '', ha
     st.expected_price != null && Number.isFinite(Number(st.expected_price))
       ? Number(st.expected_price)
       : null;
+
+  if (isSaleProcessQuestion(text)) {
+    const z = zone ? ` en ${zone}` : '';
+    const tail = hasValidHumanName
+      ? ' ¿Te gustaría que un asesor te contacte para revisar tu propiedad?'
+      : ' Para orientarte bien, ¿me compartes tu nombre?';
+    return `El proceso de venta con Luxetty empieza con una prevaluación comercial sin costo: revisamos tu propiedad${z}, te orientamos sobre estrategia y, si te interesa, un asesor te acompaña en publicación y negociación.${tail}`.trim();
+  }
 
   if (!t || t === 'si' || t === 'sí' || t === 'ok' || t === 'vale' || t === 'continuar' || t === 'sigue') {
     if (hasType && hasOccupancy && zone) {
@@ -159,4 +180,5 @@ module.exports = {
   explicitDemandSearchIntent,
   applyR0StickySignalsGuard,
   buildSaleCaptiveContinuityReply,
+  isSaleProcessQuestion,
 };

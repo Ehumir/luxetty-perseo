@@ -333,6 +333,15 @@ function buildContextualOfferCaptureReply(context = {}) {
   const typeLabel = propertyTypeLabel && propertyTypeLabel !== 'null' ? propertyTypeLabel : 'propiedad';
   const wantsOptions = isOptionsRequestText(text);
   const priceOrValueMention = t.includes('precio') || t.includes('cuesta') || t.includes('valu');
+  const { isSaleProcessQuestion } = require('./r0ContextContinuity');
+
+  if (isSaleProcessQuestion(text)) {
+    const tail = hasValidName
+      ? ' ¿Te gustaría que un asesor te contacte para revisar tu propiedad?'
+      : ' Para orientarte bien, ¿me compartes tu nombre?';
+    const z = loc ? ` en ${loc}` : '';
+    return `El proceso de venta con Luxetty empieza con una prevaluación comercial sin costo: revisamos tu propiedad${z}, te orientamos sobre estrategia y, si te interesa, un asesor te acompaña en publicación y negociación.${tail}`.trim();
+  }
 
   if (wantsOptions && loc) {
     return `En captación/venta no manejo un listado de opciones para comprar como en una búsqueda de comprador. Sí puedo ayudarte a ordenar tu ${typeLabel} en ${loc} y canalizar a un asesor para estrategia y valuación sin prometer inventario. ¿Prefieres partir de motivación de venta o de datos del inmueble?`;
