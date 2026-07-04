@@ -256,6 +256,23 @@ function classifyEntryPoint(text = '', aiState = {}) {
     return { ...base, entry_type: 'buyer_search', lead_flow: 'demand' };
   }
 
+  // Meta / Facebook / Instagram general (no buyer_search)
+  try {
+    const { isMetaGeneralEntryText } = require('./conversationPriorityResolver');
+    if (isMetaGeneralEntryText(text)) {
+      return {
+        ...base,
+        entry_type: 'meta_general_entry',
+        lead_flow: null,
+        requires_name: false,
+        must_present_assistant: true,
+        next_missing_field: null,
+      };
+    }
+  } catch {
+    /* optional */
+  }
+
   return base;
 }
 
@@ -348,6 +365,10 @@ Para registrarte bien y canalizarte con un asesor, ¿me compartes tu nombre?`.tr
     return `Hola, soy el asistente de Luxetty. Con gusto te ayudo. Ya ubiqué la propiedad ${code}${zonePhrase}.${mid ? ` ${mid}` : ''}
 
 Para registrarte bien y canalizarte con un asesor, ¿me compartes tu nombre?${buildPublicUrlLine(property)}`.trim();
+  }
+
+  if (entry.entry_type === 'meta_general_entry') {
+    return 'Gracias por escribirnos. ¿Vienes por alguna propiedad en particular o prefieres hablar con un asesor?';
   }
 
   if (entry.entry_type === 'seller_capture_ad') {

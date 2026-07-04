@@ -51,7 +51,7 @@ describe('antiLoopGuardrails (P0.1)', () => {
     assert.equal(r1.patch.anti_loop_fallback_streak, 1);
   });
 
-  it('applyFallbackStreakRecovery sí escala si el usuario repite el mismo saludo y el bucket sigue igual', () => {
+  it('applyFallbackStreakRecovery no se disculpa en saludo (apertura humana)', () => {
     const next = {
       ...getDefaultAiState(),
       anti_loop_last_fallback_bucket: 'generic_help',
@@ -61,6 +61,23 @@ describe('antiLoopGuardrails (P0.1)', () => {
     const r1 = antiLoop.applyFallbackStreakRecovery('Hola, claro. Te puedo ayudar. Dime en una frase qué necesitas y lo revisamos.', {
       nextAiState: next,
       text: 'hola',
+      contact: null,
+      waProfileName: null,
+    });
+    assert.doesNotMatch(String(r1.reply), /Perdona si se sintió repetido/i);
+    assert.equal(r1.patch.anti_loop_fallback_streak, 1);
+  });
+
+  it('applyFallbackStreakRecovery sí escala si el usuario repite el mismo inbound no-apertura', () => {
+    const next = {
+      ...getDefaultAiState(),
+      anti_loop_last_fallback_bucket: 'generic_help',
+      anti_loop_fallback_streak: 1,
+      anti_loop_last_inbound_short_intent: 'other',
+    };
+    const r1 = antiLoop.applyFallbackStreakRecovery('Claro, te ayudo. Dime un poco más de lo que buscas y te oriento.', {
+      nextAiState: next,
+      text: 'necesito ayuda con algo',
       contact: null,
       waProfileName: null,
     });

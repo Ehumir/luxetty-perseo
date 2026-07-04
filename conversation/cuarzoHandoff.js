@@ -4,10 +4,23 @@
  * Cuarzo V1 — handoff operativo con resumen para agente humano (ATENA solo lectura).
  */
 
-const { cleanSpaces } = require('../utils/text');
+const { cleanSpaces, normalizeText } = require('../utils/text');
 const { buildFinalHandoffReply } = require('./responseBuilder');
 const { detectConversationalFrustration } = require('./antiLoopGuardrails');
 const { isPositiveHandoffAck, isShortPostCloseAck } = require('./v3/interpreter/objectionClassifier');
+
+function isBotRejectionTextLocal(text = '') {
+  const t = normalizeText(String(text || ''));
+  return (
+    t.includes('no maquina') ||
+    t.includes('no máquina') ||
+    t.includes('no bot') ||
+    t.includes('no robot') ||
+    t.includes('nada de bot') ||
+    t.includes('nada de maquina') ||
+    t.includes('nada de máquina')
+  );
+}
 
 const HANDOFF_REASON_LABELS = {
   frustration: 'Frustración o repetición detectada',
@@ -93,35 +106,85 @@ function buildStandardHandoffStatePatch(summary, extra = {}) {
 }
 
 /**
- * Tras handoff: silencio comercial o ACK corto (Cuarzo P0-A).
+ * Tras handoff: ACK corto una vez, hold una vez, luego silencio (modo HUMAN).
  */
 function resolvePostHandoffTurn({ previousAiState = {}, nextAiState = {}, text = '' } = {}) {
   const merged = { ...previousAiState, ...nextAiState };
   if (!merged.handoff_sent) return { handled: false };
+
+  const conversationMode = require('./conversationMode');
 
   const { shouldExplicitlyReopenConversation } = require('./conversationReopenPolicy');
   if (shouldExplicitlyReopenConversation(text, merged)) {
     return { handled: false };
   }
 
+  // Rechazo a bot / insistencia en humano: silencio total
+  if (isBotRejectionTextLocal(text)) {
+    return {
+      handled: true,
+      reply: null,
+      skipSend: true,
+      reason: 'bot_rejection_silence',
+      statePatch: {
+        ...conversationMode.patchForHumanHandoffSent({
+          post_handoff_hold_sent: true,
+          terminal_ack_close: true,
+          awaiting_field: null,
+        }),
+      },
+      responseSource: 'human_mode_silence',
+    };
+  }
+
   if (isPositiveHandoffAck(text) || isShortPostCloseAck(text)) {
+    if (merged.terminal_ack_close || merged.post_handoff_hold_sent) {
+      return {
+        handled: true,
+        reply: null,
+        skipSend: true,
+        reason: 'post_handoff_silence',
+        statePatch: conversationMode.patchForHumanHandoffSent({ awaiting_field: null }),
+        responseSource: 'human_mode_silence',
+      };
+    }
     const fn = merged.full_name ? String(merged.full_name).split(/\s+/)[0] : null;
     const head = fn ? `Perfecto, ${fn}.` : 'Perfecto.';
     return {
       handled: true,
       reply: `${head} Un asesor de Luxetty continuará contigo por aquí.`,
       statePatch: {
-        terminal_ack_close: true,
-        awaiting_field: null,
+        ...conversationMode.patchForHumanHandoffSent({
+          terminal_ack_close: true,
+          post_handoff_hold_sent: true,
+          awaiting_field: null,
+        }),
       },
       responseSource: 'cuarzo_post_handoff_ack',
+    };
+  }
+
+  // Hold genérico como máximo una vez
+  if (merged.post_handoff_hold_sent || merged.terminal_ack_close) {
+    return {
+      handled: true,
+      reply: null,
+      skipSend: true,
+      reason: 'post_handoff_silence',
+      statePatch: conversationMode.patchForHumanHandoffSent({ awaiting_field: null }),
+      responseSource: 'human_mode_silence',
     };
   }
 
   return {
     handled: true,
     reply: 'Quedó canalizado con un asesor de Luxetty. En breve te contactan por aquí.',
-    statePatch: { awaiting_field: null },
+    statePatch: {
+      ...conversationMode.patchForHumanHandoffSent({
+        post_handoff_hold_sent: true,
+        awaiting_field: null,
+      }),
+    },
     responseSource: 'cuarzo_post_handoff_hold',
   };
 }

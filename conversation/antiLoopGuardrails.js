@@ -47,12 +47,33 @@ function classifyInboundShortIntent(text = '') {
   if (detectConversationalFrustration(raw).frustrated) return 'frustration_marker';
   const t = normalizeText(raw);
   if (t === 'hola' || t === 'buenas' || t === 'hey' || t === 'hi') return 'greeting_hola';
+  if (
+    /^(hola|hey|hi|buenas|buenos dias|buenos días|buenas tardes|buenas noches)\b/.test(t) &&
+    t.length < 48
+  ) {
+    return 'greeting_hola';
+  }
+  if (
+    t.includes('vi su pagina') ||
+    t.includes('vi su página') ||
+    t.includes('vi facebook') ||
+    t.includes('navegando en facebook') ||
+    t.includes('vi su anuncio') ||
+    t.includes('pagina inmobiliaria') ||
+    t.includes('página inmobiliaria') ||
+    (t.includes('facebook') && t.includes('vi ')) ||
+    (t.includes('instagram') && t.includes('vi '))
+  ) {
+    return 'social_page_visit';
+  }
   if (t === 'info' || t === 'informacion' || t === 'información') return 'opening_info';
   if (t === 'me interesa' || t === 'me interesa.') return 'opening_me_interesa';
   if (t === 'ok' || t === 'vale' || t === 'si' || t === 'sí' || t === 'gracias') return 'ack_short';
   if (t.includes('precio') || t.includes('cuesta') || t.includes('cuanto') || t.includes('cuánto')) return 'topic_price';
   if (t.includes('disponibilidad') || t.includes('disponible')) return 'topic_disponibilidad';
-  if (t.includes('vender') || t.includes('venta') || t.includes('valu')) return 'intent_sale';
+  if (t.includes('vender') || t.includes('venta') || t.includes('valu') || t.includes('promover')) {
+    return 'intent_sale';
+  }
   if (t.includes('busco') || t.includes('comprar') || t.includes('rentar') || t.includes('renta')) return 'intent_search';
   if (raw.length <= 2) return 'ultra_short';
   return 'other';
@@ -157,6 +178,10 @@ function classifyFallbackBucket(replyText = '') {
   if (t.includes('orientar con la venta')) return 'offer_entry';
   if (t.includes('dime un poco mas') || t.includes('dime un poco más')) return 'generic_tail';
   return 'other';
+}
+
+function isWeakOpeningBucket(bucket) {
+  return bucket === 'generic_help' || bucket === 'generic_tail' || bucket === 'greeting_help';
 }
 
 function wasKindAskedRecently(aiState, kind) {
@@ -264,9 +289,13 @@ function buildFrustrationRecoveryReply({
     ? ''
     : ' Si me dices cómo te llamo (solo tu nombre), te hablo más personal desde el siguiente mensaje.';
 
+  const r0 = require('./r0ContextContinuity');
+  const offerSafe = require('./offerSafeReply');
+  const stickyOffer = r0.isR0StickySaleCaptureThread(aiState) || flow === 'offer';
+
   let retome = 'Retomo lo que comentaste.';
   const ut = normalizeText(userText || '');
-  if (ut.includes('vender') || flow === 'offer') {
+  if (ut.includes('vender') || stickyOffer) {
     retome = 'Retomo el tema de venta de tu propiedad.';
   } else if (flow === 'demand' && loc) {
     retome = `Retomo tu búsqueda en ${loc}.`;
@@ -275,7 +304,7 @@ function buildFrustrationRecoveryReply({
   }
 
   let oneQ = 'Para avanzar sin repetirme: ¿compras o rentas?';
-  if (flow === 'offer') {
+  if (stickyOffer) {
     oneQ = 'Para avanzar sin repetirme: ¿en qué zona está la propiedad (colonia o municipio)?';
   } else if (flow === 'demand' && !loc) {
     oneQ = 'Para avanzar sin repetirme: ¿en qué zona o ciudad la quieres?';
@@ -283,13 +312,17 @@ function buildFrustrationRecoveryReply({
     oneQ = 'Para avanzar sin repetirme: ¿qué presupuesto máximo aproximado manejas (en MXN)?';
   }
 
-  return `Tienes razón: pude haberme repetido, perdona. ${retome}${nameBit} ${oneQ}`.replace(/\s+/g, ' ').trim();
+  const out = `Tienes razón: pude haberme repetido, perdona. ${retome}${nameBit} ${oneQ}`.replace(/\s+/g, ' ').trim();
+  return offerSafe.assertOfferSafeReply(out, aiState, userText).reply;
 }
 
 function applyFallbackStreakRecovery(reply, ctx = {}) {
   const { nextAiState = {}, text = '', contact = null, waProfileName = null } = ctx;
   const merged = mergeReplyText(reply);
   if (!merged) return { reply, patch: {} };
+
+  const offerSafe = require('./offerSafeReply');
+  const r0 = require('./r0ContextContinuity');
 
   const bucket = classifyFallbackBucket(merged);
   const prevBucket = nextAiState.anti_loop_last_fallback_bucket || null;
@@ -301,7 +334,25 @@ function applyFallbackStreakRecovery(reply, ctx = {}) {
     return { reply, patch: { anti_loop_last_inbound_short_intent: inboundKind } };
   }
 
-  if (prevBucket === bucket) {
+  // Apertura: saludo / visita social no dispara “Perdona si se sintió repetido”
+  if (
+    inboundKind === 'greeting_hola' ||
+    inboundKind === 'social_page_visit' ||
+    inboundKind === 'intent_sale'
+  ) {
+    const safe = offerSafe.assertOfferSafeReply(merged, nextAiState, text);
+    return {
+      reply: safe.reply,
+      patch: {
+        anti_loop_last_fallback_bucket: bucket,
+        anti_loop_fallback_streak: 1,
+        anti_loop_last_inbound_short_intent: inboundKind,
+        anti_loop_trigger: null,
+      },
+    };
+  }
+
+  if (prevBucket === bucket || (isWeakOpeningBucket(prevBucket) && isWeakOpeningBucket(bucket))) {
     const inboundChangedMeaningfully =
       prevInbound != null &&
       inboundKind !== prevInbound &&
@@ -319,7 +370,21 @@ function applyFallbackStreakRecovery(reply, ctx = {}) {
   };
 
   if (streak < 2) {
-    return { reply, patch };
+    const safe = offerSafe.assertOfferSafeReply(merged, nextAiState, text);
+    return { reply: safe.reply, patch: { ...patch, anti_loop_trigger: safe.enforced ? safe.reason : null } };
+  }
+
+  // Hilo offer: nunca menú compra/renta
+  if (r0.isR0StickySaleCaptureThread(nextAiState)) {
+    const safe = offerSafe.assertOfferSafeReply(
+      offerSafe.buildOfferSafeFallback(nextAiState, text),
+      nextAiState,
+      text,
+    );
+    return {
+      reply: safe.reply,
+      patch: { ...patch, anti_loop_fallback_streak: 0, anti_loop_trigger: 'offer_sticky_recovery' },
+    };
   }
 
   if (nextAiState?.property_pauta_handoff_sent === true) {
@@ -349,32 +414,56 @@ function applyFallbackStreakRecovery(reply, ctx = {}) {
 
   const wa = cleanSpaces(String(waProfileName || ''));
   const skipAsesorOffer = wa.length > 2;
+  const outReply = skipAsesorOffer ? body : `${body}${tail}`;
+  const safe = offerSafe.assertOfferSafeReply(outReply, nextAiState, text);
 
   return {
-    reply: skipAsesorOffer ? body : `${body}${tail}`,
-    patch: { ...patch, anti_loop_fallback_streak: 0, anti_loop_last_inbound_short_intent: inboundKind },
+    reply: safe.reply,
+    patch: {
+      ...patch,
+      anti_loop_fallback_streak: 0,
+      anti_loop_last_inbound_short_intent: inboundKind,
+      anti_loop_trigger: safe.enforced ? safe.reason : 'fallback_streak_recovery',
+    },
   };
 }
 
 function reformulateNearDuplicate(original, kind, aiState = {}, userText = '') {
   const loc = cleanSpaces(String(aiState?.location_text || ''));
   const flow = aiState?.lead_flow || null;
+  const offerSafe = require('./offerSafeReply');
+  const r0 = require('./r0ContextContinuity');
+
+  if (r0.isR0StickySaleCaptureThread(aiState)) {
+    return offerSafe.buildOfferSafeFallback(aiState, userText);
+  }
+
+  let out;
   switch (kind) {
     case 'generic_help':
     case 'greeting_help':
       if (flow === 'demand' && loc) {
-        return `Sigo aquí. Retomo lo de ${loc}: ¿es compra o renta y qué presupuesto máximo aproximado?`;
+        out = `Sigo aquí. Retomo lo de ${loc}: ¿es compra o renta y qué presupuesto máximo aproximado?`;
+        break;
       }
       if (flow === 'offer') {
-        return 'Sigo contigo con el tema de venta. Para ubicarlo: ¿en qué zona está la propiedad?';
+        out = 'Sigo contigo con el tema de venta. Para ubicarlo: ¿en qué zona está la propiedad?';
+        break;
       }
-      return 'Sigo contigo. Para avanzar sin repetirme: ¿buscas comprar, rentar o vender?';
+      out = 'Sigo contigo. Para avanzar sin repetirme: ¿buscas comprar, rentar o vender?';
+      break;
     case 'name':
-      return 'Ok, no lo preguntaré igual otra vez. Retomo: ¿compras/rentas o es tema de venta de tu propiedad?';
+      if (flow === 'offer') {
+        out = 'Ok, no lo preguntaré igual otra vez. Sigo con la venta de tu propiedad. ¿En qué colonia o municipio está?';
+        break;
+      }
+      out = 'Ok, no lo preguntaré igual otra vez. Retomo: ¿compras/rentas o es tema de venta de tu propiedad?';
+      break;
     case 'property_menu':
-      return loc
+      out = loc
         ? `Sigo con ${loc}. Dime solo qué quieres ver primero: precio aproximado, ubicación en mapa o agendar visita.`
         : 'Sigo contigo. Dime solo una prioridad: precio, ubicación o visita.';
+      break;
     default: {
       const raw = cleanSpaces(String(userText || ''));
       const t = normalizeText(raw);
@@ -386,20 +475,30 @@ function reformulateNearDuplicate(original, kind, aiState = {}, userText = '') {
         const name = raw.replace(/^me llamo\s+/i, '').replace(/^soy\s+/i, '').trim();
         const cap = name ? name.charAt(0).toUpperCase() + name.slice(1) : '';
         if (flow === 'demand' && loc) {
-          return cap
+          out = cap
             ? `Perfecto, ${cap}. Sigo con tu búsqueda en ${loc} — ¿quieres afinar recámaras o alguna amenidad?`
             : `Perfecto. Sigo con tu búsqueda en ${loc} — ¿quieres afinar recámaras o alguna amenidad?`;
+          break;
         }
-        return cap
+        if (flow === 'offer') {
+          out = cap
+            ? `Perfecto, ${cap}. Sigo con la venta de tu propiedad. ¿En qué colonia o municipio está?`
+            : 'Perfecto. Sigo con la venta de tu propiedad. ¿En qué colonia o municipio está?';
+          break;
+        }
+        out = cap
           ? `Perfecto, ${cap}. Para avanzar: ¿buscas comprar, rentar o es tema de venta?`
           : 'Perfecto. Para avanzar sin repetirme: ¿buscas comprar, rentar o vender una propiedad?';
+        break;
       }
       if (flow === 'demand' && loc) {
-        return `Sigo con tu búsqueda en ${loc}. ¿Quieres afinar recámaras, zona o presupuesto?`;
+        out = `Sigo con tu búsqueda en ${loc}. ¿Quieres afinar recámaras, zona o presupuesto?`;
+        break;
       }
-      return `Entendido. ¿Quieres seguir con precio, ubicación o agendar una visita?`;
+      out = `Entendido. ¿Quieres seguir con precio, ubicación o agendar una visita?`;
     }
   }
+  return offerSafe.assertOfferSafeReply(out, aiState, userText).reply;
 }
 
 /**

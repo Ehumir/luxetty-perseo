@@ -149,6 +149,12 @@ function getDefaultAiState() {
     last_shown_property_ids: [],
 
     wants_human: false,
+    /** AI | MIXED | HUMAN_WAITING | HUMAN | AI_REACTIVATED */
+    conversation_mode: 'AI',
+    opening_type: null,
+    handoff_reason: null,
+    post_handoff_hold_sent: false,
+    terminal_ack_close: false,
     wants_visit: false,
     shows_high_interest: false,
     asks_property_details: false,

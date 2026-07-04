@@ -519,17 +519,33 @@ function buildConsultiveFallbackReply({
     return 'Claro, te apoyo con la disponibilidad. Para confirmarlo correctamente, te hago una pregunta rápida.';
   }
 
-  if (!t || t === 'hola') {
-    return 'Hola, claro. Te puedo ayudar. Dime en una frase qué necesitas y lo revisamos.';
+  const { isGreetingOnly } = require('./utils/messageChecks');
+  const { isMetaGeneralEntryText, isGreetingOpeningText } = require('./conversation/conversationPriorityResolver');
+  const { SAFE_OPENING_REPLIES } = require('./conversation/contracts/conversationOpeningContract');
+  const { hasExplicitSellerKeywords } = require('./conversation/intent');
+
+  if (!t || isGreetingOnly(text) || isGreetingOpeningText(text)) {
+    return SAFE_OPENING_REPLIES.greeting;
+  }
+  if (isMetaGeneralEntryText(text)) {
+    return SAFE_OPENING_REPLIES.meta_general;
+  }
+  if (hasExplicitSellerKeywords(text) || r0ContextContinuity.isR0StickySaleCaptureThread(aiState)) {
+    return r0ContextContinuity.buildSaleCaptiveContinuityReply({
+      text,
+      aiState,
+      loc,
+      hasValidHumanName: hasName,
+    });
   }
   if (t === 'info' || t === 'informacion' || t === 'información') {
-    return 'Te puedo orientar con compra o renta, venta de tu propiedad, avalúo o seguimiento de un anuncio. ¿Cuál es tu caso en una sola frase?';
+    return SAFE_OPENING_REPLIES.default;
   }
   if (t === 'me interesa') {
-    return 'Perfecto. Cuéntame en una frase qué te interesa (comprar, rentar, vender o ver una propiedad) y lo vemos.';
+    return 'Perfecto. ¿Te interesa comprar, rentar, vender o ver una propiedad en particular?';
   }
 
-  return 'Claro, te ayudo. Dime un poco más de lo que buscas y te oriento.';
+  return SAFE_OPENING_REPLIES.default;
 }
 
 /**
@@ -1100,11 +1116,37 @@ app.post('/webhook', async (req, res) => {
     let nameFirstHandled = false;
     let v3PrimaryHandled = false;
     let skipLegacyCrm = false;
+    let skipOutboundSend = false;
     let selectedPipeline = 'legacy';
+    let openingMetrics = null;
 
     if (policy.allowAutomatedReply) {
       const cuarzoHandoff = require('./conversation/cuarzoHandoff');
       const cuarzoFallbacks = require('./conversation/cuarzoFallbacks');
+      const conversationMode = require('./conversation/conversationMode');
+      const contextMemoryPreAdvisor = require('./conversation/contextMemoryPreAdvisor');
+      const conversationOpeningResolver = require('./conversation/conversationOpeningResolver');
+      const offerSafeReply = require('./conversation/offerSafeReply');
+      const { enforceOpeningContract } = require('./conversation/contracts/conversationOpeningContract');
+
+      // Context / priority / sticky antes del engine
+      const preAdvisor = contextMemoryPreAdvisor.mergeContextBeforeAdvisor({
+        text,
+        previousAiState,
+        nextAiState,
+        parsedSignals,
+        campaignContext: null,
+      });
+      parsedSignals = preAdvisor.signals;
+      Object.assign(nextAiState, preAdvisor.statePatch);
+
+      // Gate superior: modo HUMAN / MIXED / HUMAN_WAITING
+      const modeGate = conversationMode.evaluateConversationModeGate({
+        previousAiState,
+        nextAiState,
+        text,
+      });
+      Object.assign(nextAiState, modeGate.statePatch || {});
 
       const earlyPostHandoff = cuarzoHandoff.resolvePostHandoffTurn({
         previousAiState,
@@ -1113,11 +1155,30 @@ app.post('/webhook', async (req, res) => {
       });
       if (earlyPostHandoff.handled) {
         reply = earlyPostHandoff.reply;
+        skipOutboundSend = earlyPostHandoff.skipSend === true || !cleanSpaces(String(reply || ''));
         Object.assign(nextAiState, earlyPostHandoff.statePatch || {});
         responseSource = earlyPostHandoff.responseSource || 'cuarzo_post_handoff';
         nameFirstHandled = true;
         v3PrimaryHandled = true;
-        logEvent('cuarzo_post_handoff', { conversation_id: conversationId, source: responseSource });
+        logEvent('cuarzo_post_handoff', {
+          conversation_id: conversationId,
+          source: responseSource,
+          conversation_mode: nextAiState.conversation_mode,
+          skip_send: skipOutboundSend,
+          handoff_reason: earlyPostHandoff.reason || null,
+        });
+      } else if (modeGate.blocked) {
+        reply = null;
+        skipOutboundSend = true;
+        nameFirstHandled = true;
+        v3PrimaryHandled = true;
+        responseSource = 'conversation_mode_gate';
+        logEvent('conversation_mode_gate', {
+          conversation_id: conversationId,
+          conversation_mode: nextAiState.conversation_mode,
+          reason: modeGate.reason,
+          advisor_called: false,
+        });
       }
 
       const { campaignContext } = extractCampaignReferralContext({
@@ -1126,6 +1187,18 @@ app.post('/webhook', async (req, res) => {
         rawPayload: inboundRow?.raw_payload || req.body || {},
         messageText: text,
       });
+      if (campaignContext) {
+        Object.assign(
+          nextAiState,
+          contextMemoryPreAdvisor.mergeContextBeforeAdvisor({
+            text,
+            previousAiState,
+            nextAiState,
+            parsedSignals,
+            campaignContext,
+          }).statePatch
+        );
+      }
       const campaignHeadline =
         (campaignContext && (campaignContext.headline || campaignContext.ad_name)) || null;
 
@@ -1465,25 +1538,62 @@ app.post('/webhook', async (req, res) => {
       });
       if (humanEsc.handled) {
         reply = humanEsc.reply;
+        skipOutboundSend =
+          humanEsc.skipSend === true || !cleanSpaces(String(Array.isArray(reply) ? reply.join('') : reply || ''));
         Object.assign(nextAiState, humanEsc.statePatch);
         nameFirstHandled = true;
         responseSource = humanEsc.responseSource || 'wants_human_auto_escalation';
-        logEvent('wants_human_auto_escalation', { conversation_id: conversationId });
-        emitHumanHandoffRequired(
-          supabase,
-          {
-            conversationId,
-            contactId: contact?.id || conversationRow?.contact_id || null,
-            phone: from,
-            contactName: contact?.full_name || waProfileName || from,
-            reason: humanEsc.reason || 'wants_human_auto_escalation',
-          },
-          logEvent
-        );
-        supabase
-          .rpc('ensure_handoff_followup_task', { p_conversation_id: conversationId })
-          .then(() => {})
-          .catch(() => {});
+        logEvent('wants_human_auto_escalation', {
+          conversation_id: conversationId,
+          conversation_mode: nextAiState.conversation_mode,
+          handoff_reason: humanEsc.reason || null,
+          skip_send: skipOutboundSend,
+          advisor_called: false,
+        });
+        if (!previousAiState.handoff_sent && nextAiState.handoff_sent) {
+          emitHumanHandoffRequired(
+            supabase,
+            {
+              conversationId,
+              contactId: contact?.id || conversationRow?.contact_id || null,
+              phone: from,
+              contactName: contact?.full_name || waProfileName || from,
+              reason: humanEsc.reason || 'wants_human_auto_escalation',
+            },
+            logEvent
+          );
+          supabase
+            .rpc('ensure_handoff_followup_task', { p_conversation_id: conversationId })
+            .then(() => {})
+            .catch(() => {});
+        }
+      }
+      }
+
+      if (!nameFirstHandled) {
+      const opening = conversationOpeningResolver.resolveConversationOpening({
+        text,
+        previousAiState,
+        nextAiState,
+        parsedSignals,
+        recentMessages,
+      });
+      openingMetrics = opening.metrics || null;
+      Object.assign(nextAiState, opening.statePatch || {});
+      if (opening.handled) {
+        reply = opening.reply;
+        skipOutboundSend = opening.skipSend === true || !cleanSpaces(String(reply || ''));
+        nameFirstHandled = true;
+        responseSource = 'conversation_opening_resolver';
+        logEvent('conversation_opening_resolver', {
+          conversation_id: conversationId,
+          opening_type: opening.opening_type,
+          entry_type: opening.entry_type,
+          opening_source: opening.opening_source,
+          opening_latency_ms: opening.metrics?.opening_latency_ms,
+          advisor_called: false,
+          conversation_mode: nextAiState.conversation_mode,
+        });
       }
       }
 
@@ -1626,6 +1736,28 @@ app.post('/webhook', async (req, res) => {
       });
       reply = nearDup.reply;
       Object.assign(nextAiState, nearDup.patch);
+
+      const offerGuard = offerSafeReply.assertOfferSafeReply(reply, nextAiState, text);
+      reply = offerGuard.reply;
+      if (offerGuard.enforced) {
+        logEvent('offer_sticky_protection', {
+          conversation_id: conversationId,
+          reason: offerGuard.reason,
+        });
+      }
+
+      const openingGuard = enforceOpeningContract(reply, {
+        aiState: nextAiState,
+        opening_type: nextAiState.opening_type || openingMetrics?.opening_type,
+      });
+      reply = openingGuard.reply;
+      if (openingGuard.enforced) {
+        logEvent('opening_contract_enforced', {
+          conversation_id: conversationId,
+          reason: openingGuard.reason,
+          opening_type: nextAiState.opening_type,
+        });
+      }
 
       antiLoopGuardrails.recordTurnAntiLoopMeta(nextAiState, reply, responseSource);
 
@@ -1775,17 +1907,42 @@ app.post('/webhook', async (req, res) => {
       logEvent('v3_skip_legacy_crm', { conversation_id: conversationId });
     }
 
-    await sendPerseoAutomatedWhatsApp({
-      channel: 'ia',
-      to: from,
-      messages: reply,
-      conversationId,
-      rawPayload: { perseo_metadata: { response_source: responseSource } },
-      policy,
-      saveOutboundMessages,
-      saveConversationEvent,
-      logEvent,
-    });
+    const outboundText = Array.isArray(reply)
+      ? reply.map((s) => String(s || '').trim()).filter(Boolean).join('\n\n')
+      : cleanSpaces(String(reply || ''));
+    if (skipOutboundSend || !outboundText) {
+      logEvent('perseo_outbound_skipped', {
+        conversation_id: conversationId,
+        response_source: responseSource,
+        conversation_mode: nextAiState.conversation_mode || null,
+        opening_type: nextAiState.opening_type || openingMetrics?.opening_type || null,
+        advisor_called: !!(responseSource && String(responseSource).includes('engine')),
+        skip_outbound_send: skipOutboundSend,
+      });
+    } else {
+      await sendPerseoAutomatedWhatsApp({
+        channel: 'ia',
+        to: from,
+        messages: reply,
+        conversationId,
+        rawPayload: {
+          perseo_metadata: {
+            response_source: responseSource,
+            conversation_mode: nextAiState.conversation_mode || null,
+            opening_type: nextAiState.opening_type || openingMetrics?.opening_type || null,
+            entry_type:
+              nextAiState.entry_point_last?.entry_type ||
+              openingMetrics?.entry_type ||
+              null,
+            handoff_reason: nextAiState.handoff_reason || null,
+          },
+        },
+        policy,
+        saveOutboundMessages,
+        saveConversationEvent,
+        logEvent,
+      });
+    }
 
     try {
       const { endWebhookTiming } = require('./conversation/v3/runtime/runtimeSafety');
