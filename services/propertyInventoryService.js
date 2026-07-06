@@ -542,7 +542,7 @@ function wrapFoundResult(row) {
  * Resolución unificada: código, URL/slug, título fuzzy.
  * @returns {{ status: 'found'|'ambiguous'|'not_found', property, propertyId, normalized, code, ambiguous, candidates }}
  */
-async function resolveInboundPropertyReference(db, { code, text, hintZone } = {}, logger = console) {
+async function resolveInboundPropertyReference(db, { code, text, hintZone, canaryPhone } = {}, logger = console) {
   const c = cleanSpaces(String(code || ''));
   const zoneHint = cleanSpaces(String(hintZone || '')) || extractZoneFromPropertyPhrase(text || '');
 
@@ -563,10 +563,14 @@ async function resolveInboundPropertyReference(db, { code, text, hintZone } = {}
 
   const looseText = String(text || '');
 
-  const { isRagInventoryEnabled } = require('../config/accP0Flags');
-  if (isRagInventoryEnabled()) {
+  const { isRagInventoryEffectiveForUser } = require('../config/accP0Flags');
+  if (isRagInventoryEffectiveForUser(canaryPhone)) {
     const ragInv = require('./ragInventoryService');
-    const ragOut = await ragInv.resolveInboundPropertyReference(db, { text: looseText, hintZone: zoneHint }, logger);
+    const ragOut = await ragInv.resolveInboundPropertyReference(
+      db,
+      { text: looseText, hintZone: zoneHint, canaryPhone },
+      logger
+    );
     if (ragOut.status === 'found') {
       return {
         status: 'found',
@@ -576,6 +580,8 @@ async function resolveInboundPropertyReference(db, { code, text, hintZone } = {}
         code: ragOut.normalized?.code || null,
         ambiguous: false,
         candidates: [],
+        match_method: ragOut.match_method || 'rag_semantic',
+        rag_meta: ragOut.rag_meta || null,
       };
     }
     if (ragOut.status === 'ambiguous') {
@@ -587,6 +593,8 @@ async function resolveInboundPropertyReference(db, { code, text, hintZone } = {}
         code: null,
         ambiguous: true,
         candidates: ragOut.candidates || [],
+        match_method: ragOut.match_method || 'rag_semantic',
+        rag_meta: ragOut.rag_meta || null,
       };
     }
   }

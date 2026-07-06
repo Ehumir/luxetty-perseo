@@ -13,6 +13,7 @@ describe('ragInventoryService — Sprint 3', () => {
   beforeEach(() => {
     delete process.env.RAG_P0_ENABLED;
     delete process.env.RAG_INVENTORY_ENABLED;
+    delete process.env.RAG_P0_ALLOWLIST;
     ragService.semanticSearch = originalSemanticSearch;
   });
 
@@ -28,6 +29,7 @@ describe('ragInventoryService — Sprint 3', () => {
   it('S3-R01 — código LUX en texto → fallback_legacy (path legacy)', async () => {
     process.env.RAG_P0_ENABLED = 'true';
     process.env.RAG_INVENTORY_ENABLED = 'true';
+    process.env.RAG_P0_ALLOWLIST = '5218181877351';
     const out = await ragInventory.resolveInboundPropertyReference({}, { text: 'info de LUX-A0470' });
     assert.equal(out.status, 'fallback_legacy');
   });
@@ -35,6 +37,8 @@ describe('ragInventoryService — Sprint 3', () => {
   it('S3-R02 — match semántico top-1 publicable → found', async () => {
     process.env.RAG_P0_ENABLED = 'true';
     process.env.RAG_INVENTORY_ENABLED = 'true';
+    process.env.RAG_P0_ALLOWLIST = '5218181877351';
+    process.env.RAG_P0_ALLOWLIST = '5218181877351';
 
     const chunk = {
       id: 'ch-1',
@@ -77,7 +81,7 @@ describe('ragInventoryService — Sprint 3', () => {
       rpc: async () => ({ data: [], error: null }),
     };
 
-    const out = await ragInventory.resolveInboundPropertyReference(db, { text: 'casa en mitras' });
+    const out = await ragInventory.resolveInboundPropertyReference(db, { text: 'casa en mitras', canaryPhone: '5218181877351' });
     assert.equal(out.status, 'found');
     assert.equal(out.propertyId, 'p-1');
     assert.equal(out.match_method, 'rag_semantic');
@@ -86,6 +90,7 @@ describe('ragInventoryService — Sprint 3', () => {
   it('S3-R22 — propiedad oculta → fallback_legacy', async () => {
     process.env.RAG_P0_ENABLED = 'true';
     process.env.RAG_INVENTORY_ENABLED = 'true';
+    process.env.RAG_P0_ALLOWLIST = '5218181877351';
 
     const chunk = {
       id: 'ch-2',
@@ -120,7 +125,7 @@ describe('ragInventoryService — Sprint 3', () => {
       },
     };
 
-    const out = await ragInventory.resolveInboundPropertyReference(db, { text: 'propiedad oculta' });
+    const out = await ragInventory.resolveInboundPropertyReference(db, { text: 'propiedad oculta', canaryPhone: '5218181877351' });
     assert.equal(out.status, 'fallback_legacy');
     assert.equal(out.reason, 'hidden_or_inactive');
   });
@@ -128,6 +133,7 @@ describe('ragInventoryService — Sprint 3', () => {
   it('S3-R24 — RPC fail → fallback_legacy sin error usuario', async () => {
     process.env.RAG_P0_ENABLED = 'true';
     process.env.RAG_INVENTORY_ENABLED = 'true';
+    process.env.RAG_P0_ALLOWLIST = '5218181877351';
 
     ragService.semanticSearch = async () => ({
       chunks: [],
@@ -136,13 +142,14 @@ describe('ragInventoryService — Sprint 3', () => {
       query_hash: 'h3',
     });
 
-    const out = await ragInventory.resolveInboundPropertyReference({}, { text: 'casa' });
+    const out = await ragInventory.resolveInboundPropertyReference({}, { text: 'casa', canaryPhone: '5218181877351' });
     assert.equal(out.status, 'fallback_legacy');
   });
 
   it('S3-R07 — ambiguous cuando gap pequeño entre top-2', async () => {
     process.env.RAG_P0_ENABLED = 'true';
     process.env.RAG_INVENTORY_ENABLED = 'true';
+    process.env.RAG_P0_ALLOWLIST = '5218181877351';
 
     const chunks = [
       {
@@ -202,7 +209,7 @@ describe('ragInventoryService — Sprint 3', () => {
       },
     };
 
-    const out = await ragInventory.resolveInboundPropertyReference(db, { text: 'esa casa bonita' });
+    const out = await ragInventory.resolveInboundPropertyReference(db, { text: 'esa casa bonita', canaryPhone: '5218181877351' });
     assert.equal(out.status, 'ambiguous');
     assert.ok(out.candidates.length >= 2);
   });
@@ -212,6 +219,7 @@ describe('propertyInventoryService — RAG branch Sprint 3', () => {
   beforeEach(() => {
     delete process.env.RAG_P0_ENABLED;
     delete process.env.RAG_INVENTORY_ENABLED;
+    delete process.env.RAG_P0_ALLOWLIST;
     ragService.semanticSearch = originalSemanticSearch;
   });
 
@@ -242,6 +250,7 @@ describe('propertyInventoryService — RAG branch Sprint 3', () => {
   it('S3-R01 — código directo resuelve sin RAG aunque flags ON', async () => {
     process.env.RAG_P0_ENABLED = 'true';
     process.env.RAG_INVENTORY_ENABLED = 'true';
+    process.env.RAG_P0_ALLOWLIST = '5218181877351';
 
     const row = {
       id: 'p-code',

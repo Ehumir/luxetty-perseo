@@ -1059,6 +1059,7 @@ app.post('/webhook', async (req, res) => {
           code: codeForFetch || null,
           text,
           hintZone: hintZone || propertyInventoryService.extractZoneFromPropertyPhrase(text),
+          canaryPhone: from,
         },
         console
       );
@@ -1107,6 +1108,19 @@ app.post('/webhook', async (req, res) => {
       } else if (propertyIntentResolver.isPropertySpecificConversation(nextAiState)) {
         nextAiState.interested_property_id = null;
         nextAiState.property_context = null;
+      }
+
+      if (resolved?.rag_meta && conversationId) {
+        saveConversationEvent(conversationId, 'rag_retrieval', {
+          domain: 'properties',
+          match_method: resolved.match_method || 'rag_semantic',
+          confidence: resolved.rag_meta.confidence ?? null,
+          query_hash: resolved.rag_meta.query_hash || null,
+          latency_ms: resolved.rag_meta.latency_ms ?? null,
+          cache_hit: resolved.rag_meta.cache_hit === true,
+          status: resolved.status,
+          fallback_used: false,
+        });
       }
     }
 
@@ -1234,6 +1248,36 @@ app.post('/webhook', async (req, res) => {
             message: String(e && e.message ? e.message : e),
           });
         }
+      }
+
+      try {
+        const { enrichTurnWithRagContext } = require('./conversation/v3/rag/ragTurnOrchestrator');
+        const ragTurn = await enrichTurnWithRagContext(supabase, {
+          text,
+          phone: from,
+          conversationId,
+          messageId: metaMessageId,
+          saveConversationEvent,
+          logger: console,
+        });
+        if (ragTurn?.contextPack) {
+          legacyHydration.ragContextPack = ragTurn.contextPack;
+        }
+        if (ragTurn?.meta && !ragTurn.meta.skipped) {
+          logEvent('rag_turn_context', {
+            conversation_id: conversationId,
+            domain: ragTurn.meta.domain,
+            confidence: ragTurn.meta.confidence,
+            citations_count: ragTurn.meta.citations_count,
+            fallback_used: ragTurn.meta.fallback_used,
+            latency_ms: ragTurn.meta.latency_ms,
+          });
+        }
+      } catch (ragErr) {
+        logEvent('rag_turn_context_error', {
+          conversation_id: conversationId,
+          error: String(ragErr?.message || ragErr),
+        });
       }
 
       let v3Media = null;

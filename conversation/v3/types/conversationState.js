@@ -97,6 +97,8 @@ function createInitialConversationState(seed = {}) {
     lastPolicyRuleId: null,
     lastSegments: null,
     lastResponsePlan: null,
+    /** Sprint 4 — ContextPack RAG interno (no mostrar al usuario). */
+    ragContextPack: null,
   };
 }
 

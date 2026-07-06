@@ -55,7 +55,7 @@ describe('ragAccP0 — Sprint 3 ARGOS suite', () => {
 
   it('S3-STRUCT — propertyInventoryService solo rama resolveInboundPropertyReference', () => {
     const src = fs.readFileSync(path.join(ROOT, 'services/propertyInventoryService.js'), 'utf8');
-    assert.match(src, /isRagInventoryEnabled\(\)/);
+    assert.match(src, /isRagInventoryEffectiveForUser/);
     assert.match(src, /ragInventoryService/);
     assert.doesNotMatch(src, /ragService/);
   });

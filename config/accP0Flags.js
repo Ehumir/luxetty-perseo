@@ -19,6 +19,42 @@ function splitAllowlist(raw) {
     .filter(Boolean);
 }
 
+function normalizeAllowlistEntry(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+/**
+ * Usuario elegible para canary RAG (requiere master ON + entrada en allowlist).
+ * @param {string|null|undefined} phoneOrId
+ * @returns {boolean}
+ */
+function isRagCanaryEligible(phoneOrId) {
+  if (!isRagP0Enabled()) return false;
+  const list = splitAllowlist(process.env.RAG_P0_ALLOWLIST);
+  if (!list.length) return false;
+  const normalized = normalizeAllowlistEntry(phoneOrId);
+  if (!normalized) return false;
+  return list.some((entry) => {
+    const e = normalizeAllowlistEntry(entry);
+    if (!e) return false;
+    return normalized === e || normalized.endsWith(e) || e.endsWith(normalized);
+  });
+}
+
+/**
+ * Inventario RAG efectivo para un usuario concreto.
+ */
+function isRagInventoryEffectiveForUser(phoneOrId) {
+  return isRagInventoryEnabled() && isRagCanaryEligible(phoneOrId);
+}
+
+/**
+ * Reglas RAG efectivas para un usuario concreto.
+ */
+function isRagRulesEffectiveForUser(phoneOrId) {
+  return isRagRulesEnabled() && isRagCanaryEligible(phoneOrId);
+}
+
 /**
  * @returns {boolean}
  */
@@ -99,6 +135,10 @@ module.exports = {
   isRagP0Enabled,
   isRagInventoryEnabled,
   isRagRulesEnabled,
+  isRagCanaryEligible,
+  isRagInventoryEffectiveForUser,
+  isRagRulesEffectiveForUser,
   getAccRagP0FlagSnapshot,
   splitAllowlist,
+  normalizeAllowlistEntry,
 };

@@ -1,6 +1,12 @@
 'use strict';
 
-const { cleanSpaces } = require('../../../utils/text');
+const { pickGroundedExcerpt } = require('../rag/ragTurnOrchestrator');
+
+function safeGroundedSuffix(contextPack) {
+  const excerpt = pickGroundedExcerpt(contextPack);
+  if (!excerpt || /\d+\s*%/.test(excerpt)) return '';
+  return ` ${excerpt}`;
+}
 const { firstName } = require('./postHandoffComposer');
 const {
   composeContextualConfusionReply,
@@ -70,14 +76,17 @@ function composeObjectionReply(kind, state) {
       };
     case 'curt_direct_question':
       return composeCurtDirectReply(state);
-    case 'commission':
+    case 'commission': {
+      const suffix = safeGroundedSuffix(state.ragContextPack);
       return {
         responseText:
-          'La comisión depende del tipo de operación, zona y servicios (valuación, promoción, exclusiva, etc.). Un asesor de Luxetty puede explicarte el esquema sin compromiso; aquí no cierro un porcentaje fijo porque podría no aplicar a tu caso.',
+          'La comisión depende del tipo de operación, zona y servicios (valuación, promoción, exclusiva, etc.). Un asesor de Luxetty puede explicarte el esquema sin compromiso; aquí no cierro un porcentaje fijo porque podría no aplicar a tu caso.' +
+          suffix,
         followUpQuestion: null,
         awaitingField: state.awaitingField,
-        toneFlags: { consultive: true, objection: true },
+        toneFlags: { consultive: true, objection: true, rag_grounded: !!suffix },
       };
+    }
     case 'competitor_price':
       return {
         responseText:
