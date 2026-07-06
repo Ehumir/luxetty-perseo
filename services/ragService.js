@@ -131,6 +131,7 @@ function buildCitationsFromChunks(chunks = []) {
     source_type: c.source_type,
     source_id: c.source_id,
     chunk_id: c.chunk_id || c.id,
+    registry_domain_code: c.registry_domain_code || c.metadata?.registry_domain_code || null,
     score: Number(c.similarity ?? c.score ?? 0),
     excerpt: String(c.content || '').slice(0, 200),
   }));

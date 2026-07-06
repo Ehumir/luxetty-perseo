@@ -3,6 +3,7 @@
 const { getAccRagP0FlagSnapshot, isRagRulesEffectiveForUser } = require('../../../config/accP0Flags');
 const ragRulesService = require('../../../services/ragRulesService');
 const { canAssertClaim } = require('./ragPolicy');
+const { buildRagRetrievalKpi } = require('./ragKpi');
 
 const RULES_INTENT_PATTERNS = [
   { domain: 'commercial_objections', re: /\bcomisi[oó]n\b|\bexclusiv|\bvaluaci[oó]n\b|\bcu[aá]nto\s+cobran\b/i },
@@ -102,20 +103,15 @@ async function enrichTurnWithRagContext(
     };
 
     if (typeof saveConversationEvent === 'function' && conversationId) {
-      await saveConversationEvent(conversationId, 'rag_retrieval', {
+      const kpiPayload = buildRagRetrievalKpi(contextPack, {
         domain,
         message_id: messageId || null,
-        confidence: meta.confidence,
-        chunks_selected: meta.chunks_selected,
-        chunks_dropped: meta.chunks_dropped,
-        citations_count: meta.citations_count,
-        fallback_used: meta.fallback_used,
-        fallback_reason: meta.fallback_used ? 'low_confidence_or_empty' : null,
-        latency_ms: meta.latency_ms,
-        rag_query_log_id: meta.rag_query_log_id,
+        retrieval_latency_ms: latencyMs,
         flags,
         allowlist_eligible: true,
+        fallback_reason: meta.fallback_used ? 'low_confidence_or_empty' : null,
       });
+      await saveConversationEvent(conversationId, 'rag_retrieval', kpiPayload);
     }
 
     return { contextPack, meta };
@@ -131,14 +127,16 @@ async function enrichTurnWithRagContext(
       latency_ms: Date.now() - start,
     };
     if (typeof saveConversationEvent === 'function' && conversationId) {
-      await saveConversationEvent(conversationId, 'rag_retrieval', {
+      const kpiPayload = buildRagRetrievalKpi(null, {
         domain,
         message_id: messageId || null,
         fallback_used: true,
         fallback_reason: 'exception',
         flags,
         allowlist_eligible: true,
+        retrieval_latency_ms: meta.latency_ms,
       });
+      await saveConversationEvent(conversationId, 'rag_retrieval', kpiPayload);
     }
     return { contextPack: null, meta };
   }

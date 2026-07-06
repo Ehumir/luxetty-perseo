@@ -1111,16 +1111,31 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (resolved?.rag_meta && conversationId) {
-        saveConversationEvent(conversationId, 'rag_retrieval', {
-          domain: 'properties',
-          match_method: resolved.match_method || 'rag_semantic',
-          confidence: resolved.rag_meta.confidence ?? null,
-          query_hash: resolved.rag_meta.query_hash || null,
-          latency_ms: resolved.rag_meta.latency_ms ?? null,
-          cache_hit: resolved.rag_meta.cache_hit === true,
-          status: resolved.status,
-          fallback_used: false,
-        });
+        const { buildRagRetrievalKpi } = require('./conversation/v3/rag/ragKpi');
+        const inventoryFound = resolved.status === 'found';
+        const topScore = Number(resolved.rag_meta.confidence ?? 0);
+        const contextPack = {
+          confidence: topScore,
+          fallback_used: !inventoryFound,
+          citations: inventoryFound ? [{ score: topScore, registry_domain_code: 'properties' }] : [],
+          latency_ms: resolved.rag_meta.latency_ms ?? 0,
+          scores: {
+            top_score: topScore,
+            min_score_threshold: Number(process.env.RAG_MIN_SCORE || 0.72),
+          },
+        };
+        saveConversationEvent(
+          conversationId,
+          'rag_retrieval',
+          buildRagRetrievalKpi(contextPack, {
+            domain: 'properties',
+            match_method: resolved.match_method || 'rag_semantic',
+            query_hash: resolved.rag_meta.query_hash || null,
+            cache_hit: resolved.rag_meta.cache_hit === true,
+            status: resolved.status,
+            fallback_reason: inventoryFound ? null : resolved.reason || 'inventory_fallback',
+          })
+        );
       }
     }
 
