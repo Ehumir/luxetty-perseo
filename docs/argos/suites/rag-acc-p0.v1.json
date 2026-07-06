@@ -1,0 +1,52 @@
+{
+  "suite": "rag-acc-p0.v1",
+  "description": "Sprint 3 — Integración PERSEO ↔ Knowledge Store (flags OFF por defecto; fallback legacy obligatorio)",
+  "sprint": 3,
+  "threshold": {
+    "pass_rate": 1
+  },
+  "feature_flags_required_off_in_prod": [
+    "RAG_P0_ENABLED",
+    "RAG_INVENTORY_ENABLED",
+    "RAG_RULES_ENABLED"
+  ],
+  "scenarios": [
+    { "id": "S3-R01", "name": "Código LUX directo", "category": "inventory", "expect": "legacy_path_unchanged" },
+    { "id": "S3-R02", "name": "Descripción natural", "category": "inventory", "expect": "rag_top1_or_ambiguous" },
+    { "id": "S3-R03", "name": "Zona Cumbres", "category": "inventory", "expect": "zone_filter_via_retrieval" },
+    { "id": "S3-R04", "name": "Renta", "category": "inventory", "expect": "operation_rent" },
+    { "id": "S3-R05", "name": "Venta", "category": "inventory", "expect": "operation_sale" },
+    { "id": "S3-R06", "name": "Sin inventario", "category": "inventory", "expect": "fallback_legacy_not_found" },
+    { "id": "S3-R07", "name": "Ambigua", "category": "inventory", "expect": "ambiguous_candidates" },
+    { "id": "S3-R08", "name": "Amenidades", "category": "inventory", "expect": "amenity_retrieval" },
+    { "id": "S3-R09", "name": "Precio con evidencia", "category": "guard", "expect": "citation_required" },
+    { "id": "S3-R10", "name": "Precio sin evidencia", "category": "guard", "expect": "no_claim_without_citation" },
+    { "id": "S3-R11", "name": "Captación vendedor", "category": "rules", "expect": "no_orphan_lead" },
+    { "id": "S3-R12", "name": "Objeción comisión", "category": "rules", "expect": "rules_chunk_retrieved" },
+    { "id": "S3-R13", "name": "Objeción exclusiva", "category": "rules", "expect": "rules_chunk_retrieved" },
+    { "id": "S3-R14", "name": "Valuación", "category": "rules", "expect": "no_figure_without_source" },
+    { "id": "S3-R15", "name": "Solicitud = Lead", "category": "rules", "expect": "no_requests_table" },
+    { "id": "S3-R16", "name": "Asignación ownership", "category": "rules", "expect": "assignment_rules_retrieved" },
+    { "id": "S3-R17", "name": "Campaña C1", "category": "rules", "expect": "campaign_metadata" },
+    { "id": "S3-R18", "name": "Campaña C2", "category": "rules", "expect": "campaign_metadata" },
+    { "id": "S3-R19", "name": "Script comercial", "category": "rules", "expect": "script_domain" },
+    { "id": "S3-R20", "name": "Zona/colonia", "category": "rules", "expect": "zone_domain" },
+    { "id": "S3-R21", "name": "Link inventado", "category": "guard", "expect": "no_url_without_chunk" },
+    { "id": "S3-R22", "name": "Propiedad no publicada", "category": "visibility", "expect": "hidden_excluded" },
+    { "id": "S3-R23", "name": "Lead sin contacto", "category": "crm", "expect": "no_lead_write" },
+    { "id": "S3-R24", "name": "Timeout >1.2s", "category": "reliability", "expect": "fallback_legacy" },
+    { "id": "S3-R25", "name": "RAG_P0_ENABLED=false", "category": "flags", "expect": "identical_legacy" },
+    { "id": "S3-R26", "name": "Hallucination guard", "category": "guard", "expect": "ragPolicy_blocks_claim" },
+    { "id": "S3-R27", "name": "p95 latency", "category": "performance", "expect": "under_1200ms" },
+    { "id": "S3-R28", "name": "Cache embedding", "category": "performance", "expect": "cache_hit_second_query" },
+    { "id": "S3-R29", "name": "Top-1 inventario suite", "category": "quality", "expect": "manual_smoke_sprint5" },
+    { "id": "S3-R30", "name": "0 inventos suite", "category": "quality", "expect": "manual_smoke_sprint5" }
+  ],
+  "automated_test_files": [
+    "test/ragService.test.js",
+    "test/ragInventoryService.test.js",
+    "test/ragAccP0.test.js",
+    "test/accFoundationP0.test.js",
+    "test/ragKnowledgeStoreP0.test.js"
+  ]
+}
