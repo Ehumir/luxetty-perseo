@@ -777,6 +777,10 @@ async function runCleanOrchestratorCrmPhase({
   return { hasIntent, canEnsureContact, contactId, leadResult, crmSlotsReady };
 }
 
+// ACC P0 Sprint 1 — rutas FB/IG inactivas (404) hasta Sprint 4; WA sin cambios.
+const { registerAccChannelRoutes } = require('./channelGatewayP0/registerAccChannelRoutes');
+registerAccChannelRoutes(app);
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Webhook endpoints
 // ──────────────────────────────────────────────────────────────────────────────

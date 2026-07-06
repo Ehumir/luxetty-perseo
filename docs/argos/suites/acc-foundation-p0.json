@@ -1,0 +1,26 @@
+{
+  "suite": "acc-foundation-p0",
+  "description": "Sprint 1 ACC+RAG foundation — baseline WhatsApp 10/10 + gates S1-T01..T05 via test/accFoundationP0.test.js",
+  "threshold": {
+    "pass_rate": 1
+  },
+  "foundation_test_ids": [
+    "S1-T01",
+    "S1-T02",
+    "S1-T03",
+    "S1-T04",
+    "S1-T05"
+  ],
+  "scenarios": [
+    "WA2_001.v1.json",
+    "WA2_002.v1.json",
+    "WA2_003.v1.json",
+    "WA2_004.v1.json",
+    "WA2_005.v1.json",
+    "WA2_006.v1.json",
+    "WA2_007.v1.json",
+    "WA2_008.v1.json",
+    "REG_WA_001.v1.json",
+    "REG_WA_002.v1.json"
+  ]
+}
