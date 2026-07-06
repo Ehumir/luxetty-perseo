@@ -348,6 +348,13 @@ const LANDING_REFERENCE_PATTERNS = [
   /luxetty\.com\/propiedad\//i,
 ];
 
+/** Búsqueda orgánica de inventario (demanda) — activa resolución RAG sin código LUX. */
+const ORGANIC_PROPERTY_SEARCH_PATTERNS = [
+  /\b(busco|quiero|necesito|me interesa)\b.{0,50}\b(casa|departamento|depa|departamentos|terreno|propiedad|residencia|local)\b/i,
+  /\b(casa|departamento|depa|terreno|propiedad|residencia|local)\b.{0,40}\b(en|con)\b/i,
+  /\b(casa|departamento|depa)\b.{0,30}\b(renta|rentar|venta|comprar|alquiler)\b/i,
+];
+
 function normalizePropertyTitleForMatch(text) {
   return normalizeText(String(text || ''))
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -388,7 +395,8 @@ function shouldAttemptLoosePropertyResolution(text) {
   if (!t) return false;
   if (extractPropertyCode(text)) return true;
   if (extractPropertyTitleHint(text)) return true;
-  return LANDING_REFERENCE_PATTERNS.some((re) => re.test(t));
+  if (LANDING_REFERENCE_PATTERNS.some((re) => re.test(t))) return true;
+  return ORGANIC_PROPERTY_SEARCH_PATTERNS.some((re) => re.test(t));
 }
 
 function tokenOverlapScore(hint, title) {

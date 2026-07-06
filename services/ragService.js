@@ -12,8 +12,15 @@ const {
 } = require('../conversation/v3/rag/ragPolicy');
 
 const RAG_TIMEOUT_MS = Number(process.env.RAG_TIMEOUT_MS || 1200);
-const RAG_RETRIEVAL_BUDGET_MS = Number(process.env.RAG_RETRIEVAL_BUDGET_MS || 400);
+const RAG_RETRIEVAL_BUDGET_MS = Number(process.env.RAG_RETRIEVAL_BUDGET_MS || 900);
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL?.trim() || 'text-embedding-3-small';
+
+/** Umbral RPC (recall): devuelve candidatos; el umbral final (0.72) se aplica en app. */
+function getRagRpcMinScore() {
+  const env = Number(process.env.RAG_RPC_MIN_SCORE);
+  if (Number.isFinite(env) && env > 0 && env < 1) return env;
+  return 0.5;
+}
 
 const embeddingCache = new Map();
 const EMBEDDING_CACHE_MAX = 100;
@@ -123,7 +130,7 @@ function buildCitationsFromChunks(chunks = []) {
   return chunks.map((c) => ({
     source_type: c.source_type,
     source_id: c.source_id,
-    chunk_id: c.id,
+    chunk_id: c.chunk_id || c.id,
     score: Number(c.similarity ?? c.score ?? 0),
     excerpt: String(c.content || '').slice(0, 200),
   }));
@@ -150,7 +157,7 @@ function createContextPack({
   const sources = chunks.map((c) => ({
     source_type: c.source_type,
     source_id: c.source_id,
-    chunk_id: c.id,
+    chunk_id: c.chunk_id || c.id,
     registry_domain_code: c.registry_domain_code || null,
   }));
 
@@ -286,6 +293,7 @@ async function retrieveContextPack(db, { query, rpcName, rpcParams, logger = con
 module.exports = {
   RAG_TIMEOUT_MS,
   RAG_RETRIEVAL_BUDGET_MS,
+  getRagRpcMinScore,
   sha256,
   semanticSearch,
   buildContext,

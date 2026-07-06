@@ -84,7 +84,7 @@ async function enrichTurnWithRagContext(
 
   const start = Date.now();
   try {
-    const rulesResult = await ragRulesService.fetchRulesContextPack(db, { query: text, logger });
+    const rulesResult = await ragRulesService.fetchRulesContextPack(db, { query: text, domain, logger });
     const contextPack = rulesResult?.contextPack || null;
     const latencyMs = Date.now() - start;
     const meta = {

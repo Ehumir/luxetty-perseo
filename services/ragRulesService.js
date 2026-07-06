@@ -13,6 +13,62 @@ const RULES_DOMAINS = [
   'scripts',
 ];
 
+const RULES_RETRIEVAL_HINTS = {
+  commercial_objections: {
+    comisi: 'Objeción comisión\nLa comisión se explica con transparencia según política vigente',
+    exclusiv: 'Objeción exclusiva\nLa exclusiva se presenta como beneficio de posicionamiento',
+    valuaci: 'Objeción valuación\nLa valuación se basa en comparables de mercado',
+  },
+  assignment_rules: 'asignación ownership dueño contacto',
+  campaigns: 'campaña pauta meta',
+  zones: 'zona colonia ubicación',
+  rules_perseo: 'política reglas PERSEO no inventar',
+  rules_atena: 'solicitud lead contacto ATENA',
+  scripts: 'script comercial conversación',
+};
+
+function cleanSpaces(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Parámetros alineados con match_knowledge_chunks (migración Sprint 2).
+ */
+function buildKnowledgeChunksRpcParams({ matchCount = 8, domain = null } = {}) {
+  return {
+    match_count: matchCount,
+    min_score: ragService.getRagRpcMinScore(),
+    filter_source_type: null,
+    filter_visibility_scope: null,
+    filter_is_active: true,
+    filter_property_id: null,
+  };
+}
+
+/**
+ * Enriquece query conversacional al formato indexado (sin alterar mensaje al usuario).
+ */
+function buildRulesRetrievalQuery(text, domain = null) {
+  const base = cleanSpaces(text);
+  if (!base) return base;
+
+  const hints = RULES_RETRIEVAL_HINTS[domain];
+  if (!hints) return base;
+
+  if (typeof hints === 'string') {
+    return `${hints}\n${base}`;
+  }
+
+  const lower = base.toLowerCase();
+  for (const [key, hint] of Object.entries(hints)) {
+    if (lower.includes(key)) {
+      return `${hint}\n${base}`;
+    }
+  }
+
+  return base;
+}
+
 /**
  * Recupera reglas ATENA/PERSEO vía RPC. Solo lectura; sin interpretación de negocio.
  */
@@ -21,18 +77,11 @@ async function fetchRulesChunks(db, { query, domain = null, matchCount = 8 }, lo
     return { chunks: [], fallback: true };
   }
 
-  const rpcParams = {
-    match_count: matchCount,
-    min_score: Number(process.env.RAG_MIN_SCORE || 0.72),
-    filter_source_type: null,
-    filter_registry_domain_code: domain || null,
-    filter_is_active: true,
-  };
-
+  const retrievalQuery = buildRulesRetrievalQuery(query, domain);
   const search = await ragService.semanticSearch(db, {
-    query,
+    query: retrievalQuery,
     rpcName: 'match_knowledge_chunks',
-    rpcParams,
+    rpcParams: buildKnowledgeChunksRpcParams({ matchCount, domain }),
     logger,
   });
 
@@ -53,7 +102,7 @@ async function fetchRulesChunks(db, { query, domain = null, matchCount = 8 }, lo
 /**
  * ContextPack de reglas (no modifica pipeline ni respuesta al usuario).
  */
-async function fetchRulesContextPack(db, { query, logger = console } = {}) {
+async function fetchRulesContextPack(db, { query, domain = null, logger = console } = {}) {
   if (!isRagRulesEnabled()) {
     return {
       contextPack: ragService.createContextPack({ fallback_used: true }),
@@ -61,22 +110,20 @@ async function fetchRulesContextPack(db, { query, logger = console } = {}) {
     };
   }
 
+  const retrievalQuery = buildRulesRetrievalQuery(query, domain);
+
   return ragService.retrieveContextPack(db, {
-    query,
+    query: retrievalQuery,
     rpcName: 'match_knowledge_chunks',
-    rpcParams: {
-      match_count: 10,
-      min_score: Number(process.env.RAG_MIN_SCORE || 0.72),
-      filter_source_type: null,
-      filter_registry_domain_code: null,
-      filter_is_active: true,
-    },
+    rpcParams: buildKnowledgeChunksRpcParams({ matchCount: 10, domain }),
     logger,
   });
 }
 
 module.exports = {
   RULES_DOMAINS,
+  buildKnowledgeChunksRpcParams,
+  buildRulesRetrievalQuery,
   fetchRulesChunks,
   fetchRulesContextPack,
 };

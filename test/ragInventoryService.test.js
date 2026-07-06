@@ -26,6 +26,13 @@ describe('ragInventoryService — Sprint 3', () => {
     assert.equal(out.status, 'fallback_legacy');
   });
 
+  it('S4-R03-fix — buildInventoryRetrievalQuery alinea formato chunk', () => {
+    const q = ragInventory.buildInventoryRetrievalQuery('Busco casa con jardín en Cumbres');
+    assert.match(q, /Título: CASA EN CUMBRES/i);
+    assert.match(q, /Zona: Cumbres/i);
+    assert.match(q, /Descripción:/i);
+  });
+
   it('S3-R01 — código LUX en texto → fallback_legacy (path legacy)', async () => {
     process.env.RAG_P0_ENABLED = 'true';
     process.env.RAG_INVENTORY_ENABLED = 'true';

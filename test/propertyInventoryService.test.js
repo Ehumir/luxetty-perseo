@@ -98,6 +98,11 @@ test('shouldAttemptLoosePropertyResolution: visita landing', () => {
   );
 });
 
+test('shouldAttemptLoosePropertyResolution: búsqueda orgánica demanda', () => {
+  assert.equal(inv.shouldAttemptLoosePropertyResolution('Busco casa con jardín en Cumbres'), true);
+  assert.equal(inv.shouldAttemptLoosePropertyResolution('Hola qué tal'), false);
+});
+
 test('tokenOverlapScore: match alto', () => {
   const score = inv.tokenOverlapScore(
     'Terreno en Privada Renacimiento',

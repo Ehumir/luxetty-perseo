@@ -123,6 +123,13 @@ describe('ragService — Sprint 3', () => {
     assert.equal(legacy.fallback_used, false);
   });
 
+  it('buildCitationsFromChunks usa chunk_id de RPC', () => {
+    const cites = ragService.buildCitationsFromChunks([
+      { chunk_id: 'uuid-1', source_type: 'objection', similarity: 0.8, content: 'test' },
+    ]);
+    assert.equal(cites[0].chunk_id, 'uuid-1');
+  });
+
   it('persistRagQueryLog usa columnas schema real (sin PII)', async () => {
     const inserts = [];
     const db = {

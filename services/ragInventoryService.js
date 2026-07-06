@@ -20,6 +20,41 @@ function cleanSpaces(s) {
   return String(s || '').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Extrae zona de frases naturales ("en Cumbres", "de García").
+ */
+function extractZoneFromNaturalQuery(text) {
+  const raw = String(text || '');
+  const enMatch = raw.match(/\ben\s+([A-Za-zÁÉÍÓÚáéíóú0-9\s]{2,40}?)(?:\s+con|\s+y|\s*$|[.?!,])/i);
+  if (enMatch?.[1]) return cleanSpaces(enMatch[1]);
+  const deMatch = raw.match(/\bde\s+([A-Za-zÁÉÍÓÚáéíóú0-9\s]{2,40}?)(?:\s+con|\s+y|\s*$|[.?!,])/i);
+  if (deMatch?.[1]) return cleanSpaces(deMatch[1]);
+  return '';
+}
+
+/**
+ * Normaliza texto conversacional al formato de chunks indexados (solo embedding).
+ */
+function buildInventoryRetrievalQuery(text, hintZone = '') {
+  const zone = cleanSpaces(hintZone) || extractZoneFromNaturalQuery(text) || 'Monterrey';
+  const stripped = cleanSpaces(String(text || '')).replace(
+    /^(busco|quiero|necesito|me interesa|info de|información de|informacion de)\s+/i,
+    ''
+  );
+  const typeMatch = stripped.match(/\b(casa|departamento|depa|terreno|residencia|local)\b/i);
+  const type = (typeMatch ? typeMatch[1] : 'casa').toUpperCase();
+  const zoneLabel = zone.toUpperCase();
+  const opMatch = stripped.match(/\b(renta|rentar|alquiler|venta|comprar)\b/i);
+  const operation = opMatch ? ` EN ${opMatch[1].toUpperCase()}` : ' EN VENTA';
+
+  return [
+    `Título: ${type} EN ${zoneLabel}${operation}`,
+    `Zona: ${zone}`,
+    'Ciudad: Monterrey',
+    `Descripción: ${stripped || text}`,
+  ].join('\n');
+}
+
 function extractListingIdFromChunk(chunk) {
   const meta = chunk?.metadata || {};
   if (meta.listing_id) return cleanSpaces(meta.listing_id);
@@ -89,14 +124,15 @@ async function resolveInboundPropertyReference(db, { text, hintZone, canaryPhone
 
   const start = Date.now();
   const minScore = DEFAULT_MIN_SCORE;
+  const retrievalQuery = buildInventoryRetrievalQuery(looseText, hintZone);
 
   try {
     const search = await ragService.semanticSearch(db, {
-      query: looseText,
+      query: retrievalQuery,
       rpcName: 'match_property_chunks',
       rpcParams: {
         match_count: 5,
-        min_score: minScore,
+        min_score: ragService.getRagRpcMinScore(),
         filter_visibility_scope: null,
         filter_is_active: true,
         filter_property_id: null,
@@ -167,4 +203,6 @@ module.exports = {
   resolveInboundPropertyReference,
   extractListingIdFromChunk,
   loadPropertyFromChunk,
+  buildInventoryRetrievalQuery,
+  extractZoneFromNaturalQuery,
 };
