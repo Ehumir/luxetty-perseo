@@ -1,0 +1,58 @@
+{
+  "suite": "rag-perseo-canary-p0",
+  "description": "Sprint 4 — RAG canary PERSEO (allowlist + flags + fallback + logging)",
+  "sprint": 4,
+  "threshold": { "pass_rate": 1 },
+  "qa_flags_on_example": {
+    "RAG_P0_ENABLED": true,
+    "RAG_INVENTORY_ENABLED": true,
+    "RAG_RULES_ENABLED": true,
+    "RAG_P0_ALLOWLIST": "5218181877351"
+  },
+  "production_flags_required": {
+    "RAG_P0_ENABLED": false,
+    "RAG_INVENTORY_ENABLED": false,
+    "RAG_RULES_ENABLED": false
+  },
+  "scenarios": [
+    { "id": "S4-01", "name": "RAG OFF legacy identical", "expect": "legacy_path" },
+    { "id": "S4-02", "name": "RAG ON outside allowlist", "expect": "legacy_path" },
+    { "id": "S4-03", "name": "RAG ON allowlist inventory", "expect": "rag_query" },
+    { "id": "S4-04", "name": "LUX exact code legacy", "expect": "no_rag" },
+    { "id": "S4-05", "name": "Natural description RAG", "expect": "candidates" },
+    { "id": "S4-06", "name": "No results fallback", "expect": "honest_fallback" },
+    { "id": "S4-07", "name": "Low score fallback", "expect": "legacy" },
+    { "id": "S4-08", "name": "Ambiguous options", "expect": "disambiguation" },
+    { "id": "S4-09", "name": "Unpublished blocked", "expect": "hidden_excluded" },
+    { "id": "S4-10", "name": "Missing citation blocked", "expect": "hallucination_guard" },
+    { "id": "S4-11", "name": "Timeout fallback", "expect": "legacy" },
+    { "id": "S4-12", "name": "RPC error fallback", "expect": "legacy" },
+    { "id": "S4-13", "name": "Rules query context", "expect": "rules_retrieved" },
+    { "id": "S4-14", "name": "Rules OFF", "expect": "no_rules" },
+    { "id": "S4-15", "name": "Inventory OFF", "expect": "no_inventory" },
+    { "id": "S4-16", "name": "Master OFF", "expect": "no_rag" },
+    { "id": "S4-17", "name": "rag_query_logs insert", "expect": "log_written" },
+    { "id": "S4-18", "name": "retrieval_citations insert", "expect": "citations_written" },
+    { "id": "S4-19", "name": "No CRM writes", "expect": "crm_zero" },
+    { "id": "S4-20", "name": "No new leads", "expect": "leads_zero" },
+    { "id": "S4-21", "name": "No assignment changes", "expect": "assignment_unchanged" },
+    { "id": "S4-22", "name": "No webhook changes", "expect": "webhook_unchanged" },
+    { "id": "S4-23", "name": "Latency under 1.2s", "expect": "under_1200ms" },
+    { "id": "S4-24", "name": "No PII in logs", "expect": "no_pii" },
+    { "id": "S4-25", "name": "No full message in rag_query_logs", "expect": "hash_only" },
+    { "id": "S4-26", "name": "Prod canary OFF default", "expect": "flags_off" },
+    { "id": "S4-27", "name": "Prod flags OFF no RAG calls", "expect": "zero_logs" },
+    { "id": "S4-28", "name": "QA canary RAG calls", "expect": "qa_smoke" },
+    { "id": "S4-29", "name": "Fallback maintains response", "expect": "no_user_error" },
+    { "id": "S4-30", "name": "Hallucination guard", "expect": "blocks_claim" }
+  ],
+  "automated_test_files": [
+    "test/ragCanaryP0.test.js",
+    "test/ragService.test.js",
+    "test/ragInventoryService.test.js",
+    "test/ragRulesService.test.js",
+    "test/ragAccP0.test.js",
+    "test/accFoundationP0.test.js",
+    "test/ragKnowledgeStoreP0.test.js"
+  ]
+}

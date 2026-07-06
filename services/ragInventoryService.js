@@ -1,6 +1,6 @@
 'use strict';
 
-const { isRagInventoryEnabled } = require('../config/accP0Flags');
+const { isRagInventoryEffectiveForUser } = require('../config/accP0Flags');
 const ragService = require('./ragService');
 const {
   DEFAULT_MIN_SCORE,
@@ -74,8 +74,8 @@ function wrapAmbiguousResult(candidates, { ragMeta = null } = {}) {
  * Resolución de inventario vía Knowledge Store (solo cuando RAG_INVENTORY_ENABLED).
  * Nunca escribe CRM. Fallback → { status: 'fallback_legacy' }.
  */
-async function resolveInboundPropertyReference(db, { text, hintZone }, logger = console) {
-  if (!isRagInventoryEnabled()) {
+async function resolveInboundPropertyReference(db, { text, hintZone, canaryPhone }, logger = console) {
+  if (!isRagInventoryEffectiveForUser(canaryPhone)) {
     return { status: 'fallback_legacy' };
   }
 
@@ -144,7 +144,12 @@ async function resolveInboundPropertyReference(db, { text, hintZone }, logger = 
 
     await ragService.persistRagQueryLog(db, {
       queryHash: search.query_hash,
-      filters: { source: 'inventory', hint_zone: hintZone || null },
+      filters: {
+        source: 'inventory',
+        hint_zone: hintZone || null,
+        domain: 'properties',
+        conversation_id: null,
+      },
       resultsCount: 1,
       latencyMs: search.latency_ms,
       fallbackUsed: false,

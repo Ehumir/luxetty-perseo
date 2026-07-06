@@ -155,6 +155,9 @@ function processV3Turn(input) {
     if (h.activeProperty && typeof h.activeProperty === 'object' && h.activeProperty.id) {
       hyd.activeProperty = h.activeProperty;
     }
+    if (h.ragContextPack && typeof h.ragContextPack === 'object') {
+      hyd.ragContextPack = h.ragContextPack;
+    }
     if (!Object.keys(hyd).length) return base;
     return mergeConversationState(base, hyd);
   }
