@@ -562,6 +562,35 @@ async function resolveInboundPropertyReference(db, { code, text, hintZone } = {}
   }
 
   const looseText = String(text || '');
+
+  const { isRagInventoryEnabled } = require('../config/accP0Flags');
+  if (isRagInventoryEnabled()) {
+    const ragInv = require('./ragInventoryService');
+    const ragOut = await ragInv.resolveInboundPropertyReference(db, { text: looseText, hintZone: zoneHint }, logger);
+    if (ragOut.status === 'found') {
+      return {
+        status: 'found',
+        property: ragOut.property,
+        propertyId: ragOut.propertyId,
+        normalized: ragOut.normalized,
+        code: ragOut.normalized?.code || null,
+        ambiguous: false,
+        candidates: [],
+      };
+    }
+    if (ragOut.status === 'ambiguous') {
+      return {
+        status: 'ambiguous',
+        property: null,
+        propertyId: null,
+        normalized: null,
+        code: null,
+        ambiguous: true,
+        candidates: ragOut.candidates || [],
+      };
+    }
+  }
+
   const urlSlug = looseText.match(/luxetty\.com\/propiedad\/([a-z0-9-]+)/i);
   if (urlSlug?.[1]) {
     const bySlug = await findPropertyBySlug(db, urlSlug[1], logger);
