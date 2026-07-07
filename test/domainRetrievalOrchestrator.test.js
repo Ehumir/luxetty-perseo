@@ -4,20 +4,24 @@ const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const ragService = require('../services/ragService');
 const { filterChunksByDomain, retrieveWithDomainRouting } = require('../conversation/v3/rag/domainRetrievalOrchestrator');
+const { resetThresholdLoaderForTests } = require('../conversation/v3/rag/ragDomainThresholdLoader');
 
 const originalSemanticSearch = ragService.semanticSearch;
 
 describe('domainRetrievalOrchestrator — RQ-3', () => {
   beforeEach(() => {
     ragService.semanticSearch = originalSemanticSearch;
+    resetThresholdLoaderForTests();
     process.env.RAG_P0_ENABLED = 'true';
     process.env.RAG_RULES_ENABLED = 'true';
   });
 
   afterEach(() => {
     ragService.semanticSearch = originalSemanticSearch;
+    resetThresholdLoaderForTests();
     delete process.env.RAG_P0_ENABLED;
     delete process.env.RAG_RULES_ENABLED;
+    delete process.env.RAG_ADAPTIVE_THRESHOLD_ENABLED;
   });
 
   it('RQ3-RO-01 — filterChunksByDomain descarta properties', () => {
@@ -55,5 +59,41 @@ describe('domainRetrievalOrchestrator — RQ-3', () => {
     assert.equal(routed.routing.domain_selected, 'commercial_objections');
     assert.ok(routed.routing.cross_domain_discarded >= 1);
     assert.equal(routed.top1?.registry_domain_code, 'commercial_objections');
+  });
+
+  it('RQ47-RO-03 — secondary fallback cuando primary vacío (alta confianza)', async () => {
+    let calls = 0;
+    ragService.semanticSearch = async (_db, opts) => {
+      calls += 1;
+      if (opts.rpcName === 'match_knowledge_chunks' && calls === 1) {
+        return { chunks: [], fallback: false, query_hash: 'empty', latency_ms: 5 };
+      }
+      if (opts.rpcName === 'match_knowledge_chunks') {
+        return {
+          chunks: [
+            {
+              chunk_id: 's1',
+              registry_domain_code: 'scripts',
+              similarity: 0.82,
+              content: 'script seguimiento',
+            },
+          ],
+          fallback: false,
+          query_hash: 'sec',
+          latency_ms: 8,
+        };
+      }
+      return { chunks: [], fallback: true, query_hash: 'x', latency_ms: 1 };
+    };
+
+    process.env.RAG_ADAPTIVE_THRESHOLD_ENABLED = 'true';
+    const db = { rpc: async () => ({ data: [], error: null }) };
+    const routed = await retrieveWithDomainRouting(db, {
+      query: 'Me parece mucho la comisión que cobran',
+    });
+    assert.equal(routed.routing.domain_detected, 'commercial_objections');
+    assert.equal(routed.routing.secondary_domain_used, true);
+    assert.equal(routed.routing.domain_selected, 'scripts');
+    assert.equal(routed.fallback, false);
   });
 });

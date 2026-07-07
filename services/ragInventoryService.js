@@ -2,8 +2,8 @@
 
 const { isRagInventoryEffectiveForUser } = require('../config/accP0Flags');
 const ragService = require('./ragService');
+const { getMinScoreForDomain } = require('../conversation/v3/rag/ragDomainThresholdLoader');
 const {
-  DEFAULT_MIN_SCORE,
   evaluateRetrieval,
   filterValidChunks,
   isPropertyRowPublishable,
@@ -123,7 +123,7 @@ async function resolveInboundPropertyReference(db, { text, hintZone, canaryPhone
   }
 
   const start = Date.now();
-  const minScore = DEFAULT_MIN_SCORE;
+  const minScore = getMinScoreForDomain('properties');
   const retrievalQuery = buildInventoryRetrievalQuery(looseText, hintZone);
 
   try {

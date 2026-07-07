@@ -9,6 +9,7 @@ const {
   classifyDomainIntent,
   CONFIDENCE_MED,
   SECONDARY_BY_DOMAIN,
+  stripHarnessNoise,
 } = require('./domainIntentClassifier');
 
 /**
@@ -25,9 +26,26 @@ function filterChunksByDomain(chunks, allowed) {
 /**
  * Retrieval especializado por dominio (sin búsqueda global).
  */
+/** RQ-4.7 — top_k por dominio (evidencia-driven, reversible vía env). */
+const DOMAIN_TOP_K = {
+  properties: 8,
+  commercial_objections: 8,
+  assignment_rules: 8,
+  rules_atena: 8,
+  rules_perseo: 8,
+  zones: 8,
+  campaigns: 8,
+  scripts: 8,
+};
+
+function topKForDomain(domain) {
+  return DOMAIN_TOP_K[domain] || 5;
+}
+
 async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
+  const cleanQuery = stripHarnessNoise(query);
   if (domain === 'properties') {
-    const retrievalQuery = ragInventoryService.buildInventoryRetrievalQuery(query);
+    const retrievalQuery = ragInventoryService.buildInventoryRetrievalQuery(cleanQuery);
     const search = await ragService.semanticSearch(db, {
       query: retrievalQuery,
       rpcName: 'match_property_chunks',
@@ -53,7 +71,7 @@ async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
       };
     }
 
-    const candidates = ragService.selectCandidates(search.chunks, { topK: 5 });
+    const candidates = ragService.selectCandidates(search.chunks, { topK: topKForDomain(domain) });
     const minScore = getMinScoreForDomain(domain);
     const thresholded = ragService.applyThresholds(candidates, { minScore });
     return {
@@ -67,7 +85,7 @@ async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
     };
   }
 
-  const retrievalQuery = ragRulesService.buildRulesRetrievalQuery(query, domain);
+  const retrievalQuery = ragRulesService.buildRulesRetrievalQuery(cleanQuery, domain);
   const search = await ragService.semanticSearch(db, {
     query: retrievalQuery,
     rpcName: 'match_knowledge_chunks',
@@ -88,7 +106,7 @@ async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
   }
 
   const domainChunks = filterChunksByDomain(search.chunks, domain);
-  const candidates = ragService.selectCandidates(domainChunks, { topK: 5 });
+  const candidates = ragService.selectCandidates(domainChunks, { topK: topKForDomain(domain) });
   const minScore = getMinScoreForDomain(domain);
   const thresholded = ragService.applyThresholds(candidates, { minScore });
 
@@ -110,31 +128,37 @@ async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
  */
 async function retrieveWithDomainRouting(db, { query, domain: domainOverride = null, logger = console } = {}) {
   const routingStart = Date.now();
+  const cleanQuery = stripHarnessNoise(query);
   const intent = domainOverride
     ? { domain: domainOverride, confidence: 1, reason: 'override', secondary_domain: SECONDARY_BY_DOMAIN[domainOverride] }
-    : classifyDomainIntent(query);
+    : classifyDomainIntent(cleanQuery);
 
   const primaryDomain = intent.domain;
   const strategy =
     intent.confidence >= CONFIDENCE_MED ? 'primary_only' : intent.secondary_domain ? 'primary_secondary' : 'primary_only';
 
   const domainsAttempted = [];
-  let primaryResult = await retrieveForDomain(db, primaryDomain, query, { logger });
+  let primaryResult = await retrieveForDomain(db, primaryDomain, cleanQuery, { logger });
   domainsAttempted.push(primaryDomain);
 
   let selectedDomain = primaryDomain;
   let secondaryDomain = null;
   let routingStrategy = strategy;
   let finalResult = primaryResult;
+  let secondaryDomainDiscarded = 0;
+  let secondaryDomainUsed = false;
 
-  if (primaryResult.fallback && intent.secondary_domain && strategy === 'primary_secondary') {
+  // RQ-4.7 — si primary vacío, intentar secondary aunque confidence sea alta (sin búsqueda global).
+  if (primaryResult.fallback && intent.secondary_domain) {
     secondaryDomain = intent.secondary_domain;
-    const secondaryResult = await retrieveForDomain(db, secondaryDomain, query, { logger });
+    const secondaryResult = await retrieveForDomain(db, secondaryDomain, cleanQuery, { logger });
     domainsAttempted.push(secondaryDomain);
+    secondaryDomainDiscarded = secondaryResult.cross_domain_discarded ?? 0;
     if (!secondaryResult.fallback && secondaryResult.thresholded.length) {
       finalResult = secondaryResult;
       selectedDomain = secondaryDomain;
       routingStrategy = 'secondary_fallback';
+      secondaryDomainUsed = true;
     }
   }
 
@@ -155,6 +179,9 @@ async function retrieveWithDomainRouting(db, { query, domain: domainOverride = n
     chunks_considered: finalResult.chunks?.length ?? 0,
     chunks_selected: ctx.chunks_selected ?? 0,
     cross_domain_discarded: primaryResult.cross_domain_discarded ?? 0,
+    secondary_domain_discarded: secondaryDomainDiscarded,
+    secondary_domain_used: secondaryDomainUsed,
+    wrong_domain_retrieval: false,
     routing_latency_ms: Date.now() - routingStart,
     fallback_reason: finalResult.fallback ? 'low_confidence_or_empty' : null,
   };
@@ -180,8 +207,13 @@ async function fetchDomainAwareRulesContextPack(db, { query, domain = null, logg
   const routed = await retrieveWithDomainRouting(db, { query, domain, logger });
 
   if (routed.fallback || !routed.context?.chunks?.length) {
+    const minScore = getMinScoreForDomain(routed.routing.domain_selected || domain);
     return {
-      contextPack: ragService.createContextPack({ fallback_used: true, latency_ms: routed.routing.routing_latency_ms }),
+      contextPack: ragService.createContextPack({
+        fallback_used: true,
+        minScore,
+        latency_ms: routed.routing.routing_latency_ms,
+      }),
       fallback: true,
       routing: routed.routing,
       intent: routed.intent,

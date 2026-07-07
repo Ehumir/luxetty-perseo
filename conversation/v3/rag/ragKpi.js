@@ -1,6 +1,11 @@
 'use strict';
 
 const { DEFAULT_MIN_SCORE } = require('./ragPolicy');
+const {
+  aggregateRecallMetrics,
+  chunkReuseStats,
+  averageContextUtilization,
+} = require('./ragRetrievalMetrics');
 
 /**
  * KPI payload interno para ARGOS (Sprint 5). No expone citations al usuario.
@@ -9,7 +14,9 @@ function buildRagRetrievalKpi(contextPack, extras = {}) {
   const citations = Array.isArray(contextPack?.citations) ? contextPack.citations : [];
   const confidence = Number(contextPack?.confidence ?? 0);
   const fallbackUsed = !!contextPack?.fallback_used;
-  const minThreshold = Number(contextPack?.scores?.min_score_threshold ?? DEFAULT_MIN_SCORE);
+  const minThreshold = Number(
+    contextPack?.scores?.min_score_threshold ?? extras.min_score_threshold ?? DEFAULT_MIN_SCORE
+  );
   const grounded =
     !fallbackUsed &&
     citations.length > 0 &&
@@ -98,4 +105,7 @@ function aggregateRagKpis(events = []) {
 module.exports = {
   buildRagRetrievalKpi,
   aggregateRagKpis,
+  aggregateRecallMetrics,
+  chunkReuseStats,
+  averageContextUtilization,
 };

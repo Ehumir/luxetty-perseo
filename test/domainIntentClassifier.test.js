@@ -48,4 +48,10 @@ describe('domainIntentClassifier — RQ-3', () => {
     assert.equal(r.domain, 'commercial_objections');
     assert.equal(r.reason, 'valuacion_keywords');
   });
+
+  it('RQ47-C01 — stripHarnessNoise quita tag QA', () => {
+    const { stripHarnessNoise } = require('../conversation/v3/rag/domainIntentClassifier');
+    const out = stripHarnessNoise('comisión alta [rq5-1783385980459]');
+    assert.equal(out, 'comisión alta');
+  });
 });

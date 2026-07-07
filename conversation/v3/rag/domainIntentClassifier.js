@@ -136,6 +136,14 @@ function normalizeText(text) {
     .trim();
 }
 
+/** RQ-4.7 — quita ruido del harness QA sin alterar intención. */
+function stripHarnessNoise(text) {
+  return normalizeText(text)
+    .replace(/\s*\[rq5-[a-z0-9.-]+\]\s*/gi, ' ')
+    .replace(/\s*\[rq47-[a-z0-9.-]+\]\s*/gi, ' ')
+    .trim();
+}
+
 /**
  * @param {string} text
  * @returns {DomainIntent}
@@ -226,4 +234,5 @@ module.exports = {
   detectRulesDomain,
   isHighConfidence,
   shouldBlockInventoryForRulesIntent,
+  stripHarnessNoise,
 };

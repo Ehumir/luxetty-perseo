@@ -105,21 +105,8 @@ async function enrichTurnWithRagContextLegacy(db, { text, phone, conversationId,
 /** RQ-3 certified path — domain routing + RQ-4 adaptive threshold via orchestrator */
 async function enrichTurnWithRagContextRq3(db, { text, phone, conversationId, messageId, saveConversationEvent, flags, logger }) {
   const intent = classifyDomainIntent(text);
-  if (intent.domain === 'properties') {
-    return {
-      contextPack: null,
-      meta: {
-        skipped: true,
-        reason: 'properties_domain_deferred_to_inventory',
-        flags,
-        allowlist_eligible: true,
-        domain_intent: intent,
-        pipeline: 'rq3_domain_routing',
-      },
-    };
-  }
 
-  if (intent.confidence < CONFIDENCE_LOW && !detectRulesDomain(text)) {
+  if (intent.confidence < CONFIDENCE_LOW && intent.domain !== 'properties' && !detectRulesDomain(text)) {
     return {
       contextPack: null,
       meta: {
@@ -133,8 +120,14 @@ async function enrichTurnWithRagContextRq3(db, { text, phone, conversationId, me
     };
   }
 
-  const domain = intent.domain === 'scripts' ? detectRulesDomain(text) || intent.secondary_domain : intent.domain;
-  if (!domain || domain === 'properties') {
+  const domain =
+    intent.domain === 'properties'
+      ? 'properties'
+      : intent.domain === 'scripts'
+        ? detectRulesDomain(text) || intent.secondary_domain
+        : intent.domain;
+
+  if (!domain || (domain === 'scripts' && !detectRulesDomain(text))) {
     return {
       contextPack: null,
       meta: {
@@ -149,6 +142,7 @@ async function enrichTurnWithRagContextRq3(db, { text, phone, conversationId, me
   }
 
   const start = Date.now();
+  const minScoreApplied = getMinScoreForDomain(domain);
   try {
     const rulesResult = await fetchDomainAwareRulesContextPack(db, { query: text, domain, logger });
     const contextPack = rulesResult?.contextPack || null;
@@ -189,6 +183,10 @@ async function enrichTurnWithRagContextRq3(db, { text, phone, conversationId, me
         chunks_considered: routing.chunks_considered,
         routing_latency_ms: routing.routing_latency_ms,
         cross_domain_discarded: routing.cross_domain_discarded,
+        secondary_domain_discarded: routing.secondary_domain_discarded,
+        secondary_domain_used: routing.secondary_domain_used,
+        wrong_domain_retrieval: routing.wrong_domain_retrieval === true,
+        min_score_threshold: minScoreApplied,
       });
       await saveConversationEvent(conversationId, 'rag_retrieval', kpiPayload);
     }
@@ -216,6 +214,7 @@ async function enrichTurnWithRagContextRq3(db, { text, phone, conversationId, me
         allowlist_eligible: true,
         pipeline: 'rq3_domain_routing',
         retrieval_latency_ms: meta.latency_ms,
+        min_score_threshold: minScoreApplied,
       });
       await saveConversationEvent(conversationId, 'rag_retrieval', kpiPayload);
     }
