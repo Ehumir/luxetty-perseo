@@ -233,7 +233,18 @@ async function persistRagQueryLog(db, {
 /**
  * Orquestación completa con timeout global y fallback.
  */
-async function retrieveContextPack(db, { query, rpcName, rpcParams, logger = console, minScore = DEFAULT_MIN_SCORE }) {
+async function retrieveContextPack(
+  db,
+  {
+    query,
+    rpcName,
+    rpcParams,
+    logger = console,
+    minScore = DEFAULT_MIN_SCORE,
+    registryDomainFilter = null,
+    allowedDomains = null,
+  } = {}
+) {
   const start = Date.now();
   if (!isRagP0Enabled()) {
     return { contextPack: createContextPack({ fallback_used: true }), fallback: true };
@@ -251,7 +262,19 @@ async function retrieveContextPack(db, { query, rpcName, rpcParams, logger = con
       return { contextPack: pack, fallback: true };
     }
 
-    const candidates = selectCandidates(search.chunks);
+    let scopedChunks = search.chunks;
+    if (registryDomainFilter) {
+      scopedChunks = scopedChunks.filter((c) => c.registry_domain_code === registryDomainFilter);
+    } else if (Array.isArray(allowedDomains) && allowedDomains.length) {
+      scopedChunks = scopedChunks.filter((c) => allowedDomains.includes(c.registry_domain_code));
+    }
+
+    if (!scopedChunks.length) {
+      const pack = createContextPack({ fallback_used: true, latency_ms: Date.now() - start });
+      return { contextPack: pack, fallback: true, cross_domain_empty: true };
+    }
+
+    const candidates = selectCandidates(scopedChunks);
     const thresholded = applyThresholds(candidates, { minScore });
     const evalResult = evaluateRetrieval(thresholded, { minScore });
 
@@ -296,6 +319,8 @@ module.exports = {
   RAG_RETRIEVAL_BUDGET_MS,
   getRagRpcMinScore,
   sha256,
+  embedQuery,
+  getQueryEmbedding,
   semanticSearch,
   buildContext,
   selectCandidates,
@@ -305,5 +330,6 @@ module.exports = {
   persistRagQueryLog,
   retrieveContextPack,
   buildCitationsFromChunks,
+  getQueryEmbedding,
   _clearEmbeddingCacheForTests: () => embeddingCache.clear(),
 };

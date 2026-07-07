@@ -1,6 +1,6 @@
 'use strict';
 
-const { isRagRulesEnabled } = require('../config/accP0Flags');
+const { isRagRulesEnabled, isRagDomainRoutingEnabled } = require('../config/accP0Flags');
 const ragService = require('./ragService');
 
 const RULES_DOMAINS = [
@@ -102,12 +102,17 @@ async function fetchRulesChunks(db, { query, domain = null, matchCount = 8 }, lo
 /**
  * ContextPack de reglas (no modifica pipeline ni respuesta al usuario).
  */
-async function fetchRulesContextPack(db, { query, domain = null, logger = console } = {}) {
+async function fetchRulesContextPack(db, { query, domain = null, logger = console, domainAware = true } = {}) {
   if (!isRagRulesEnabled()) {
     return {
       contextPack: ragService.createContextPack({ fallback_used: true }),
       fallback: true,
     };
+  }
+
+  if (domainAware && isRagDomainRoutingEnabled()) {
+    const { fetchDomainAwareRulesContextPack } = require('../conversation/v3/rag/domainRetrievalOrchestrator');
+    return fetchDomainAwareRulesContextPack(db, { query, domain, logger });
   }
 
   const retrievalQuery = buildRulesRetrievalQuery(query, domain);
@@ -116,6 +121,8 @@ async function fetchRulesContextPack(db, { query, domain = null, logger = consol
     query: retrievalQuery,
     rpcName: 'match_knowledge_chunks',
     rpcParams: buildKnowledgeChunksRpcParams({ matchCount: 10, domain }),
+    registryDomainFilter: domain || null,
+    allowedDomains: domain ? null : RULES_DOMAINS,
     logger,
   });
 }

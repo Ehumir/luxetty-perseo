@@ -391,6 +391,15 @@ function extractPropertyTitleHint(text) {
 }
 
 function shouldAttemptLoosePropertyResolution(text) {
+  try {
+    const { isRagDomainRoutingEnabled } = require('../config/accP0Flags');
+    if (isRagDomainRoutingEnabled()) {
+      const { shouldBlockInventoryForRulesIntent } = require('../conversation/v3/rag/domainIntentClassifier');
+      if (shouldBlockInventoryForRulesIntent(text)) return false;
+    }
+  } catch {
+    /* optional during partial deploy */
+  }
   const t = normalizeText(String(text || ''));
   if (!t) return false;
   if (extractPropertyCode(text)) return true;

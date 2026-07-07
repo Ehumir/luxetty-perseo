@@ -2,6 +2,16 @@ require('dotenv').config();
 
 'use strict';
 
+try {
+  const { runRagRuntimeSelfCheck } = require('./conversation/v3/rag/ragRuntimeSelfCheck');
+  global.__PERSEO_RAG_RUNTIME_SELF_CHECK__ = runRagRuntimeSelfCheck();
+} catch (bootCheckErr) {
+  global.__PERSEO_RAG_RUNTIME_SELF_CHECK__ = {
+    pass: false,
+    boot_error: String(bootCheckErr?.message || bootCheckErr),
+  };
+}
+
 /**
  * PERSEO — Clean Orchestrator (P0)
  *

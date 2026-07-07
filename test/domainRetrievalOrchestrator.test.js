@@ -1,0 +1,59 @@
+'use strict';
+
+const { describe, it, beforeEach, afterEach } = require('node:test');
+const assert = require('node:assert/strict');
+const ragService = require('../services/ragService');
+const { filterChunksByDomain, retrieveWithDomainRouting } = require('../conversation/v3/rag/domainRetrievalOrchestrator');
+
+const originalSemanticSearch = ragService.semanticSearch;
+
+describe('domainRetrievalOrchestrator — RQ-3', () => {
+  beforeEach(() => {
+    ragService.semanticSearch = originalSemanticSearch;
+    process.env.RAG_P0_ENABLED = 'true';
+    process.env.RAG_RULES_ENABLED = 'true';
+  });
+
+  afterEach(() => {
+    ragService.semanticSearch = originalSemanticSearch;
+    delete process.env.RAG_P0_ENABLED;
+    delete process.env.RAG_RULES_ENABLED;
+  });
+
+  it('RQ3-RO-01 — filterChunksByDomain descarta properties', () => {
+    const chunks = [
+      { registry_domain_code: 'commercial_objections', similarity: 0.8 },
+      { registry_domain_code: 'properties', similarity: 0.9 },
+    ];
+    const out = filterChunksByDomain(chunks, 'commercial_objections');
+    assert.equal(out.length, 1);
+    assert.equal(out[0].registry_domain_code, 'commercial_objections');
+  });
+
+  it('RQ3-RO-02 — captación no compite con properties en top1', async () => {
+    ragService.semanticSearch = async (_db, opts) => {
+      if (opts.rpcName === 'match_knowledge_chunks') {
+        return {
+          chunks: [
+            { chunk_id: 'p1', registry_domain_code: 'properties', similarity: 0.85, content: 'San Pedro listing' },
+            { chunk_id: 'c1', registry_domain_code: 'commercial_objections', similarity: 0.72, content: 'captación' },
+          ],
+          fallback: false,
+          query_hash: 'h1',
+          latency_ms: 10,
+        };
+      }
+      return { chunks: [], fallback: true, query_hash: 'h2', latency_ms: 5 };
+    };
+
+    const db = { rpc: async () => ({ data: [], error: null }) };
+    const routed = await retrieveWithDomainRouting(db, {
+      query: 'Quiero vender mi casa en San Pedro',
+    });
+
+    assert.equal(routed.intent.domain, 'commercial_objections');
+    assert.equal(routed.routing.domain_selected, 'commercial_objections');
+    assert.ok(routed.routing.cross_domain_discarded >= 1);
+    assert.equal(routed.top1?.registry_domain_code, 'commercial_objections');
+  });
+});

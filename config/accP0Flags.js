@@ -105,6 +105,22 @@ function isRagRulesEnabled() {
 }
 
 /**
+ * RQ-3 — domain-aware routing (certificado). Requiere RAG_P0_ENABLED.
+ * @returns {boolean}
+ */
+function isRagDomainRoutingEnabled() {
+  return isRagP0Enabled() && envTrue('RAG_DOMAIN_ROUTING_ENABLED');
+}
+
+/**
+ * RQ-4 — adaptive threshold por dominio. Requiere domain routing ON.
+ * @returns {boolean}
+ */
+function isRagAdaptiveThresholdEnabled() {
+  return isRagDomainRoutingEnabled() && envTrue('RAG_ADAPTIVE_THRESHOLD_ENABLED');
+}
+
+/**
  * Lectura diagnóstica para ARGOS / logs (sin secretos).
  * @returns {Record<string, boolean | string[] | number>}
  */
@@ -122,6 +138,8 @@ function getAccRagP0FlagSnapshot() {
     ACC_P0_EFFECTIVE_INSTAGRAM: isAccInstagramEnabled(),
     RAG_P0_EFFECTIVE_INVENTORY: isRagInventoryEnabled(),
     RAG_P0_EFFECTIVE_RULES: isRagRulesEnabled(),
+    RAG_DOMAIN_ROUTING_ENABLED: isRagDomainRoutingEnabled(),
+    RAG_ADAPTIVE_THRESHOLD_ENABLED: isRagAdaptiveThresholdEnabled(),
     RAG_P0_ALLOWLIST_COUNT: splitAllowlist(process.env.RAG_P0_ALLOWLIST).length,
     ACC_CANARY_ALLOWLIST_COUNT: splitAllowlist(process.env.ACC_CANARY_ALLOWLIST).length,
   };
@@ -135,6 +153,8 @@ module.exports = {
   isRagP0Enabled,
   isRagInventoryEnabled,
   isRagRulesEnabled,
+  isRagDomainRoutingEnabled,
+  isRagAdaptiveThresholdEnabled,
   isRagCanaryEligible,
   isRagInventoryEffectiveForUser,
   isRagRulesEffectiveForUser,
