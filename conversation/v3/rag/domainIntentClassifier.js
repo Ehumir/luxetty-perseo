@@ -130,6 +130,18 @@ const SECONDARY_BY_DOMAIN = {
   properties: 'zones',
 };
 
+/** RQ-4.7 — cadena ordenada de dominios secundarios (sin búsqueda global). */
+const SECONDARY_CHAIN_BY_DOMAIN = {
+  commercial_objections: ['scripts', 'rules_perseo'],
+  assignment_rules: ['rules_perseo'],
+  rules_atena: ['rules_perseo'],
+  rules_perseo: ['rules_atena'],
+  zones: ['scripts'],
+  campaigns: ['scripts', 'rules_perseo'],
+  scripts: ['commercial_objections'],
+  properties: ['zones'],
+};
+
 function normalizeText(text) {
   return String(text || '')
     .replace(/\s+/g, ' ')
@@ -230,6 +242,7 @@ module.exports = {
   CONFIDENCE_MED: MED,
   CONFIDENCE_LOW: LOW,
   SECONDARY_BY_DOMAIN,
+  SECONDARY_CHAIN_BY_DOMAIN,
   classifyDomainIntent,
   detectRulesDomain,
   isHighConfidence,

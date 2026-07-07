@@ -13,6 +13,7 @@ const { execSync } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 const { buildWebhookEnvelope, textMessage } = require('../../test/helpers/whatsappFixtures');
 const { buildRagQualityReport } = require('../../argos/ragKpiReport');
+const { isRagCanaryEligible } = require('../../config/accP0Flags');
 
 const BASE_URL = (process.env.PERSEO_BASE_URL || 'https://luxetty-perseo-qa.up.railway.app').replace(/\/$/, '');
 const QA_PHONE = String(process.env.RAG_SMOKE_PHONE || '5218181877351').replace(/\D/g, '');
@@ -399,7 +400,7 @@ async function main() {
   let lastPass = false;
 
   for (const target of stagesToRun) {
-    console.log(`RQ-5 stage ${target} starting...`);
+    console.log(`RQ-4.7 stage ${target} starting...`);
     const stageResult = await runStage(supabase, target, preflight);
     stageResult.rq4_comparison = compareToRq4(stageResult, rq4Comparison);
     results[target] = stageResult;

@@ -24,7 +24,11 @@ const RULES_RETRIEVAL_HINTS = {
     honorarios: 'Objeción honorarios comisión transparencia',
   },
   assignment_rules: 'asignación ownership dueño contacto',
-  campaigns: 'campaña pauta meta',
+  campaigns: {
+    campa: 'Campaña marketing Meta pauta publicitaria redes sociales anuncios',
+    meta: 'Campaña Meta Facebook Instagram pauta publicitaria',
+    pauta: 'Pauta publicitaria campaña marketing digital',
+  },
   zones: 'zona colonia ubicación',
   rules_perseo: 'política reglas PERSEO no inventar',
   rules_atena: 'solicitud lead contacto ATENA',
@@ -68,6 +72,10 @@ function buildRulesRetrievalQuery(text, domain = null) {
     if (lower.includes(key)) {
       return `${hint}\n${base}`;
     }
+  }
+
+  if (domain === 'commercial_objections') {
+    return `Objeción comercial captación valuación propietario\n${base}`;
   }
 
   return base;

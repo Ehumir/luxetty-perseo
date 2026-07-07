@@ -10,6 +10,7 @@ const {
   CONFIDENCE_MED,
   SECONDARY_BY_DOMAIN,
   stripHarnessNoise,
+  SECONDARY_CHAIN_BY_DOMAIN,
 } = require('./domainIntentClassifier');
 
 /**
@@ -40,6 +41,14 @@ const DOMAIN_TOP_K = {
 
 function topKForDomain(domain) {
   return DOMAIN_TOP_K[domain] || 5;
+}
+
+/** RQ-4.7 — recall RPC por dominio (no altera threshold adaptativo de app). */
+function rpcMinScoreForDomain(domain) {
+  const recall = { campaigns: 0.45, zones: 0.45 };
+  const v = recall[domain];
+  if (typeof v === 'number') return v;
+  return ragService.getRagRpcMinScore();
 }
 
 async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
@@ -86,10 +95,14 @@ async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
   }
 
   const retrievalQuery = ragRulesService.buildRulesRetrievalQuery(cleanQuery, domain);
+  const rpcParams = {
+    ...ragRulesService.buildKnowledgeChunksRpcParams({ matchCount: 10, domain }),
+    min_score: rpcMinScoreForDomain(domain),
+  };
   const search = await ragService.semanticSearch(db, {
     query: retrievalQuery,
     rpcName: 'match_knowledge_chunks',
-    rpcParams: ragRulesService.buildKnowledgeChunksRpcParams({ matchCount: 10, domain }),
+    rpcParams,
     logger,
   });
 
@@ -148,17 +161,23 @@ async function retrieveWithDomainRouting(db, { query, domain: domainOverride = n
   let secondaryDomainDiscarded = 0;
   let secondaryDomainUsed = false;
 
-  // RQ-4.7 — si primary vacío, intentar secondary aunque confidence sea alta (sin búsqueda global).
-  if (primaryResult.fallback && intent.secondary_domain) {
-    secondaryDomain = intent.secondary_domain;
-    const secondaryResult = await retrieveForDomain(db, secondaryDomain, cleanQuery, { logger });
-    domainsAttempted.push(secondaryDomain);
-    secondaryDomainDiscarded = secondaryResult.cross_domain_discarded ?? 0;
-    if (!secondaryResult.fallback && secondaryResult.thresholded.length) {
-      finalResult = secondaryResult;
-      selectedDomain = secondaryDomain;
-      routingStrategy = 'secondary_fallback';
-      secondaryDomainUsed = true;
+  const secondaryChain = SECONDARY_CHAIN_BY_DOMAIN[primaryDomain] || (intent.secondary_domain ? [intent.secondary_domain] : []);
+
+  // RQ-4.7 — si primary vacío, recorrer cadena secundaria (sin búsqueda global).
+  if (primaryResult.fallback && secondaryChain.length) {
+    for (const candidate of secondaryChain) {
+      if (!primaryResult.fallback) break;
+      secondaryDomain = candidate;
+      const secondaryResult = await retrieveForDomain(db, candidate, cleanQuery, { logger });
+      domainsAttempted.push(candidate);
+      secondaryDomainDiscarded += secondaryResult.cross_domain_discarded ?? 0;
+      if (!secondaryResult.fallback && secondaryResult.thresholded.length) {
+        finalResult = secondaryResult;
+        selectedDomain = candidate;
+        routingStrategy = 'secondary_fallback';
+        secondaryDomainUsed = true;
+        break;
+      }
     }
   }
 

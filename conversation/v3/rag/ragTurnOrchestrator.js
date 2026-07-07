@@ -106,7 +106,21 @@ async function enrichTurnWithRagContextLegacy(db, { text, phone, conversationId,
 async function enrichTurnWithRagContextRq3(db, { text, phone, conversationId, messageId, saveConversationEvent, flags, logger }) {
   const intent = classifyDomainIntent(text);
 
-  if (intent.confidence < CONFIDENCE_LOW && intent.domain !== 'properties' && !detectRulesDomain(text)) {
+  if (intent.domain === 'properties') {
+    return {
+      contextPack: null,
+      meta: {
+        skipped: true,
+        reason: 'properties_domain_deferred_to_inventory',
+        flags,
+        allowlist_eligible: true,
+        domain_intent: intent,
+        pipeline: 'rq3_domain_routing',
+      },
+    };
+  }
+
+  if (intent.confidence < CONFIDENCE_LOW && !detectRulesDomain(text)) {
     return {
       contextPack: null,
       meta: {
@@ -121,11 +135,9 @@ async function enrichTurnWithRagContextRq3(db, { text, phone, conversationId, me
   }
 
   const domain =
-    intent.domain === 'properties'
-      ? 'properties'
-      : intent.domain === 'scripts'
-        ? detectRulesDomain(text) || intent.secondary_domain
-        : intent.domain;
+    intent.domain === 'scripts'
+      ? detectRulesDomain(text) || intent.secondary_domain
+      : intent.domain;
 
   if (!domain || (domain === 'scripts' && !detectRulesDomain(text))) {
     return {
