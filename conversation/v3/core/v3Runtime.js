@@ -22,11 +22,11 @@ const { V3_INTENT } = require('../types/constants');
 const { tryComposeF4EarlyTurn, shouldSuppressForcedHandoff } = require('../composer/f4TurnComposer');
 const { replySignature } = require('../composer/openingVariantPicker');
 const { isHandoffFlowActive } = require('../interpreter/objectionClassifier');
-const {
-  runPolicyCrossLayer,
+const { runPolicyCrossLayer,
   shouldShortCircuitPolicy,
   buildPolicyShortCircuitReply,
 } = require('./policyCrossTurn');
+const { syncIcfReachabilityFromConversation } = require('../cos/icfReachabilitySignal');
 const { isPolicyEngineEnabled } = require('../../../config/perseoM2Flags');
 const { maybeRunMediaIntakeV1 } = require('../media/mediaIntakeV1');
 const { resolveMediaForIntake } = require('../media/mediaRealBridge');
@@ -384,6 +384,16 @@ function processV3Turn(input) {
   }
 
   const { state: nextState, guard } = applyV3StateTransition(state, patchWithStreak, decision);
+
+  const icfLeadId = nextState.crmLeadId || state.crmLeadId || null;
+  if (icfLeadId) {
+    void syncIcfReachabilityFromConversation({
+      leadId: icfLeadId,
+      detectedIntent: decision.detectedIntent,
+      userText: effectiveText,
+      inbound: true,
+    });
+  }
 
   if (
     (isLandingCaptureActive(nextState) || decision.detectedIntent === V3_INTENT.LANDING_CAPTURE) &&
