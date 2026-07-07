@@ -4,6 +4,7 @@ const {
   getAccRagP0FlagSnapshot,
   isRagRulesEffectiveForUser,
   isRagDomainRoutingEnabled,
+  isRagRc11TelemetryEnabled,
 } = require('../../../config/accP0Flags');
 const ragRulesService = require('../../../services/ragRulesService');
 const { canAssertClaim, DEFAULT_MIN_SCORE } = require('./ragPolicy');
@@ -35,6 +36,34 @@ function pickGroundedExcerpt(contextPack, { minConfidence, domain = null } = {})
   const top = contextPack.citations?.[0];
   if (!top?.excerpt) return null;
   return String(top.excerpt).slice(0, 180).trim();
+}
+
+function buildTimingExtras(routing = {}, contextPack = null) {
+  return {
+    embedding_ms: routing.embedding_ms ?? contextPack?.embedding_ms ?? null,
+    rpc_ms: routing.rpc_ms ?? contextPack?.rpc_ms ?? null,
+    serialization_ms: routing.serialization_ms ?? null,
+    retrieval_ms: routing.routing_latency_ms ?? contextPack?.latency_ms ?? null,
+    candidate_count: routing.candidate_count ?? null,
+    discarded_count: routing.discarded_count ?? null,
+  };
+}
+
+async function emitSkippedRagTelemetry({ saveConversationEvent, conversationId, messageId, flags, extras }) {
+  if (!isRagRc11TelemetryEnabled() || !saveConversationEvent || !conversationId) return;
+  const kpiPayload = buildRagRetrievalKpi(null, {
+    message_id: messageId || null,
+    conversation_id: conversationId,
+    request_id: messageId || null,
+    fallback_used: true,
+    skipped: true,
+    flags,
+    allowlist_eligible: true,
+    pipeline: extras.pipeline || 'rq3_domain_routing',
+    telemetry_rc11: true,
+    ...extras,
+  });
+  await saveConversationEvent(conversationId, 'rag_retrieval', kpiPayload);
 }
 
 /** Sprint 5 legacy path — idéntico a 7766a7b cuando RAG_DOMAIN_ROUTING_ENABLED=false */
@@ -107,6 +136,20 @@ async function enrichTurnWithRagContextRq3(db, { text, phone, conversationId, me
   const intent = classifyDomainIntent(text);
 
   if (intent.domain === 'properties') {
+    await emitSkippedRagTelemetry({
+      saveConversationEvent,
+      conversationId,
+      messageId,
+      flags,
+      extras: {
+        skipped_reason: 'properties_domain_deferred_to_inventory',
+        domain_selected: 'properties',
+        domain_detected: intent.domain,
+        domain_confidence: intent.confidence,
+        inventory_path: 'properties_domain_deferred',
+        routing_reason: intent.reason,
+      },
+    });
     return {
       contextPack: null,
       meta: {
@@ -199,6 +242,9 @@ async function enrichTurnWithRagContextRq3(db, { text, phone, conversationId, me
         secondary_domain_used: routing.secondary_domain_used,
         wrong_domain_retrieval: routing.wrong_domain_retrieval === true,
         min_score_threshold: minScoreApplied,
+        zone_entity_validation: routing.zone_entity_validation || null,
+        hallucination_blocked: routing.fallback_reason === 'zone_entity_mismatch',
+        ...buildTimingExtras(routing, contextPack),
       });
       await saveConversationEvent(conversationId, 'rag_retrieval', kpiPayload);
     }

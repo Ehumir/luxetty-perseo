@@ -75,21 +75,35 @@ async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = con
   const start = Date.now();
 
   try {
+    const embedStart = Date.now();
     const { embedding, cache_hit } = await withTimeout(
       getQueryEmbedding(q, queryHash),
       timeoutMs,
       'embedding'
     );
+    const embedding_ms = Date.now() - embedStart;
 
+    const rpcStart = Date.now();
     const { data, error } = await withTimeout(
       db.rpc(rpcName, { ...rpcParams, query_embedding: embedding }),
       timeoutMs,
       'rpc'
     );
+    const rpc_ms = Date.now() - rpcStart;
+    const serialization_ms = 0;
 
     if (error) {
       logger.warn?.('rag_semantic_search_rpc_error', { rpc: rpcName, message: error.message });
-      return { chunks: [], fallback: true, latency_ms: Date.now() - start, query_hash: queryHash, cache_hit };
+      return {
+        chunks: [],
+        fallback: true,
+        latency_ms: Date.now() - start,
+        query_hash: queryHash,
+        cache_hit,
+        embedding_ms,
+        rpc_ms,
+        serialization_ms,
+      };
     }
 
     return {
@@ -98,10 +112,21 @@ async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = con
       latency_ms: Date.now() - start,
       query_hash: queryHash,
       cache_hit,
+      embedding_ms,
+      rpc_ms,
+      serialization_ms,
     };
   } catch (err) {
     logger.warn?.('rag_semantic_search_failed', { rpc: rpcName, error: String(err?.message || err) });
-    return { chunks: [], fallback: true, latency_ms: Date.now() - start, query_hash: queryHash };
+    return {
+      chunks: [],
+      fallback: true,
+      latency_ms: Date.now() - start,
+      query_hash: queryHash,
+      embedding_ms: null,
+      rpc_ms: null,
+      serialization_ms: null,
+    };
   }
 }
 

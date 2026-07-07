@@ -12,6 +12,8 @@ const {
   stripHarnessNoise,
   SECONDARY_CHAIN_BY_DOMAIN,
 } = require('./domainIntentClassifier');
+const { isRagRc11ZoneEntityValidationEnabled } = require('../../../config/accP0Flags');
+const { validateZoneEntityMatch, extractZoneEntityTokens } = require('./zoneEntityValidation');
 
 /**
  * Filtra chunks a dominio(s) permitidos — evita competencia cross-domain.
@@ -120,8 +122,30 @@ async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
 
   const domainChunks = filterChunksByDomain(search.chunks, domain);
   const candidates = ragService.selectCandidates(domainChunks, { topK: topKForDomain(domain) });
+  let zoneEntityValidation = null;
+
+  if (domain === 'zones' && isRagRc11ZoneEntityValidationEnabled()) {
+    const entityTokens = extractZoneEntityTokens(cleanQuery);
+    if (entityTokens.length) {
+      zoneEntityValidation = validateZoneEntityMatch(cleanQuery, candidates.length ? candidates : domainChunks);
+      if (!zoneEntityValidation.valid) {
+        return {
+          chunks: domainChunks,
+          candidates: [],
+          thresholded: [],
+          fallback: true,
+          domain,
+          rpcName: 'match_knowledge_chunks',
+          search,
+          cross_domain_discarded: (search.chunks?.length || 0) - domainChunks.length,
+          zone_entity_validation: zoneEntityValidation,
+        };
+      }
+    }
+  }
+
   const minScore = getMinScoreForDomain(domain);
-  const thresholded = ragService.applyThresholds(candidates, { minScore });
+  let thresholded = ragService.applyThresholds(candidates, { minScore });
 
   return {
     chunks: domainChunks,
@@ -132,6 +156,7 @@ async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
     rpcName: 'match_knowledge_chunks',
     search,
     cross_domain_discarded: (search.chunks?.length || 0) - domainChunks.length,
+    zone_entity_validation: zoneEntityValidation,
   };
 }
 
@@ -163,8 +188,14 @@ async function retrieveWithDomainRouting(db, { query, domain: domainOverride = n
 
   const secondaryChain = SECONDARY_CHAIN_BY_DOMAIN[primaryDomain] || (intent.secondary_domain ? [intent.secondary_domain] : []);
 
-  // RQ-4.7 — si primary vacío, recorrer cadena secundaria (sin búsqueda global).
-  if (primaryResult.fallback && secondaryChain.length) {
+  const zoneEntityMismatch =
+    primaryResult.zone_entity_validation && primaryResult.zone_entity_validation.valid === false;
+
+  // RC-1.1 — zona inexistente: no escalar a secondary (evita grounded incorrecto).
+  if (primaryResult.fallback && zoneEntityMismatch) {
+    finalResult = primaryResult;
+    routingStrategy = 'zone_entity_mismatch';
+  } else if (primaryResult.fallback && secondaryChain.length) {
     for (const candidate of secondaryChain) {
       if (!primaryResult.fallback) break;
       secondaryDomain = candidate;
@@ -181,12 +212,20 @@ async function retrieveWithDomainRouting(db, { query, domain: domainOverride = n
     }
   }
 
-  if (finalResult.fallback) {
+  if (finalResult.fallback && !zoneEntityMismatch) {
     routingStrategy = 'legacy_fallback';
   }
 
+  const zoneValidation = finalResult.zone_entity_validation;
+  const fallbackReason = finalResult.fallback
+    ? zoneValidation && !zoneValidation.valid
+      ? 'zone_entity_mismatch'
+      : 'low_confidence_or_empty'
+    : null;
+
   const ctx = finalResult.fallback ? { chunks: [], dropped: [], context_tokens_estimated: 0, chunks_selected: 0, chunks_dropped: 0 } : ragService.buildContext(finalResult.thresholded);
 
+  const searchTiming = finalResult.search || {};
   const routingMeta = {
     domain_detected: primaryDomain,
     domain_confidence: intent.confidence,
@@ -202,7 +241,13 @@ async function retrieveWithDomainRouting(db, { query, domain: domainOverride = n
     secondary_domain_used: secondaryDomainUsed,
     wrong_domain_retrieval: false,
     routing_latency_ms: Date.now() - routingStart,
-    fallback_reason: finalResult.fallback ? 'low_confidence_or_empty' : null,
+    fallback_reason: fallbackReason,
+    zone_entity_validation: zoneValidation || null,
+    embedding_ms: searchTiming.embedding_ms ?? null,
+    rpc_ms: searchTiming.rpc_ms ?? null,
+    serialization_ms: searchTiming.serialization_ms ?? null,
+    candidate_count: finalResult.candidates?.length ?? 0,
+    discarded_count: (finalResult.chunks?.length ?? 0) - (finalResult.thresholded?.length ?? 0),
   };
 
   return {

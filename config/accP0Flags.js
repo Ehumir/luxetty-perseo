@@ -121,6 +121,22 @@ function isRagAdaptiveThresholdEnabled() {
 }
 
 /**
+ * RC-1.1 — validación entidad zona/colonia post-retrieval (NEG-03 fix).
+ * @returns {boolean}
+ */
+function isRagRc11ZoneEntityValidationEnabled() {
+  return isRagRulesEnabled() && envTrue('RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED');
+}
+
+/**
+ * RC-1.1 — telemetría extendida (inventory paths, timing breakdown).
+ * @returns {boolean}
+ */
+function isRagRc11TelemetryEnabled() {
+  return isRagP0Enabled() && envTrue('RAG_RC11_TELEMETRY_ENABLED');
+}
+
+/**
  * Lectura diagnóstica para ARGOS / logs (sin secretos).
  * @returns {Record<string, boolean | string[] | number>}
  */
@@ -140,6 +156,8 @@ function getAccRagP0FlagSnapshot() {
     RAG_P0_EFFECTIVE_RULES: isRagRulesEnabled(),
     RAG_DOMAIN_ROUTING_ENABLED: isRagDomainRoutingEnabled(),
     RAG_ADAPTIVE_THRESHOLD_ENABLED: isRagAdaptiveThresholdEnabled(),
+    RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED: isRagRc11ZoneEntityValidationEnabled(),
+    RAG_RC11_TELEMETRY_ENABLED: isRagRc11TelemetryEnabled(),
     RAG_P0_ALLOWLIST_COUNT: splitAllowlist(process.env.RAG_P0_ALLOWLIST).length,
     ACC_CANARY_ALLOWLIST_COUNT: splitAllowlist(process.env.ACC_CANARY_ALLOWLIST).length,
   };
@@ -155,6 +173,8 @@ module.exports = {
   isRagRulesEnabled,
   isRagDomainRoutingEnabled,
   isRagAdaptiveThresholdEnabled,
+  isRagRc11ZoneEntityValidationEnabled,
+  isRagRc11TelemetryEnabled,
   isRagCanaryEligible,
   isRagInventoryEffectiveForUser,
   isRagRulesEffectiveForUser,

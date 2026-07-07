@@ -96,4 +96,45 @@ describe('domainRetrievalOrchestrator — RQ-3', () => {
     assert.equal(routed.routing.domain_selected, 'scripts');
     assert.equal(routed.fallback, false);
   });
+
+  it('RC11-RO-01 — NEG-03 fuerza fallback por zone entity mismatch', async () => {
+    process.env.RAG_P0_ENABLED = 'true';
+    process.env.RAG_RULES_ENABLED = 'true';
+    process.env.RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED = 'true';
+    ragService.semanticSearch = async (_db, opts) => {
+      if (opts.rpcName === 'match_knowledge_chunks') {
+        return {
+          chunks: [
+            {
+              chunk_id: 'z1',
+              registry_domain_code: 'zones',
+              similarity: 0.49,
+              content: 'Colonia Cumbres en Monterrey',
+            },
+            {
+              chunk_id: 'z2',
+              registry_domain_code: 'zones',
+              similarity: 0.48,
+              content: 'San Pedro Garza García',
+            },
+          ],
+          fallback: false,
+          query_hash: 'zones',
+          latency_ms: 120,
+          embedding_ms: 80,
+          rpc_ms: 40,
+        };
+      }
+      return { chunks: [], fallback: true, query_hash: 'x', latency_ms: 1 };
+    };
+
+    const db = { rpc: async () => ({ data: [], error: null }) };
+    const routed = await retrieveWithDomainRouting(db, {
+      query: 'zona ColoniaInexistenteXYZ-999',
+    });
+    assert.equal(routed.intent.domain, 'zones');
+    assert.equal(routed.fallback, true);
+    assert.equal(routed.routing.fallback_reason, 'zone_entity_mismatch');
+    delete process.env.RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED;
+  });
 });

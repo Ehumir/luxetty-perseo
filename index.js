@@ -1120,32 +1120,75 @@ app.post('/webhook', async (req, res) => {
         nextAiState.property_context = null;
       }
 
-      if (resolved?.rag_meta && conversationId) {
+      if (resolved?.rag_meta || resolved?.resolution_path) {
         const { buildRagRetrievalKpi } = require('./conversation/v3/rag/ragKpi');
-        const inventoryFound = resolved.status === 'found';
-        const topScore = Number(resolved.rag_meta.confidence ?? 0);
-        const contextPack = {
-          confidence: topScore,
-          fallback_used: !inventoryFound,
-          citations: inventoryFound ? [{ score: topScore, registry_domain_code: 'properties' }] : [],
-          latency_ms: resolved.rag_meta.latency_ms ?? 0,
-          scores: {
-            top_score: topScore,
-            min_score_threshold: Number(process.env.RAG_MIN_SCORE || 0.72),
-          },
-        };
-        saveConversationEvent(
-          conversationId,
-          'rag_retrieval',
-          buildRagRetrievalKpi(contextPack, {
-            domain: 'properties',
-            match_method: resolved.match_method || 'rag_semantic',
-            query_hash: resolved.rag_meta.query_hash || null,
-            cache_hit: resolved.rag_meta.cache_hit === true,
-            status: resolved.status,
-            fallback_reason: inventoryFound ? null : resolved.reason || 'inventory_fallback',
-          })
-        );
+        const { getMinScoreForDomain } = require('./conversation/v3/rag/ragDomainThresholdLoader');
+        const { isRagRc11TelemetryEnabled, isRagInventoryEffectiveForUser } = require('./config/accP0Flags');
+        const shouldEmit =
+          resolved.rag_meta ||
+          resolved.resolution_path ||
+          (isRagRc11TelemetryEnabled() && isRagInventoryEffectiveForUser(from));
+
+        if (shouldEmit) {
+          const inventoryFound = resolved.status === 'found';
+          const ragMeta = resolved.rag_meta || {};
+          const topScore = Number(ragMeta.confidence ?? 0);
+          const minThreshold = getMinScoreForDomain('properties');
+          const contextPack = {
+            confidence: topScore,
+            fallback_used: !inventoryFound,
+            citations: inventoryFound ? [{ score: topScore, registry_domain_code: 'properties' }] : [],
+            latency_ms: ragMeta.latency_ms ?? 0,
+            scores: {
+              top_score: topScore,
+              min_score_threshold: minThreshold,
+            },
+          };
+          saveConversationEvent(
+            conversationId,
+            'rag_retrieval',
+            buildRagRetrievalKpi(contextPack, {
+              domain: 'properties',
+              message_id: metaMessageId || null,
+              conversation_id: conversationId,
+              request_id: metaMessageId || null,
+              match_method: resolved.match_method || resolved.resolution_path || 'inventory',
+              inventory_path: resolved.resolution_path || resolved.match_method || 'unknown',
+              query_hash: ragMeta.query_hash || null,
+              cache_hit: ragMeta.cache_hit === true,
+              status: resolved.status,
+              fallback_reason: inventoryFound ? null : resolved.reason || resolved.resolution_path || 'inventory_fallback',
+              embedding_ms: ragMeta.embedding_ms ?? null,
+              rpc_ms: ragMeta.rpc_ms ?? null,
+              serialization_ms: ragMeta.serialization_ms ?? null,
+              retrieval_ms: ragMeta.latency_ms ?? null,
+              pipeline: 'inventory_resolution',
+              telemetry_rc11: isRagRc11TelemetryEnabled(),
+              min_score_threshold: minThreshold,
+            })
+          );
+        }
+      } else if (conversationId) {
+        const { isRagRc11TelemetryEnabled, isRagInventoryEffectiveForUser } = require('./config/accP0Flags');
+        if (isRagRc11TelemetryEnabled() && isRagInventoryEffectiveForUser(from) && shouldResolveProperty) {
+          const { buildRagRetrievalKpi } = require('./conversation/v3/rag/ragKpi');
+          saveConversationEvent(
+            conversationId,
+            'rag_retrieval',
+            buildRagRetrievalKpi(null, {
+              domain: 'properties',
+              message_id: metaMessageId || null,
+              conversation_id: conversationId,
+              request_id: metaMessageId || null,
+              fallback_used: true,
+              skipped: true,
+              inventory_path: resolved?.resolution_path || 'legacy_resolution',
+              status: resolved?.status || 'unknown',
+              pipeline: 'inventory_resolution',
+              telemetry_rc11: true,
+            })
+          );
+        }
       }
     }
 

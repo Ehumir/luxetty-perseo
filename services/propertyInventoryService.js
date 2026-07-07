@@ -574,6 +574,8 @@ async function resolveInboundPropertyReference(db, { code, text, hintZone, canar
         code: byCode.normalized?.code || normalizeInventoryCode(c),
         ambiguous: false,
         candidates: [],
+        resolution_path: 'direct_code',
+        match_method: 'direct_code',
       };
     }
   }
@@ -599,6 +601,7 @@ async function resolveInboundPropertyReference(db, { code, text, hintZone, canar
         candidates: [],
         match_method: ragOut.match_method || 'rag_semantic',
         rag_meta: ragOut.rag_meta || null,
+        resolution_path: 'rag_semantic_found',
       };
     }
     if (ragOut.status === 'ambiguous') {
@@ -612,6 +615,22 @@ async function resolveInboundPropertyReference(db, { code, text, hintZone, canar
         candidates: ragOut.candidates || [],
         match_method: ragOut.match_method || 'rag_semantic',
         rag_meta: ragOut.rag_meta || null,
+        resolution_path: 'rag_semantic_ambiguous',
+      };
+    }
+    if (ragOut.rag_meta) {
+      return {
+        status: ragOut.status || 'not_found',
+        property: null,
+        propertyId: null,
+        normalized: null,
+        code: null,
+        ambiguous: false,
+        candidates: [],
+        match_method: ragOut.match_method || 'rag_semantic',
+        rag_meta: ragOut.rag_meta,
+        resolution_path: ragOut.reason ? `rag_semantic_${ragOut.reason}` : 'rag_semantic_fallback',
+        reason: ragOut.reason || null,
       };
     }
   }
