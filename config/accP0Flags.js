@@ -24,12 +24,21 @@ function normalizeAllowlistEntry(value) {
 }
 
 /**
- * Usuario elegible para canary RAG (requiere master ON + entrada en allowlist).
+ * Global rollout — 100% tráfico RAG (sin allowlist). Rollback: flag OFF.
+ * @returns {boolean}
+ */
+function isRagGlobalModeEnabled() {
+  return isRagP0Enabled() && envTrue('RAG_P0_GLOBAL_MODE');
+}
+
+/**
+ * Usuario elegible para RAG (global mode o allowlist canary).
  * @param {string|null|undefined} phoneOrId
  * @returns {boolean}
  */
 function isRagCanaryEligible(phoneOrId) {
   if (!isRagP0Enabled()) return false;
+  if (isRagGlobalModeEnabled()) return true;
   const list = splitAllowlist(process.env.RAG_P0_ALLOWLIST);
   if (!list.length) return false;
   const normalized = normalizeAllowlistEntry(phoneOrId);
@@ -167,7 +176,8 @@ function getAccRagP0FlagSnapshot() {
     RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED: isRagRc11ZoneEntityValidationEnabled(),
     RAG_RC11_TELEMETRY_ENABLED: isRagRc11TelemetryEnabled(),
     RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED: isRagRc12CampaignEntityValidationEnabled(),
-    RAG_P0_ALLOWLIST_COUNT: splitAllowlist(process.env.RAG_P0_ALLOWLIST).length,
+    RAG_P0_GLOBAL_MODE: isRagGlobalModeEnabled(),
+    RAG_P0_ALLOWLIST_COUNT: isRagGlobalModeEnabled() ? 0 : splitAllowlist(process.env.RAG_P0_ALLOWLIST).length,
     ACC_CANARY_ALLOWLIST_COUNT: splitAllowlist(process.env.ACC_CANARY_ALLOWLIST).length,
   };
 }
@@ -185,6 +195,7 @@ module.exports = {
   isRagRc11ZoneEntityValidationEnabled,
   isRagRc11TelemetryEnabled,
   isRagRc12CampaignEntityValidationEnabled,
+  isRagGlobalModeEnabled,
   isRagCanaryEligible,
   isRagInventoryEffectiveForUser,
   isRagRulesEffectiveForUser,
