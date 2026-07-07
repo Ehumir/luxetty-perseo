@@ -243,7 +243,10 @@ async function enrichTurnWithRagContextRq3(db, { text, phone, conversationId, me
         wrong_domain_retrieval: routing.wrong_domain_retrieval === true,
         min_score_threshold: minScoreApplied,
         zone_entity_validation: routing.zone_entity_validation || null,
-        hallucination_blocked: routing.fallback_reason === 'zone_entity_mismatch',
+        campaign_entity_validation: routing.campaign_entity_validation || null,
+        hallucination_blocked:
+          routing.fallback_reason === 'zone_entity_mismatch' ||
+          routing.fallback_reason === 'campaign_entity_mismatch',
         ...buildTimingExtras(routing, contextPack),
       });
       await saveConversationEvent(conversationId, 'rag_retrieval', kpiPayload);

@@ -12,8 +12,9 @@ const {
   stripHarnessNoise,
   SECONDARY_CHAIN_BY_DOMAIN,
 } = require('./domainIntentClassifier');
-const { isRagRc11ZoneEntityValidationEnabled } = require('../../../config/accP0Flags');
+const { isRagRc11ZoneEntityValidationEnabled, isRagRc12CampaignEntityValidationEnabled } = require('../../../config/accP0Flags');
 const { validateZoneEntityMatch, extractZoneEntityTokens } = require('./zoneEntityValidation');
+const { validateCampaignEntityMatch, extractCampaignEntityTokens } = require('./campaignEntityValidation');
 
 /**
  * Filtra chunks a dominio(s) permitidos — evita competencia cross-domain.
@@ -123,6 +124,7 @@ async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
   const domainChunks = filterChunksByDomain(search.chunks, domain);
   const candidates = ragService.selectCandidates(domainChunks, { topK: topKForDomain(domain) });
   let zoneEntityValidation = null;
+  let campaignEntityValidation = null;
 
   if (domain === 'zones' && isRagRc11ZoneEntityValidationEnabled()) {
     const entityTokens = extractZoneEntityTokens(cleanQuery);
@@ -139,6 +141,28 @@ async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
           search,
           cross_domain_discarded: (search.chunks?.length || 0) - domainChunks.length,
           zone_entity_validation: zoneEntityValidation,
+          campaign_entity_validation: null,
+        };
+      }
+    }
+  }
+
+  if (domain === 'campaigns' && isRagRc12CampaignEntityValidationEnabled()) {
+    const entityTokens = extractCampaignEntityTokens(cleanQuery);
+    if (entityTokens.length) {
+      campaignEntityValidation = validateCampaignEntityMatch(cleanQuery, candidates.length ? candidates : domainChunks);
+      if (!campaignEntityValidation.valid) {
+        return {
+          chunks: domainChunks,
+          candidates: [],
+          thresholded: [],
+          fallback: true,
+          domain,
+          rpcName: 'match_knowledge_chunks',
+          search,
+          cross_domain_discarded: (search.chunks?.length || 0) - domainChunks.length,
+          zone_entity_validation: zoneEntityValidation,
+          campaign_entity_validation: campaignEntityValidation,
         };
       }
     }
@@ -157,6 +181,7 @@ async function retrieveForDomain(db, domain, query, { logger = console } = {}) {
     search,
     cross_domain_discarded: (search.chunks?.length || 0) - domainChunks.length,
     zone_entity_validation: zoneEntityValidation,
+    campaign_entity_validation: campaignEntityValidation,
   };
 }
 
@@ -190,11 +215,17 @@ async function retrieveWithDomainRouting(db, { query, domain: domainOverride = n
 
   const zoneEntityMismatch =
     primaryResult.zone_entity_validation && primaryResult.zone_entity_validation.valid === false;
+  const campaignEntityMismatch =
+    primaryResult.campaign_entity_validation && primaryResult.campaign_entity_validation.valid === false;
 
   // RC-1.1 — zona inexistente: no escalar a secondary (evita grounded incorrecto).
   if (primaryResult.fallback && zoneEntityMismatch) {
     finalResult = primaryResult;
     routingStrategy = 'zone_entity_mismatch';
+  } else if (primaryResult.fallback && campaignEntityMismatch) {
+    // RC-1.2 — campaña inexistente: no escalar a secondary.
+    finalResult = primaryResult;
+    routingStrategy = 'campaign_entity_mismatch';
   } else if (primaryResult.fallback && secondaryChain.length) {
     for (const candidate of secondaryChain) {
       if (!primaryResult.fallback) break;
@@ -212,15 +243,18 @@ async function retrieveWithDomainRouting(db, { query, domain: domainOverride = n
     }
   }
 
-  if (finalResult.fallback && !zoneEntityMismatch) {
+  if (finalResult.fallback && !zoneEntityMismatch && !campaignEntityMismatch) {
     routingStrategy = 'legacy_fallback';
   }
 
   const zoneValidation = finalResult.zone_entity_validation;
+  const campaignValidation = finalResult.campaign_entity_validation;
   const fallbackReason = finalResult.fallback
     ? zoneValidation && !zoneValidation.valid
       ? 'zone_entity_mismatch'
-      : 'low_confidence_or_empty'
+      : campaignValidation && !campaignValidation.valid
+        ? 'campaign_entity_mismatch'
+        : 'low_confidence_or_empty'
     : null;
 
   const ctx = finalResult.fallback ? { chunks: [], dropped: [], context_tokens_estimated: 0, chunks_selected: 0, chunks_dropped: 0 } : ragService.buildContext(finalResult.thresholded);
@@ -243,6 +277,7 @@ async function retrieveWithDomainRouting(db, { query, domain: domainOverride = n
     routing_latency_ms: Date.now() - routingStart,
     fallback_reason: fallbackReason,
     zone_entity_validation: zoneValidation || null,
+    campaign_entity_validation: campaignValidation || null,
     embedding_ms: searchTiming.embedding_ms ?? null,
     rpc_ms: searchTiming.rpc_ms ?? null,
     serialization_ms: searchTiming.serialization_ms ?? null,

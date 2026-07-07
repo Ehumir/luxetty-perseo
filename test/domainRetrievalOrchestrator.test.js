@@ -22,6 +22,8 @@ describe('domainRetrievalOrchestrator — RQ-3', () => {
     delete process.env.RAG_P0_ENABLED;
     delete process.env.RAG_RULES_ENABLED;
     delete process.env.RAG_ADAPTIVE_THRESHOLD_ENABLED;
+    delete process.env.RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED;
+    delete process.env.RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED;
   });
 
   it('RQ3-RO-01 — filterChunksByDomain descarta properties', () => {
@@ -136,5 +138,75 @@ describe('domainRetrievalOrchestrator — RQ-3', () => {
     assert.equal(routed.fallback, true);
     assert.equal(routed.routing.fallback_reason, 'zone_entity_mismatch');
     delete process.env.RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED;
+  });
+
+  it('RC12-RO-01 — NEG-C01 fuerza fallback por campaign entity mismatch', async () => {
+    process.env.RAG_P0_ENABLED = 'true';
+    process.env.RAG_RULES_ENABLED = 'true';
+    process.env.RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED = 'true';
+    ragService.semanticSearch = async (_db, opts) => {
+      if (opts.rpcName === 'match_knowledge_chunks') {
+        return {
+          chunks: [
+            {
+              chunk_id: 'c1',
+              registry_domain_code: 'campaigns',
+              similarity: 0.51,
+              content: 'Campaña de captación Meta Ads para propiedades',
+            },
+          ],
+          fallback: false,
+          query_hash: 'campaigns',
+          latency_ms: 120,
+          embedding_ms: 80,
+          rpc_ms: 40,
+        };
+      }
+      return { chunks: [], fallback: true, query_hash: 'x', latency_ms: 1 };
+    };
+
+    const db = { rpc: async () => ({ data: [], error: null }) };
+    const routed = await retrieveWithDomainRouting(db, {
+      query: 'campaña CampaniaInexistenteXYZ-999',
+    });
+    assert.equal(routed.intent.domain, 'campaigns');
+    assert.equal(routed.fallback, true);
+    assert.equal(routed.routing.fallback_reason, 'campaign_entity_mismatch');
+    delete process.env.RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED;
+  });
+
+  it('RC12-RO-02 — flag OFF mantiene comportamiento previo en campaigns', async () => {
+    process.env.RAG_DOMAIN_ROUTING_ENABLED = 'true';
+    process.env.RAG_ADAPTIVE_THRESHOLD_ENABLED = 'true';
+    process.env.RAG_DOMAIN_THRESHOLDS_JSON =
+      '{"properties":0.78,"commercial_objections":0.55,"assignment_rules":0.55,"rules_atena":0.45,"rules_perseo":0.45,"zones":0.45,"campaigns":0.45,"scripts":0.72}';
+    resetThresholdLoaderForTests();
+    delete process.env.RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED;
+    ragService.semanticSearch = async (_db, opts) => {
+      if (opts.rpcName === 'match_knowledge_chunks') {
+        return {
+          chunks: [
+            {
+              chunk_id: 'c1',
+              registry_domain_code: 'campaigns',
+              similarity: 0.51,
+              content: 'Campaña de captación Meta Ads',
+            },
+          ],
+          fallback: false,
+          query_hash: 'campaigns',
+          latency_ms: 100,
+        };
+      }
+      return { chunks: [], fallback: true, query_hash: 'x', latency_ms: 1 };
+    };
+
+    const db = { rpc: async () => ({ data: [], error: null }) };
+    const routed = await retrieveWithDomainRouting(db, {
+      query: 'campaña CampaniaInexistenteXYZ-999',
+    });
+    assert.equal(routed.fallback, false);
+    assert.notEqual(routed.routing.fallback_reason, 'campaign_entity_mismatch');
+    delete process.env.RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED;
   });
 });

@@ -137,6 +137,14 @@ function isRagRc11TelemetryEnabled() {
 }
 
 /**
+ * RC-1.2 — validación entidad campaña post-retrieval (NEG-C01 fix).
+ * @returns {boolean}
+ */
+function isRagRc12CampaignEntityValidationEnabled() {
+  return isRagRulesEnabled() && envTrue('RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED');
+}
+
+/**
  * Lectura diagnóstica para ARGOS / logs (sin secretos).
  * @returns {Record<string, boolean | string[] | number>}
  */
@@ -158,6 +166,7 @@ function getAccRagP0FlagSnapshot() {
     RAG_ADAPTIVE_THRESHOLD_ENABLED: isRagAdaptiveThresholdEnabled(),
     RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED: isRagRc11ZoneEntityValidationEnabled(),
     RAG_RC11_TELEMETRY_ENABLED: isRagRc11TelemetryEnabled(),
+    RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED: isRagRc12CampaignEntityValidationEnabled(),
     RAG_P0_ALLOWLIST_COUNT: splitAllowlist(process.env.RAG_P0_ALLOWLIST).length,
     ACC_CANARY_ALLOWLIST_COUNT: splitAllowlist(process.env.ACC_CANARY_ALLOWLIST).length,
   };
@@ -175,6 +184,7 @@ module.exports = {
   isRagAdaptiveThresholdEnabled,
   isRagRc11ZoneEntityValidationEnabled,
   isRagRc11TelemetryEnabled,
+  isRagRc12CampaignEntityValidationEnabled,
   isRagCanaryEligible,
   isRagInventoryEffectiveForUser,
   isRagRulesEffectiveForUser,
