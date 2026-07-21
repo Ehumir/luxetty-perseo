@@ -185,6 +185,10 @@ function getPerseoV3Config() {
     propertyEntryAutoPrimary: process.env.PERSEO_V3_PROPERTY_ENTRY_AUTO_PRIMARY === 'true',
     qaAllowlist: splitAllowlist(process.env.PERSEO_V3_QA_ALLOWLIST),
     logStructured: process.env.PERSEO_V3_LOG === 'true',
+    // ATENA Solicitantes Calificados V2 — OFF by default (PRODUCTION_ENFORCEMENT NO-GO)
+    qualifiedApplicantsV2: process.env.PERSEO_QUALIFIED_APPLICANTS_V2 === 'true',
+    qualifiedApplicantsPerseoGate:
+      process.env.PERSEO_QUALIFIED_APPLICANTS_PERSEO_GATE === 'true',
   };
 }
 

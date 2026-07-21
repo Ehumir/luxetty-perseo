@@ -995,19 +995,50 @@ async function findContactById(supabase, contactId) {
 async function getInitialPipelineStageId(supabase, leadType) {
   if (!supabase || !leadType) return null;
 
-  let result = await supabase
-    .from('pipeline_stages')
-    .select('id')
-    .eq('code', 'new')
-    .eq('lead_type', leadType)
-    .eq('is_active', true)
-    .order('stage_order', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  if (process.env.PERSEO_QUALIFIED_APPLICANTS_V2 !== 'true') {
+    let legacyResult = await supabase
+      .from('pipeline_stages')
+      .select('id')
+      .eq('code', 'new')
+      .eq('lead_type', leadType)
+      .eq('is_active', true)
+      .order('stage_order', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (!legacyResult.error && legacyResult.data?.id) return legacyResult.data.id;
 
-  if (!result.error && result.data?.id) return result.data.id;
+    legacyResult = await supabase
+      .from('pipeline_stages')
+      .select('id')
+      .eq('code', 'new')
+      .is('lead_type', null)
+      .eq('is_active', true)
+      .order('stage_order', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    return legacyResult.data?.id || null;
+  }
 
-  result = await supabase
+  // Demand: prefer active COS stages (new is inactive in prod).
+  const preferredCodes =
+    leadType === 'demand'
+      ? ['contact_qualification', 'need_establishment', 'new']
+      : ['new', 'contact_qualification', 'need_establishment'];
+
+  for (const code of preferredCodes) {
+    const result = await supabase
+      .from('pipeline_stages')
+      .select('id')
+      .eq('code', code)
+      .eq('lead_type', leadType)
+      .eq('is_active', true)
+      .order('stage_order', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (!result.error && result.data?.id) return result.data.id;
+  }
+
+  const fallback = await supabase
     .from('pipeline_stages')
     .select('id')
     .eq('code', 'new')
@@ -1017,7 +1048,167 @@ async function getInitialPipelineStageId(supabase, leadType) {
     .limit(1)
     .maybeSingle();
 
-  return result.data?.id || null;
+  return fallback.data?.id || null;
+}
+
+function mapUrgencyToDemandCatalog(raw) {
+  const v = String(raw || '')
+    .trim()
+    .toLowerCase();
+  if (!v) return null;
+  if (['immediate_0_30_days', 'inmediato', 'immediate', '0_30', 'urgente'].includes(v)) {
+    return 'immediate_0_30_days';
+  }
+  if (['high_1_3_months', 'high', 'alta', '1_3_meses', '1-3'].includes(v)) {
+    return 'high_1_3_months';
+  }
+  if (['medium_3_6_months', 'medium', 'media', '3_6_meses', '3-6'].includes(v)) {
+    return 'medium_3_6_months';
+  }
+  if (['low_over_6_months', 'low', 'baja', '6_meses', '+6'].includes(v)) {
+    return 'low_over_6_months';
+  }
+  if (['exploratory', 'explorando', 'explorando_opciones'].includes(v)) {
+    return 'exploratory';
+  }
+  return null;
+}
+
+async function filterReusableDemandLeads(supabase, leads = []) {
+  const list = Array.isArray(leads) ? leads.filter(Boolean) : [];
+  if (list.length === 0) return [];
+  if (process.env.PERSEO_QUALIFIED_APPLICANTS_V2 !== 'true') return list;
+
+  const demandIds = list.filter((l) => l.lead_type === 'demand').map((l) => l.id);
+  if (demandIds.length === 0) return list;
+
+  let data;
+  let error;
+  try {
+    ({ data, error } = await supabase
+      .from('lead_demand_profiles')
+      .select('lead_id, qualified_applicant_status')
+      .in('lead_id', demandIds));
+  } catch (queryError) {
+    error = queryError;
+  }
+
+  if (error) {
+    console.warn('LEAD_AUTOMATION_DEMAND_PROFILE_FILTER_SKIP', { error: error.message });
+    if (process.env.PERSEO_QUALIFIED_APPLICANTS_PERSEO_GATE === 'true') {
+      throw error;
+    }
+    return list;
+  }
+
+  const blocked = new Set(
+    (data || [])
+      .filter((p) => ['resolved', 'closed'].includes(p.qualified_applicant_status))
+      .map((p) => p.lead_id)
+  );
+
+  return list.filter((l) => l.lead_type !== 'demand' || !blocked.has(l.id));
+}
+
+async function syncLeadDemandProfile(supabase, lead, aiState = {}, logger) {
+  if (!supabase || !lead?.id || lead.lead_type !== 'demand') return null;
+  if (process.env.PERSEO_QUALIFIED_APPLICANTS_V2 !== 'true') return null;
+
+  const urgency =
+    mapUrgencyToDemandCatalog(aiState.urgency_level || aiState.urgency) || null;
+  const operation = lead.interested_in_operation || aiState.operation || null;
+  const budgetPeriod =
+    operation === 'rent' || operation === 'renta' ? 'monthly' : operation ? 'total' : null;
+
+  const patch = {};
+  const budgetMin = aiState.budget_min != null ? Number(aiState.budget_min) : lead.budget_min;
+  const budgetMax = aiState.budget_max != null ? Number(aiState.budget_max) : lead.budget_max;
+  if (Number.isFinite(Number(budgetMin)) && Number(budgetMin) > 0) {
+    patch.budget_min = Number(budgetMin);
+  }
+  if (Number.isFinite(Number(budgetMax)) && Number(budgetMax) > 0) {
+    patch.budget_max = Number(budgetMax);
+  }
+  if (aiState.budget_currency) patch.budget_currency = aiState.budget_currency;
+  if (aiState.budget_period || budgetPeriod) {
+    patch.budget_period = aiState.budget_period || budgetPeriod;
+  }
+  if (urgency) patch.demand_urgency_code = urgency;
+
+  const requirementText =
+    aiState.requirement_text || aiState.requirement_summary || lead.notes_summary || null;
+  const propertyTypes = Array.isArray(aiState.property_types)
+    ? aiState.property_types.filter(Boolean)
+    : aiState.property_type
+      ? [aiState.property_type]
+      : [];
+  if (requirementText || propertyTypes.length > 0) {
+    if (requirementText) patch.requirement_summary = requirementText;
+    patch.requirement_source = 'perseo';
+    patch.requirement_schema_version = 1;
+    const requirementData = {
+      schema_version: 1,
+    };
+    if (propertyTypes.length > 0) requirementData.property_types = propertyTypes;
+    if (requirementText) requirementData.free_text = requirementText;
+    for (const key of [
+      'bedrooms_min',
+      'bathrooms_min',
+      'parking_min',
+      'surface_min_m2',
+    ]) {
+      if (aiState[key] != null) requirementData[key] = aiState[key];
+    }
+    patch.requirement_data = requirementData;
+  }
+
+  if (Array.isArray(aiState.preferred_zone_ids) && aiState.preferred_zone_ids.length) {
+    patch.preferred_zone_ids = aiState.preferred_zone_ids;
+  }
+  if (Array.isArray(lead.raw_preferred_locations) && lead.raw_preferred_locations.length) {
+    patch.raw_preferred_locations = lead.raw_preferred_locations;
+  } else if (Array.isArray(lead.preferred_zones) && lead.preferred_zones.length) {
+    patch.raw_preferred_locations = lead.preferred_zones;
+  }
+
+  const { data, error } = await supabase.rpc('upsert_lead_demand_profile', {
+    p_lead_id: lead.id,
+    p_patch: patch,
+    p_actor_type: 'perseo',
+    p_actor_service_name: 'perseo_lead_automation',
+  });
+
+  if (error) {
+    console.error('LEAD_AUTOMATION_DEMAND_PROFILE_SYNC_ERROR', {
+      lead_id: lead.id,
+      error: error.message,
+    });
+    if (process.env.PERSEO_QUALIFIED_APPLICANTS_PERSEO_GATE === 'true') {
+      throw error;
+    }
+    return null;
+  }
+
+  const { data: validation, error: validationError } = await supabase.rpc(
+    'assert_qualified_demand_gate',
+    {
+      p_lead_id: lead.id,
+      p_context: 'perseo',
+      p_actor_service_name: 'perseo_lead_automation',
+    }
+  );
+  if (validationError) {
+    console.error('LEAD_AUTOMATION_DEMAND_GATE_ERROR', {
+      lead_id: lead.id,
+      error: validationError.message,
+    });
+    if (process.env.PERSEO_QUALIFIED_APPLICANTS_PERSEO_GATE === 'true') {
+      throw validationError;
+    }
+  }
+
+  log(logger, 'LEAD_DEMAND_PROFILE_SYNCED', { lead_id: lead.id, profile_id: data });
+  return { profileId: data, validation: validation || null };
 }
 
 async function findLeadByConversation(supabase, leadId) {
@@ -1033,7 +1224,8 @@ async function findLeadByConversation(supabase, leadId) {
     return null;
   }
 
-  return data || null;
+  const reusable = await filterReusableDemandLeads(supabase, data ? [data] : []);
+  return reusable[0] || null;
 }
 
 async function findCompatibleLead(supabase, { contactId, leadType, operation, propertyId }) {
@@ -1058,7 +1250,7 @@ async function findCompatibleLead(supabase, { contactId, leadType, operation, pr
     return [];
   }
 
-  return Array.isArray(data) ? data : [];
+  return filterReusableDemandLeads(supabase, Array.isArray(data) ? data : []);
 }
 
 async function findCompatibleLeadByPhoneAndProperty(supabase, { normalizedPhone, leadType, operation, propertyId }) {
@@ -1083,7 +1275,7 @@ async function findCompatibleLeadByPhoneAndProperty(supabase, { normalizedPhone,
     return [];
   }
 
-  return Array.isArray(data) ? data : [];
+  return filterReusableDemandLeads(supabase, Array.isArray(data) ? data : []);
 }
 
 async function findCompatibleLeadByWhatsapp(supabase, { normalizedWhatsapp, leadType, operation, propertyId }) {
@@ -1108,7 +1300,7 @@ async function findCompatibleLeadByWhatsapp(supabase, { normalizedWhatsapp, lead
     return [];
   }
 
-  return Array.isArray(data) ? data : [];
+  return filterReusableDemandLeads(supabase, Array.isArray(data) ? data : []);
 }
 
 function chooseCanonicalCompatibleLead(leads = []) {
@@ -2340,6 +2532,24 @@ async function createOrReuseLeadFromConversation({
       }
     }
 
+    let profileSyncWarning = null;
+    try {
+      await syncLeadDemandProfile(supabase, lead, aiState || {}, logger);
+    } catch (profileErr) {
+      profileSyncWarning = profileErr?.message || String(profileErr);
+      console.error('LEAD_AUTOMATION_DEMAND_PROFILE_SYNC_FATAL', {
+        lead_id: lead?.id,
+        error: profileSyncWarning,
+      });
+      await saveConversationEvent(supabase, conversationId, 'demand_profile_sync_failed', {
+        lead_id: lead?.id || null,
+        error: profileSyncWarning,
+        gate_enabled:
+          process.env.PERSEO_QUALIFIED_APPLICANTS_PERSEO_GATE === 'true',
+        source: 'ai_agent',
+      });
+    }
+
     const handoffCandidate = {
       ...lead,
       intent_type: aiState?.intent_type || aiState?.playbook_type || null,
@@ -2594,7 +2804,14 @@ async function createOrReuseLeadFromConversation({
       handoffTriggered,
       reason: wasCreated ? 'lead_created' : 'lead_reused',
       aiState: nextAiState,
-      warnings: conversationSyncWarning ? [{ code: 'conversation_sync_failed', detail: conversationSyncWarning }] : [],
+      warnings: [
+        ...(conversationSyncWarning
+          ? [{ code: 'conversation_sync_failed', detail: conversationSyncWarning }]
+          : []),
+        ...(profileSyncWarning
+          ? [{ code: 'demand_profile_sync_failed', detail: profileSyncWarning }]
+          : []),
+      ],
     };
   } catch (err) {
     logWarn(logger, 'LEAD_AUTOMATION_ERROR', {
@@ -2926,6 +3143,18 @@ async function createPautaAbandonedLead({
     // 8. Vincular lead a la conversación
     await syncConversation(supabase, conversationId, { lead_id: data.id });
 
+    let profileSyncWarning = null;
+    try {
+      await syncLeadDemandProfile(supabase, data, aiState || {}, logger);
+    } catch (profileError) {
+      profileSyncWarning = profileError?.message || String(profileError);
+      await saveConversationEvent(supabase, conversationId, 'demand_profile_sync_failed', {
+        lead_id: data.id,
+        error: profileSyncWarning,
+        source: 'inactivity_followup_job',
+      });
+    }
+
     // 9. Registrar evento
     await saveConversationEvent(supabase, conversationId, 'pauta_abandoned_lead_created', {
       lead_id: data.id,
@@ -2942,7 +3171,14 @@ async function createPautaAbandonedLead({
       lead_type: leadType,
     });
 
-    return { created: true, leadId: data.id, lead: data };
+    return {
+      created: true,
+      leadId: data.id,
+      lead: data,
+      warnings: profileSyncWarning
+        ? [{ code: 'demand_profile_sync_failed', detail: profileSyncWarning }]
+        : [],
+    };
   } catch (err) {
     logWarn(logger, 'PAUTA_ABANDONED_LEAD_ERROR', {
       conversation_id: conversationId,
@@ -3149,4 +3385,10 @@ module.exports = {
   resolveAssignmentDecision,
   applyAssignmentDecision,
   assignLeadViaEngineOnly,
+  __qualifiedApplicantsV2: {
+    getInitialPipelineStageId,
+    filterReusableDemandLeads,
+    mapUrgencyToDemandCatalog,
+    syncLeadDemandProfile,
+  },
 };
