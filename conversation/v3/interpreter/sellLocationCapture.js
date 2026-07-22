@@ -106,6 +106,12 @@ function shouldAcceptSellLocationTurn(state, raw) {
 
 function tryParseQualificationLocation(state, raw) {
   if (!shouldAcceptQualificationLocationTurn(state, raw)) return null;
+  try {
+    const { isNonLocationPhrase } = require('./campaignIntake');
+    if (isNonLocationPhrase(raw)) return null;
+  } catch {
+    /* ignore */
+  }
   if (isBuyFlow(state)) {
     return (
       extractLooseLocationPhrase(raw) ||

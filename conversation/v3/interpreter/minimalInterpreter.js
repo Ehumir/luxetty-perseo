@@ -28,6 +28,7 @@ const {
   inferOwnerOfferOperation,
   isC2SellerRetargetingEntry,
   isAmbiguousOwnerPropertyOrientation,
+  mentionsBuyDemand,
   isExplicitFlowSwitchToRentDemand,
   isExplicitFlowSwitchToRentOut,
   isExplicitFlowSwitchToSellFromRent,
@@ -70,6 +71,7 @@ function hasSubstantiveIntentAfterGreeting(t, raw) {
 
 function matchesBuyOpenSearchPattern(t, raw) {
   if (mentionsRentDemand(t) && !isRentOutIntent(raw)) return false;
+  if (mentionsBuyDemand(t)) return true;
   if (isExplicitFlowSwitchToBuy(raw)) return true;
   if (isBareBuyMenuReply(t)) return true;
   if (/\bbusco\b/.test(t) && /\bcasa\b/.test(t) && !/\brenta\b/.test(t)) return true;

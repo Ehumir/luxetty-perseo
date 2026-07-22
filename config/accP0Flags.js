@@ -154,6 +154,40 @@ function isRagRc12CampaignEntityValidationEnabled() {
 }
 
 /**
+ * Hybrid FTS + vector retrieval (match_knowledge_chunks_hybrid).
+ * @returns {boolean}
+ */
+function isRagHybridEnabled() {
+  return isRagP0Enabled() && envTrue('RAG_HYBRID_ENABLED');
+}
+
+/**
+ * Inventario demanda (SQL + RAG rerank) — OFF por defecto; canary por allowlist.
+ * Independiente de RAG_P0: puede activarse solo para opciones de stock.
+ */
+function isInventoryOptionsEnabled() {
+  return envTrue('PERSEO_INVENTORY_OPTIONS_ENABLED');
+}
+
+function isInventoryOptionsGlobal() {
+  return isInventoryOptionsEnabled() && envTrue('PERSEO_INVENTORY_OPTIONS_GLOBAL');
+}
+
+function isInventoryOptionsEffectiveForUser(phoneOrId) {
+  if (!isInventoryOptionsEnabled()) return false;
+  if (isInventoryOptionsGlobal()) return true;
+  const list = splitAllowlist(process.env.PERSEO_INVENTORY_OPTIONS_ALLOWLIST);
+  if (!list.length) return false;
+  const normalized = normalizeAllowlistEntry(phoneOrId);
+  if (!normalized) return false;
+  return list.some((entry) => {
+    const e = normalizeAllowlistEntry(entry);
+    if (!e) return false;
+    return normalized === e || normalized.endsWith(e) || e.endsWith(normalized);
+  });
+}
+
+/**
  * Lectura diagnóstica para ARGOS / logs (sin secretos).
  * @returns {Record<string, boolean | string[] | number>}
  */
@@ -166,11 +200,16 @@ function getAccRagP0FlagSnapshot() {
     RAG_P0_ENABLED: envTrue('RAG_P0_ENABLED'),
     RAG_INVENTORY_ENABLED: envTrue('RAG_INVENTORY_ENABLED'),
     RAG_RULES_ENABLED: envTrue('RAG_RULES_ENABLED'),
+    RAG_HYBRID_ENABLED: envTrue('RAG_HYBRID_ENABLED'),
+    PERSEO_INVENTORY_OPTIONS_ENABLED: envTrue('PERSEO_INVENTORY_OPTIONS_ENABLED'),
+    PERSEO_INVENTORY_OPTIONS_GLOBAL: envTrue('PERSEO_INVENTORY_OPTIONS_GLOBAL'),
     ACC_P0_EFFECTIVE_WHATSAPP_GATEWAY: isAccWhatsappGatewayEnabled(),
     ACC_P0_EFFECTIVE_FACEBOOK: isAccFacebookEnabled(),
     ACC_P0_EFFECTIVE_INSTAGRAM: isAccInstagramEnabled(),
     RAG_P0_EFFECTIVE_INVENTORY: isRagInventoryEnabled(),
     RAG_P0_EFFECTIVE_RULES: isRagRulesEnabled(),
+    RAG_P0_EFFECTIVE_HYBRID: isRagHybridEnabled(),
+    INVENTORY_OPTIONS_EFFECTIVE: isInventoryOptionsEnabled(),
     RAG_DOMAIN_ROUTING_ENABLED: isRagDomainRoutingEnabled(),
     RAG_ADAPTIVE_THRESHOLD_ENABLED: isRagAdaptiveThresholdEnabled(),
     RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED: isRagRc11ZoneEntityValidationEnabled(),
@@ -179,6 +218,8 @@ function getAccRagP0FlagSnapshot() {
     RAG_P0_GLOBAL_MODE: isRagGlobalModeEnabled(),
     RAG_P0_ALLOWLIST_COUNT: isRagGlobalModeEnabled() ? 0 : splitAllowlist(process.env.RAG_P0_ALLOWLIST).length,
     ACC_CANARY_ALLOWLIST_COUNT: splitAllowlist(process.env.ACC_CANARY_ALLOWLIST).length,
+    INVENTORY_OPTIONS_ALLOWLIST_COUNT: splitAllowlist(process.env.PERSEO_INVENTORY_OPTIONS_ALLOWLIST)
+      .length,
   };
 }
 
@@ -192,6 +233,7 @@ module.exports = {
   isRagRulesEnabled,
   isRagDomainRoutingEnabled,
   isRagAdaptiveThresholdEnabled,
+  isRagHybridEnabled,
   isRagRc11ZoneEntityValidationEnabled,
   isRagRc11TelemetryEnabled,
   isRagRc12CampaignEntityValidationEnabled,
@@ -199,6 +241,9 @@ module.exports = {
   isRagCanaryEligible,
   isRagInventoryEffectiveForUser,
   isRagRulesEffectiveForUser,
+  isInventoryOptionsEnabled,
+  isInventoryOptionsGlobal,
+  isInventoryOptionsEffectiveForUser,
   getAccRagP0FlagSnapshot,
   splitAllowlist,
   normalizeAllowlistEntry,

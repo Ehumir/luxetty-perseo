@@ -115,6 +115,9 @@ function applyM4RuntimeFinishing(state, { effectiveText, replyText, decision, re
  *     locationText?: string|null,
  *     campaignHeadline?: string|null,
  *     activeProperty?: import('../types/conversationState').ConversationState['activeProperty'],
+ *     ragContextPack?: object|null,
+ *     matchedOptions?: object[],
+ *     inventorySearchMeta?: object|null,
  *   }|null,
  *   logEvent?: Function,
  *   media?: object|null,
@@ -157,6 +160,12 @@ function processV3Turn(input) {
     }
     if (h.ragContextPack && typeof h.ragContextPack === 'object') {
       hyd.ragContextPack = h.ragContextPack;
+    }
+    if (Array.isArray(h.matchedOptions)) {
+      hyd.matchedOptions = h.matchedOptions;
+    }
+    if (h.inventorySearchMeta && typeof h.inventorySearchMeta === 'object') {
+      hyd.inventorySearchMeta = h.inventorySearchMeta;
     }
     if (!Object.keys(hyd).length) return base;
     return mergeConversationState(base, hyd);

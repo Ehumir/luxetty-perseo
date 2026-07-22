@@ -302,6 +302,17 @@ function propertyLines(matched = [], max = 3) {
   const cap = Math.min(max, 3, list.length);
   for (let i = 0; i < cap; i += 1) {
     const p = list[i] || {};
+    const title = cleanSpaces(String(p.title || p.listing_id || p.property_code || 'Propiedad'));
+    const zone = cleanSpaces(String(p.location_label || p.zone || p.neighborhood || ''));
+    const price = p.price_label || (p.price != null ? formatMoneyMx(p.price) : null);
+    const url = p.public_url || p.publicUrl || null;
+    if (url && price) {
+      const bits = [title];
+      if (zone) bits.push(zone);
+      bits.push(price);
+      lines.push(`• ${bits.join(' · ')}\n  ${url}`);
+      continue;
+    }
     const code = cleanSpaces(String(p.listing_id || p.property_code || ''));
     if (!code) continue;
     lines.push(`• Referencia interna ${code} (sin inventar precio ni disponibilidad aquí).`);
@@ -387,7 +398,7 @@ function buildContextualDemandReply(context = {}) {
   const honestNoInventory = () => {
     const zone = loc || 'esa zona';
     const pres = bLabel || 'tu presupuesto';
-    return `En este momento no quiero inventarte propiedades. Puedo canalizarte con un asesor para validar inventario actualizado en ${zone} con presupuesto de ${pres}.`;
+    return `Revisé el inventario activo y no quiero inventarte propiedades. Podemos ayudarte a través de nuestra red de contactos y un asesor Luxetty para ${zone} con presupuesto de ${pres}.`;
   };
 
   if (props.length) {

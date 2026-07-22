@@ -1348,6 +1348,34 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
+      try {
+        const { resolveInventoryOptionsForTurn } = require('./services/inventoryOptionsTurn');
+        const inv = await resolveInventoryOptionsForTurn({
+          db: supabase,
+          text,
+          phone: from,
+          previousAiState: { ...previousAiState, ...nextAiState },
+          logger: console,
+        });
+        if (inv) {
+          legacyHydration.matchedOptions = inv.matchedOptions || [];
+          legacyHydration.inventorySearchMeta = inv.inventorySearchMeta || null;
+          logEvent('inventory_options_search', {
+            conversation_id: conversationId,
+            count: (inv.matchedOptions || []).length,
+            source: inv.inventorySearchMeta?.source,
+            empty: !!inv.inventorySearchMeta?.emptyAfterSearch,
+            operation: inv.inventorySearchMeta?.operation,
+            zone: inv.inventorySearchMeta?.zone,
+          });
+        }
+      } catch (invErr) {
+        logEvent('inventory_options_search_error', {
+          conversation_id: conversationId,
+          error: String(invErr?.message || invErr),
+        });
+      }
+
       let v3Media = null;
       if (message?.type && message.type !== 'text') {
         try {
