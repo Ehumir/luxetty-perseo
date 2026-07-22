@@ -2,6 +2,8 @@
 
 > Última corrida canary: **2026-07-22** · **Veredicto global: FAIL** (captación CRM_READY + PROPERTY_QA precio + parseo "mil").
 >
+> **Update 2026-07-22 (RAG Primer Mundo / scope B):** cert funcional **PASS** global. `PRODUCTION_RAG_GO = YES`. Railway: `PERSEO_INVENTORY_OPTIONS_GLOBAL=true`, `RAG_P0_GLOBAL_MODE=true`. CDC cron `knowledge_cdc_worker_every_5_min` activo. Comparables + zone KG + fotos/tools flags OFF→canary.
+
 > **Update 2026-07-22 (RAG Premium Consultivo canary):** inventario demanda activo en ARGOS+V3 con flags/allowlist. Suites renta/venta mejoraron de forma material (R1/R3/V1 PASS; LONG PASS). `PRODUCTION_RAG_GO = CANARY_ACTIVE`; **GLOBAL no autorizado** hasta cert PASS completo.
 
 ## Veredicto por suite (canary flags ON)

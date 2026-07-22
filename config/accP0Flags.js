@@ -187,6 +187,34 @@ function isInventoryOptionsEffectiveForUser(phoneOrId) {
   });
 }
 
+/** Cover/gallery SoT in PROPERTY_QA — default OFF. */
+function isRagPropertyImagesEnabled() {
+  return envTrue('RAG_PROPERTY_IMAGES_ENABLED');
+}
+
+/** Planner tool-calling consultivo — default OFF. */
+function isConsultiveToolsEnabled() {
+  return envTrue('PERSEO_CONSULTIVE_TOOLS_ENABLED');
+}
+
+function isConsultiveToolsGlobal() {
+  return isConsultiveToolsEnabled() && envTrue('PERSEO_CONSULTIVE_TOOLS_GLOBAL');
+}
+
+function isConsultiveToolsEffectiveForUser(phoneOrId) {
+  if (!isConsultiveToolsEnabled()) return false;
+  if (isConsultiveToolsGlobal()) return true;
+  const list = splitAllowlist(process.env.PERSEO_CONSULTIVE_TOOLS_ALLOWLIST);
+  if (!list.length) return false;
+  const normalized = normalizeAllowlistEntry(phoneOrId);
+  if (!normalized) return false;
+  return list.some((entry) => {
+    const e = normalizeAllowlistEntry(entry);
+    if (!e) return false;
+    return normalized === e || normalized.endsWith(e) || e.endsWith(normalized);
+  });
+}
+
 /**
  * Lectura diagnóstica para ARGOS / logs (sin secretos).
  * @returns {Record<string, boolean | string[] | number>}
@@ -216,6 +244,9 @@ function getAccRagP0FlagSnapshot() {
     RAG_RC11_TELEMETRY_ENABLED: isRagRc11TelemetryEnabled(),
     RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED: isRagRc12CampaignEntityValidationEnabled(),
     RAG_P0_GLOBAL_MODE: isRagGlobalModeEnabled(),
+    RAG_PROPERTY_IMAGES_ENABLED: isRagPropertyImagesEnabled(),
+    PERSEO_CONSULTIVE_TOOLS_ENABLED: isConsultiveToolsEnabled(),
+    PERSEO_CONSULTIVE_TOOLS_GLOBAL: isConsultiveToolsGlobal(),
     RAG_P0_ALLOWLIST_COUNT: isRagGlobalModeEnabled() ? 0 : splitAllowlist(process.env.RAG_P0_ALLOWLIST).length,
     ACC_CANARY_ALLOWLIST_COUNT: splitAllowlist(process.env.ACC_CANARY_ALLOWLIST).length,
     INVENTORY_OPTIONS_ALLOWLIST_COUNT: splitAllowlist(process.env.PERSEO_INVENTORY_OPTIONS_ALLOWLIST)
@@ -244,6 +275,10 @@ module.exports = {
   isInventoryOptionsEnabled,
   isInventoryOptionsGlobal,
   isInventoryOptionsEffectiveForUser,
+  isRagPropertyImagesEnabled,
+  isConsultiveToolsEnabled,
+  isConsultiveToolsGlobal,
+  isConsultiveToolsEffectiveForUser,
   getAccRagP0FlagSnapshot,
   splitAllowlist,
   normalizeAllowlistEntry,

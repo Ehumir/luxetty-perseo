@@ -42,7 +42,7 @@ const {
 const { splitNameAndTail, parseChannelPreference, isLikelyFirstNameOnly } = require('./identityCompoundCapture');
 const { extractAffirmationName } = require('./identityNameParser');
 const { isOfferValuationUnknownRequest, isSellValuationLeadIntent } = require('./offerValuationSignals');
-const { classifyPropertyInquiryTurn } = require('./propertyInquiryQaClassifier');
+const { classifyPropertyInquiryTurn, classifyFactFamily } = require('./propertyInquiryQaClassifier');
 const { parsePaymentMethod } = require('./paymentMethodParser');
 const { isConversationalFlexEnabled } = require('../../../config/perseoM405Flags');
 const { isFlexShortAck } = require('../../flexibility/shortReplyLexicon');
@@ -501,12 +501,20 @@ function interpretUserMessage(state, text, options = {}) {
     patch.operationType = 'sale';
     patch.propertyListingCode = effectiveCode;
     patch.propertySpecificIntent = true;
-    const zone = extractLooseLocationPhrase(raw);
-    if (zone) {
-      patch.locationText = zone;
-      decision.extractedEntities.locationText = zone;
+    // SoT facts first — no name gate for precio/zona publicables.
+    const famOnIntake = classifyFactFamily(t);
+    const infoish =
+      famOnIntake ||
+      (/\b(?:h[aá]blame|cu[eé]ntame|dime|info|informaci[oó]n)\b/.test(t) ? 'info' : null) ||
+      (codeHit ? 'info' : null);
+    if (infoish) {
+      decision.detectedIntent = V3_INTENT.PROPERTY_FACT_QUESTION;
+      decision.propertyInquiryFamily = infoish;
+      patch.propertySubMode = 'PROPERTY_QA';
+      decision.shouldAskName = false;
+    } else {
+      decision.shouldAskName = !state.collectedFields?.fullName;
     }
-    decision.shouldAskName = !state.collectedFields?.fullName;
     decision.shouldSearchProperty = true;
     return { patch, decision };
   }
@@ -618,6 +626,10 @@ function interpretUserMessage(state, text, options = {}) {
     decision.confidence = 0.84;
     decision.explicitFlowSwitch = false;
     if (state.collectedFields?.fullName) {
+      patch.propertySubMode = 'PROPERTY_QA';
+    }
+    // Enter PROPERTY_QA without name when answering SoT facts.
+    if (!state.propertySubMode || state.propertySubMode !== 'PROPERTY_QA') {
       patch.propertySubMode = 'PROPERTY_QA';
     }
     return { patch, decision };

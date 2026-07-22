@@ -164,6 +164,15 @@ function processV3Turn(input) {
     if (Array.isArray(h.matchedOptions)) {
       hyd.matchedOptions = h.matchedOptions;
     }
+    if (Array.isArray(h.matchedComparables)) {
+      hyd.matchedComparables = h.matchedComparables;
+    }
+    if (h.zoneContext && typeof h.zoneContext === 'object') {
+      hyd.zoneContext = h.zoneContext;
+    }
+    if (h.consultiveTools && typeof h.consultiveTools === 'object') {
+      hyd.consultiveTools = h.consultiveTools;
+    }
     if (h.inventorySearchMeta && typeof h.inventorySearchMeta === 'object') {
       hyd.inventorySearchMeta = h.inventorySearchMeta;
       const meta = h.inventorySearchMeta;

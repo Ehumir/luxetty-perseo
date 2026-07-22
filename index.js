@@ -1376,6 +1376,58 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
+      try {
+        const ap = legacyHydration.activeProperty;
+        const wantsCompare = /\b(compar|similar|parecid|otras?\s+opciones?)\b/i.test(String(text || ''));
+        if (ap?.id && wantsCompare) {
+          const { findComparables } = require('./services/comparablesService');
+          const cmp = await findComparables(supabase, { activeProperty: ap, limit: 3 }, console);
+          if (cmp.options?.length) {
+            legacyHydration.matchedComparables = cmp.options;
+          }
+        }
+      } catch (cmpErr) {
+        logEvent('comparables_search_error', {
+          conversation_id: conversationId,
+          error: String(cmpErr?.message || cmpErr),
+        });
+      }
+
+      try {
+        const {
+          runConsultiveTools,
+          isConsultiveToolsEffectiveForUser,
+        } = require('./conversation/v3/planner/consultiveToolsPlanner');
+        if (isConsultiveToolsEffectiveForUser(from)) {
+          const toolsOut = await runConsultiveTools({
+            db: supabase,
+            text,
+            phone: from,
+            state: {
+              activeProperty: legacyHydration.activeProperty,
+              locationText: previousAiState?.location_text || nextAiState?.location_text,
+              ragContextPack: legacyHydration.ragContextPack,
+            },
+            logger: console,
+          });
+          if (toolsOut.toolsCalled.length) {
+            legacyHydration.consultiveTools = toolsOut;
+            if (toolsOut.results.get_comparables?.options) {
+              legacyHydration.matchedComparables = toolsOut.results.get_comparables.options;
+            }
+            logEvent('consultive_tools', {
+              conversation_id: conversationId,
+              tools: toolsOut.toolsCalled,
+            });
+          }
+        }
+      } catch (toolErr) {
+        logEvent('consultive_tools_error', {
+          conversation_id: conversationId,
+          error: String(toolErr?.message || toolErr),
+        });
+      }
+
       let v3Media = null;
       if (message?.type && message.type !== 'text') {
         try {
