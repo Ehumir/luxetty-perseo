@@ -505,12 +505,35 @@ function buildConsultiveFallbackReply({
     });
   }
 
-  if (signals?.lead_flow === 'offer' || t.includes('vender') || t.includes('venta') || t.includes('valu')) {
+  // Escape sticky / oferta: demanda explícita nunca cae al copy de venta.
+  if (r0ContextContinuity.explicitDemandSearchIntent(text)) {
+    const zone = loc || cleanSpaces(String(aiState?.location_text || ''));
+    if (zone) {
+      return hasName
+        ? `Claro, sigo con tu búsqueda en ${zone}. ¿Quieres afinar presupuesto, recámaras o zona más específica?`
+        : `Claro, te ayudo a buscar en ${zone}. Para registrarte bien, ¿me compartes tu nombre? Y dime también tu presupuesto aproximado.`;
+    }
+    return 'Claro, te ayudo con la búsqueda. ¿Buscas renta o compra, y en qué zona?';
+  }
+
+  if (
+    (signals?.lead_flow === 'offer' || t.includes('vender') || t.includes('venta') || t.includes('valu')) &&
+    !/\brentar?\b|\brenta\b|\bcomprar\b|\bbusco\b/.test(t)
+  ) {
     const zoneAsk = loc ? '' : ' Y dime también en qué zona está la propiedad.';
     return `Claro, te puedo orientar con la venta.${zoneAsk}`;
   }
 
-  if ((signals?.lead_flow === 'demand' || t.includes('busco') || t.includes('comprar') || t.includes('rentar')) && loc && !r0ContextContinuity.isR0StickySaleCaptureThread(aiState)) {
+  if (
+    (signals?.lead_flow === 'demand' ||
+      t.includes('busco') ||
+      t.includes('comprar') ||
+      t.includes('rentar') ||
+      t.includes('renta')) &&
+    loc &&
+    (!r0ContextContinuity.isR0StickySaleCaptureThread(aiState) ||
+      r0ContextContinuity.explicitDemandSearchIntent(text))
+  ) {
     const hasBudget = aiState?.budget_max != null && Number.isFinite(Number(aiState.budget_max));
     if (hasBudget) {
       if (hasName) {
@@ -571,20 +594,26 @@ function consultiveFallbackAwaitingFieldPatch(reply, { signals, aiState, text })
   const loc = cleanSpaces(String(signals?.location_text || aiState?.location_text || ''));
   const t = normalizeText(String(text || ''));
   const offerish =
-    flow === 'offer' ||
-    r0ContextContinuity.isR0StickySaleCaptureThread(aiState) ||
-    t.includes('vender') ||
-    t.includes('venta') ||
-    t.includes('valu');
+    !r0ContextContinuity.explicitDemandSearchIntent(text) &&
+    (flow === 'offer' ||
+      r0ContextContinuity.isR0StickySaleCaptureThread(aiState) ||
+      t.includes('vender') ||
+      t.includes('venta') ||
+      t.includes('valu'));
   const patch = {};
-  if (offerish) {
+  if (r0ContextContinuity.explicitDemandSearchIntent(text)) {
+    patch.lead_flow = 'demand';
+    patch.intent_type = 'demand';
+    if (/\brentar?\b|\brenta\b/.test(t)) patch.operation_type = 'rent';
+  } else if (offerish) {
     patch.lead_flow = 'offer';
     patch.intent_type = 'supply';
     if (!signals?.operation_type && !aiState?.operation_type) {
       patch.operation_type = 'sale';
     }
   }
-  if (!offerish) return patch;
+  if (!offerish && !patch.lead_flow) return patch;
+  if (patch.lead_flow === 'demand') return patch;
   if (loc) return patch;
   if (/colonia|municipio|zona.*propiedad|en qué zona|en que zona/i.test(m)) {
     patch.awaiting_field = 'location_text';
