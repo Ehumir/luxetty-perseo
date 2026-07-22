@@ -137,6 +137,53 @@ async function processInboundForArgosCore(input, trace, flags, argosEnv) {
         input.supabaseRaw
       )) || legacyHydration;
   }
+
+  // Premium consultivo: mismas opciones reales que producción (SQL + flags), vía ARGOS.
+  if (input.supabaseRaw) {
+    try {
+      const { resolveInventoryOptionsForTurn } = require('../services/inventoryOptionsTurn');
+      const inv = await resolveInventoryOptionsForTurn({
+        db: input.supabaseRaw,
+        text: input.text,
+        phone: input.phone_sim,
+        previousAiState: {
+          operation_type: priorState?.operationType || null,
+          location_text: priorState?.locationText || null,
+          budget_max: priorState?.budget ?? null,
+          bedrooms: priorState?.bedrooms ?? null,
+          lead_flow: priorState?.leadFlow || null,
+          conversation_goal: priorState?.conversationGoal || null,
+        },
+        logger: console,
+      });
+      if (inv) {
+        legacyHydration = {
+          ...(legacyHydration || {}),
+          matchedOptions: inv.matchedOptions || [],
+          inventorySearchMeta: inv.inventorySearchMeta || null,
+        };
+        traceEvent(trace, {
+          type: 'inventory_options_search',
+          phase: 'hydration',
+          visibility: 'event',
+          payload: {
+            count: (inv.matchedOptions || []).length,
+            source: inv.inventorySearchMeta?.source || null,
+            empty: !!inv.inventorySearchMeta?.emptyAfterSearch,
+            operation: inv.inventorySearchMeta?.operation || null,
+          },
+        });
+      }
+    } catch (invErr) {
+      traceEvent(trace, {
+        type: 'inventory_options_search_error',
+        phase: 'hydration',
+        visibility: 'debug',
+        payload: { error: String(invErr?.message || invErr) },
+      });
+    }
+  }
+
   const v3Result = await v3InboundBridge.tryV3PrimaryReply({
     conversationId,
     phone: input.phone_sim,

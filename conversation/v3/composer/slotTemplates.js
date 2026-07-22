@@ -407,17 +407,22 @@ function composeNetworkFallbackDemand(state, { operationLabel = 'esa búsqueda' 
  */
 function tryComposeInventoryOptionsReply(state) {
   const goal = state.conversationGoal;
+  const meta = state.inventorySearchMeta || {};
+  const options = Array.isArray(state.matchedOptions) ? state.matchedOptions : [];
   const isDemand =
     goal === CONVERSATION_GOALS.BUY_PROPERTY ||
     goal === CONVERSATION_GOALS.RENT_PROPERTY ||
-    state.leadFlow === 'demand';
+    state.leadFlow === 'demand' ||
+    meta.attempted === true ||
+    options.length > 0;
   if (!isDemand) return null;
-  const options = Array.isArray(state.matchedOptions) ? state.matchedOptions : [];
   const lines = formatInventoryOptionLines(options);
   if (lines.length) {
     const nm = firstName(state) || 'perfecto';
-    const opLabel = goal === CONVERSATION_GOALS.RENT_PROPERTY ? 'renta' : 'venta';
-    const meta = state.inventorySearchMeta || {};
+    const opLabel =
+      goal === CONVERSATION_GOALS.RENT_PROPERTY || meta.operation === 'rent' || state.operationType === 'rent'
+        ? 'renta'
+        : 'venta';
     const zone = meta.zone || state.locationText || null;
     const budget =
       meta.budgetMax != null
@@ -440,9 +445,10 @@ function tryComposeInventoryOptionsReply(state) {
       toneFlags: { consultive: true, inventoryOptions: true },
     };
   }
-  if (state.inventorySearchMeta?.emptyAfterSearch) {
+  if (meta.emptyAfterSearch) {
     return composeNetworkFallbackDemand(state, {
-      operationLabel: goal === CONVERSATION_GOALS.RENT_PROPERTY ? 'renta' : 'compra',
+      operationLabel:
+        goal === CONVERSATION_GOALS.RENT_PROPERTY || meta.operation === 'rent' ? 'renta' : 'compra',
     });
   }
   return null;
