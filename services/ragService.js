@@ -127,10 +127,11 @@ function buildContext(chunks = []) {
 }
 
 function buildCitationsFromChunks(chunks = []) {
-  return chunks.map((c) => ({
+  return chunks.map((c, idx) => ({
     source_type: c.source_type,
     source_id: c.source_id,
     chunk_id: c.chunk_id || c.id,
+    rank: idx + 1,
     score: Number(c.similarity ?? c.score ?? 0),
     excerpt: String(c.content || '').slice(0, 200),
   }));

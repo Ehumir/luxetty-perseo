@@ -14,6 +14,13 @@ function normalizeLocationFromUserText(raw) {
   let t = cleanSpaces(String(raw || ''));
   if (!t) return null;
 
+  try {
+    const { isNonLocationPhrase } = require('./campaignIntake');
+    if (isNonLocationPhrase(t)) return null;
+  } catch {
+    /* ignore circular require during bootstrap */
+  }
+
   // Corrección conversacional: "No, está en San Pedro" → zona San Pedro
   t = t.replace(/^(?:no|nop|nope)[,\s]+/i, '').trim();
 

@@ -99,6 +99,9 @@ function createInitialConversationState(seed = {}) {
     lastResponsePlan: null,
     /** Sprint 4 — ContextPack RAG interno (no mostrar al usuario). */
     ragContextPack: null,
+    /** Backend Knowledge 100% — opciones SoT publicables inyectadas pre-V3. */
+    matchedOptions: [],
+    inventorySearchMeta: null,
   };
 }
 

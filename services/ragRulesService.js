@@ -100,24 +100,75 @@ async function fetchRulesChunks(db, { query, domain = null, matchCount = 8 }, lo
 }
 
 /**
- * ContextPack de reglas (no modifica pipeline ni respuesta al usuario).
+ * ContextPack de reglas — mismo filtro de dominio que fetchRulesChunks
+ * (evita cross-domain grounding zones/scripts en objeciones).
  */
 async function fetchRulesContextPack(db, { query, domain = null, logger = console } = {}) {
   if (!isRagRulesEnabled()) {
     return {
       contextPack: ragService.createContextPack({ fallback_used: true }),
       fallback: true,
+      domain_filter_applied: false,
     };
   }
 
   const retrievalQuery = buildRulesRetrievalQuery(query, domain);
+  const chunkResult = await fetchRulesChunks(
+    db,
+    { query, domain, matchCount: 10 },
+    logger
+  );
 
-  return ragService.retrieveContextPack(db, {
-    query: retrievalQuery,
-    rpcName: 'match_knowledge_chunks',
-    rpcParams: buildKnowledgeChunksRpcParams({ matchCount: 10, domain }),
-    logger,
+  if (chunkResult.fallback || !chunkResult.chunks?.length) {
+    return {
+      contextPack: ragService.createContextPack({ fallback_used: true }),
+      fallback: true,
+      domain_selected: domain || null,
+      domain_filter_applied: true,
+    };
+  }
+
+  const candidates = ragService.selectCandidates(chunkResult.chunks);
+  const thresholded = ragService.applyThresholds(candidates);
+  const { evaluateRetrieval } = require('../conversation/v3/rag/ragPolicy');
+  const evalResult = evaluateRetrieval(thresholded);
+
+  if (evalResult.fallback) {
+    return {
+      contextPack: ragService.createContextPack({ fallback_used: true }),
+      fallback: true,
+      domain_selected: domain || null,
+      domain_filter_applied: true,
+      evalResult,
+    };
+  }
+
+  const ctx = ragService.buildContext(thresholded);
+  const logId = await ragService.persistRagQueryLog(db, {
+    queryHash: chunkResult.query_hash,
+    filters: { domain, retrievalQuery },
+    resultsCount: ctx.chunks.length,
+    latencyMs: chunkResult.latency_ms || 0,
+    fallbackUsed: false,
+    citations: ragService.buildCitationsFromChunks(ctx.chunks),
   });
+
+  const contextPack = ragService.createContextPack({
+    chunks: ctx.chunks,
+    confidence: evalResult.confidence,
+    fallback_used: false,
+    rag_query_log_id: logId,
+    latency_ms: chunkResult.latency_ms || 0,
+    budgetMeta: ctx,
+  });
+
+  return {
+    contextPack,
+    fallback: false,
+    domain_selected: domain || null,
+    domain_filter_applied: true,
+    evalResult,
+  };
 }
 
 module.exports = {

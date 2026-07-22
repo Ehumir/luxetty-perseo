@@ -72,6 +72,26 @@ function validateMustNotReply(input) {
   const knownPrices = (facts.knownPrices || []).map(Number).filter(Number.isFinite);
   const knownUrls = facts.knownUrls || [];
 
+  // Enriquecer facts desde ContextPack RAG / matchedOptions cuando existan.
+  const pack = facts.ragContextPack || facts.ragCitations || null;
+  if (pack && Array.isArray(pack.citations)) {
+    for (const c of pack.citations) {
+      const excerpt = String(c.excerpt || '');
+      for (const code of extractListingCodes(excerpt)) knownCodes.add(String(code).toUpperCase());
+      for (const amount of extractMoneyMentions(excerpt)) {
+        if (Number.isFinite(amount)) knownPrices.push(amount);
+      }
+    }
+  }
+  if (Array.isArray(facts.matchedOptions)) {
+    for (const opt of facts.matchedOptions) {
+      const code = opt.listing_id || opt.code;
+      if (code) knownCodes.add(String(code).toUpperCase());
+      if (opt.price != null && Number.isFinite(Number(opt.price))) knownPrices.push(Number(opt.price));
+      if (opt.public_url) knownUrls.push(String(opt.public_url));
+    }
+  }
+
   if (must_not.invent_property) {
     const mentioned = extractListingCodes(reply);
     const allowedCodes = new Set(

@@ -90,6 +90,8 @@ async function enrichTurnWithRagContext(
     const meta = {
       skipped: false,
       domain,
+      domain_selected: domain,
+      domain_filter_applied: rulesResult?.domain_filter_applied === true,
       flags,
       allowlist_eligible: true,
       confidence: contextPack?.confidence ?? 0,
@@ -104,6 +106,8 @@ async function enrichTurnWithRagContext(
     if (typeof saveConversationEvent === 'function' && conversationId) {
       await saveConversationEvent(conversationId, 'rag_retrieval', {
         domain,
+        domain_selected: meta.domain_selected,
+        domain_filter_applied: meta.domain_filter_applied,
         message_id: messageId || null,
         confidence: meta.confidence,
         chunks_selected: meta.chunks_selected,

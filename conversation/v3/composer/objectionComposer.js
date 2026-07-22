@@ -36,13 +36,13 @@ function composeObjectionReply(kind, state) {
     }
     case 'sell_valuation_unknown': {
       const zone = state.locationText || 'esa zona';
-      const nm = firstName(state);
       const head = nm ? `Entiendo, ${nm}.` : 'Entiendo.';
+      const suffix = safeGroundedSuffix(state.ragContextPack);
       return {
-        responseText: `${head} Sin problema si aún no tienes un precio esperado: un asesor de Luxetty puede apoyarte con la valuación en ${zone}. ¿La propiedad está habitada, rentada o libre?`,
+        responseText: `${head} Sin problema si aún no tienes un precio esperado: un asesor de Luxetty puede apoyarte con la valuación en ${zone}.${suffix} ¿La propiedad está habitada, rentada o libre?`,
         followUpQuestion: null,
         awaitingField: 'occupancy_status',
-        toneFlags: { consultive: true, valuation: true },
+        toneFlags: { consultive: true, valuation: true, rag_grounded: !!suffix },
       };
     }
     case 'bot_identity':
@@ -95,14 +95,17 @@ function composeObjectionReply(kind, state) {
         awaitingField: state.awaitingField,
         toneFlags: { consultive: true, objection: true },
       };
-    case 'no_exclusivity':
+    case 'no_exclusivity': {
+      const suffix = safeGroundedSuffix(state.ragContextPack);
       return {
         responseText:
-          'Sin exclusiva también se puede trabajar; el esquema cambia en exposición y prioridad. Un asesor puede contarte cómo lo manejan en tu zona sin obligarte a firmar nada por aquí.',
+          'Sin exclusiva también se puede trabajar; el esquema cambia en exposición y prioridad. Un asesor puede contarte cómo lo manejan en tu zona sin obligarte a firmar nada por aquí.' +
+          suffix,
         followUpQuestion: null,
         awaitingField: state.awaitingField,
-        toneFlags: { consultive: true, objection: true },
+        toneFlags: { consultive: true, objection: true, rag_grounded: !!suffix },
       };
+    }
     case 'already_listed':
       return {
         responseText:

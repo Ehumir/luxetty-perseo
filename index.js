@@ -1267,6 +1267,8 @@ app.post('/webhook', async (req, res) => {
           logEvent('rag_turn_context', {
             conversation_id: conversationId,
             domain: ragTurn.meta.domain,
+            domain_selected: ragTurn.meta.domain_selected,
+            domain_filter_applied: ragTurn.meta.domain_filter_applied,
             confidence: ragTurn.meta.confidence,
             citations_count: ragTurn.meta.citations_count,
             fallback_used: ragTurn.meta.fallback_used,
@@ -1277,6 +1279,33 @@ app.post('/webhook', async (req, res) => {
         logEvent('rag_turn_context_error', {
           conversation_id: conversationId,
           error: String(ragErr?.message || ragErr),
+        });
+      }
+
+      try {
+        const { resolveInventoryOptionsForTurn } = require('./services/inventoryOptionsTurn');
+        const inv = await resolveInventoryOptionsForTurn({
+          db: supabase,
+          text,
+          phone: from,
+          previousAiState,
+          logger: console,
+        });
+        if (inv) {
+          legacyHydration.matchedOptions = inv.matchedOptions || [];
+          legacyHydration.inventorySearchMeta = inv.inventorySearchMeta || null;
+          logEvent('inventory_options_search', {
+            conversation_id: conversationId,
+            count: (inv.matchedOptions || []).length,
+            source: inv.inventorySearchMeta?.source || null,
+            operation: inv.inventorySearchMeta?.operation || null,
+            empty: !!inv.inventorySearchMeta?.emptyAfterSearch,
+          });
+        }
+      } catch (invErr) {
+        logEvent('inventory_options_search_error', {
+          conversation_id: conversationId,
+          error: String(invErr?.message || invErr),
         });
       }
 

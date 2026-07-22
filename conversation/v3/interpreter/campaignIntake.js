@@ -93,6 +93,7 @@ function inferOwnerOfferOperation(normalizedText) {
 
 /** Zona libre tras patrones de venta / ubicación ("en San Pedro", "de Cumbres"). */
 function extractLooseLocationPhrase(text) {
+  if (isNonLocationPhrase(text)) return null;
   const t = normalizeText(text);
   const m = t.match(
     /\b(?:en|de)\s+([a-záéíóúñ0-9][a-záéíóúñ0-9\s,.-]{1,55}?)(?=\s*(?:\.|,|\?|!|$|\n)|\s+(?:me|mi|un|una|el|la|los|las|por|para|con|que|qué)\b)/i
@@ -101,11 +102,34 @@ function extractLooseLocationPhrase(text) {
   const loc = cleanSpaces(m[1].replace(/[,]+$/g, ''));
   if (!loc || loc.length < 2) return null;
   if (/^(venta|renta|casa|propiedad|depa|departamento|terreno|lujo|info)$/i.test(loc)) return null;
+  const locNorm = normalizeText(loc);
+  if (/\b(?:millon|millones|mil|pesos|presupuesto)\b/.test(locNorm)) return null;
+  if (/\b(?:tienes|tienen|hay|menos|opciones|muestrame|mostrar)\b/.test(locNorm)) return null;
   const titled = loc
     .split(/\s+/)
     .map((w) => (w.length ? w[0].toUpperCase() + w.slice(1) : w))
     .join(' ');
   return titled.length > 60 ? `${titled.slice(0, 57)}...` : titled;
+}
+
+/**
+ * Frases de frustración/negación que NO son ubicación.
+ * Nota: NO usar isIntentCorrectionPhrase — "ya te dije que en San Pedro"
+ * es corrección CON ubicación válida y debe conservarse.
+ */
+function isNonLocationPhrase(text) {
+  const t = normalizeText(String(text || ''));
+  if (!t) return true;
+  return (
+    /\bno\s+se\s+de\s+que\s+(?:hablas|me\s+hablas)\b/.test(t) ||
+    /\bno\s+me\s+est[aá]s?\s+entendiendo\b/.test(t) ||
+    /\bno\s+(?:te\s+)?entiendo\b/.test(t) ||
+    /\bno\s+(?:me\s+)?entiendes\b/.test(t) ||
+    /\bno\s+es\s+(?:eso|correcto|as[ií])\b/.test(t) ||
+    /\bnada\s+que\s+ver\b/.test(t) ||
+    /\best[aá]s?\s+mal\b/.test(t) ||
+    /\bque\s+no\s+entiendes\b/.test(t)
+  );
 }
 
 function isThinGenericInbound(normalizedText) {
@@ -158,8 +182,37 @@ function mentionsRentDemand(normalizedText) {
   return (
     /\b(?:quiero|busco|necesito)\s+rentar\b/.test(t) ||
     /\brentar\s+(?:una|un|la|el)\b/.test(t) ||
-    (/\brenta\b/.test(t) && /\b(?:busco|quiero|interesa)\b/.test(t))
+    (/\brenta\b/.test(t) && /\b(?:busco|quiero|interesa)\b/.test(t)) ||
+    // Inventario: "¿Qué opciones de casas en renta tienes en Cumbres?"
+    /\b(?:opciones?|casas?|departamentos?|depas?|inmuebles?|propiedades?)\b.*\b(?:en\s+renta|renta)\b/.test(t) ||
+    /\b(?:en\s+renta|renta)\b.*\b(?:opciones?|casas?|tienes|tienen|hay|muestrame|muéstrame)\b/.test(t) ||
+    /\b(?:tienes|tienen|hay)\b.*\ben\s+renta\b/.test(t)
   );
+}
+
+/**
+ * Comprador pidiendo inventario en venta — no confundir con captación vendedor.
+ */
+function mentionsBuyDemand(normalizedText) {
+  const t = normalizeText(String(normalizedText || ''));
+  if (!t) return false;
+  if (/\b(?:mi|nuestra?|nuestro)\s+(?:casa|departamento|depa|propiedad|inmueble|terreno|local)\b/.test(t)) {
+    return false;
+  }
+  if (/\b(?:quiero|deseo|necesito|voy\s+a|pienso|me\s+gustar[ií]a|quisiera)\s+vender\b/.test(t)) return false;
+  if (/\bvender\s+(?:mi|nuestra?|nuestro)\b/.test(t)) return false;
+  if (/\b(?:poner|ponerla|ponerlo)\s+en\s+venta\b/.test(t)) return false;
+  if (matchesSellerAcquisitionPattern(t)) return false;
+  if (/\b(?:quiero|busco|necesito)\s+comprar\b/.test(t)) return true;
+  if (/\bme\s+interesa\s+comprar\b/.test(t)) return true;
+  if (/\bcomprar\s+(?:una|un|la|el)\b/.test(t)) return true;
+  if (/\b(?:opciones?|casas?|departamentos?|depas?|inmuebles?|propiedades?|terrenos?)\b.*\b(?:en\s+venta|venta|comprar)\b/.test(t)) {
+    return true;
+  }
+  if (/\b(?:en\s+venta|venta)\b.*\b(?:opciones?|casas?|departamentos?|depas?|disponibles?)\b/.test(t)) return true;
+  if (/\b(?:en\s+venta|venta)\b.*\b(?:tienes|tienen|hay|muestrame|muéstrame|mostrar)\b/.test(t)) return true;
+  if (/\b(?:tienes|tienen|hay)\b.*\ben\s+venta\b/.test(t)) return true;
+  return false;
 }
 
 /**
@@ -168,6 +221,7 @@ function mentionsRentDemand(normalizedText) {
 function isDemandSearchInbound(text) {
   const t = normalizeText(String(text || ''));
   if (!t) return false;
+  if (mentionsBuyDemand(t)) return true;
   if (mentionsRentDemand(t) && !/\b(?:mi\s+)?(?:casa|propiedad|inmueble)\b/.test(t)) return true;
   if (
     /\bbusco\b/.test(t) &&
@@ -241,6 +295,8 @@ module.exports = {
   extractLooseLocationPhrase,
   isThinGenericInbound,
   mentionsRentDemand,
+  mentionsBuyDemand,
+  isNonLocationPhrase,
   isDemandSearchInbound,
   isRentOutOwnerPhrase,
   isExplicitFlowSwitchToRentDemand,

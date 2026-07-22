@@ -368,14 +368,94 @@ function composeHandoffOffer(state) {
   };
 }
 
+function formatInventoryOptionLines(options = [], max = 3) {
+  const list = Array.isArray(options) ? options : [];
+  const lines = [];
+  const cap = Math.min(max, 3, list.length);
+  for (let i = 0; i < cap; i += 1) {
+    const p = list[i] || {};
+    const title = cleanSpaces(String(p.title || p.listing_id || p.code || 'Propiedad'));
+    const zone = cleanSpaces(String(p.location_label || p.zone || p.neighborhood || ''));
+    const price = p.price_label || (p.price != null ? formatMoneyMx(p.price) : null);
+    const url = p.public_url || p.publicUrl || null;
+    if (!url || !price) continue;
+    const bits = [title];
+    if (zone) bits.push(zone);
+    bits.push(price);
+    lines.push(`• ${bits.join(' · ')}\n  ${url}`);
+  }
+  return lines;
+}
+
+function composeNetworkFallbackDemand(state, { operationLabel = 'esa búsqueda' } = {}) {
+  const nm = firstName(state) || 'perfecto';
+  const zone = state.locationText || 'esa zona';
+  const meta = state.inventorySearchMeta || {};
+  const zoneHint = meta.relaxedZone
+    ? `No encontré coincidencias exactas en ${zone}; revisé inventario activo cercano.`
+    : `Revisé inventario activo para ${operationLabel} en ${zone}.`;
+  return {
+    responseText: `${nm ? `Perfecto, ${nm}. ` : ''}${zoneHint} Por ahora no tengo opciones publicadas que cumplan exactamente; podemos ayudarte a través de nuestra red de contactos y un asesor Luxetty. ¿Te parece si te contactan por aquí?`,
+    followUpQuestion: null,
+    awaitingField: 'advisor_contact_consent',
+    toneFlags: { consultive: true, handoff: true, networkFallback: true },
+  };
+}
+
 /**
- * Handoff consultivo compra abierta (F3.2).
+ * Si hay opciones SoT (o búsqueda vacía), priorizar mostrarlas sobre kickoff/slots.
+ */
+function tryComposeInventoryOptionsReply(state) {
+  const goal = state.conversationGoal;
+  const isDemand =
+    goal === CONVERSATION_GOALS.BUY_PROPERTY ||
+    goal === CONVERSATION_GOALS.RENT_PROPERTY ||
+    state.leadFlow === 'demand';
+  if (!isDemand) return null;
+  const options = Array.isArray(state.matchedOptions) ? state.matchedOptions : [];
+  const lines = formatInventoryOptionLines(options);
+  if (lines.length) {
+    const nm = firstName(state) || 'perfecto';
+    const opLabel = goal === CONVERSATION_GOALS.RENT_PROPERTY ? 'renta' : 'venta';
+    return {
+      responseText: `Perfecto, ${nm}. Encontré estas opciones reales en ${opLabel} (sin inventar):\n${lines.join('\n')}\n\n¿Quieres que un asesor confirme disponibilidad o te interesa alguna?`,
+      followUpQuestion: null,
+      awaitingField: state.collectedFields?.fullName ? 'advisor_contact_consent' : 'full_name',
+      toneFlags: { consultive: true, inventoryOptions: true },
+    };
+  }
+  if (state.inventorySearchMeta?.emptyAfterSearch) {
+    return composeNetworkFallbackDemand(state, {
+      operationLabel: goal === CONVERSATION_GOALS.RENT_PROPERTY ? 'renta' : 'compra',
+    });
+  }
+  return null;
+}
+
+/**
+ * Handoff consultivo compra abierta (F3.2) — con opciones reales si existen.
  * @param {import('../types/conversationState').ConversationState} state
  */
 function composeHandoffBuyDemand(state) {
   const nm = firstName(state) || 'perfecto';
   const zone = state.locationText || 'esa zona';
   const pres = state.budget != null ? formatMoneyMx(state.budget) : null;
+  const options = Array.isArray(state.matchedOptions) ? state.matchedOptions : [];
+  const optionLines = formatInventoryOptionLines(options);
+
+  if (optionLines.length) {
+    return {
+      responseText: `Perfecto, ${nm}. Encontré estas opciones reales en inventario (sin inventar):\n${optionLines.join('\n')}\n\n¿Quieres que un asesor de Luxetty te ayude a revisar disponibilidad o agendar visita?`,
+      followUpQuestion: null,
+      awaitingField: 'advisor_contact_consent',
+      toneFlags: { consultive: true, handoff: true, inventoryOptions: true },
+    };
+  }
+
+  if (state.inventorySearchMeta?.emptyAfterSearch) {
+    return composeNetworkFallbackDemand(state, { operationLabel: 'compra' });
+  }
+
   const rangeHint = pres
     ? `Con ${pres} en ${zone} sí vale revisar opciones contigo.`
     : `En ${zone} sí vale revisar opciones contigo.`;
@@ -409,6 +489,21 @@ function composeHandoffRentDemand(state) {
   const zone = state.locationText || null;
   const pres = state.budget != null ? formatMoneyMx(state.budget) : null;
   const br = state.bedrooms != null ? Number(state.bedrooms) : null;
+  const options = Array.isArray(state.matchedOptions) ? state.matchedOptions : [];
+  const optionLines = formatInventoryOptionLines(options);
+
+  if (optionLines.length) {
+    return {
+      responseText: `Perfecto, ${nm}. Estas son opciones reales en renta (sin inventar):\n${optionLines.join('\n')}\n\n¿Te parece si un asesor de Luxetty te contacta para confirmar disponibilidad?`,
+      followUpQuestion: null,
+      awaitingField: 'advisor_contact_consent',
+      toneFlags: { consultive: true, handoff: true, rentDemand: true, inventoryOptions: true },
+    };
+  }
+
+  if (state.inventorySearchMeta?.emptyAfterSearch) {
+    return composeNetworkFallbackDemand(state, { operationLabel: 'renta' });
+  }
 
   const parts = [];
   if (zone) parts.push(zone);
@@ -1116,6 +1211,9 @@ function composeFromPlannerContext(state, decision, plannerOut, handoffOut) {
   if (handoffOut.action === 'OFFER_HANDOFF') {
     return resolveQualificationHandoffCompose(state);
   }
+
+  const inventoryReplyEarly = tryComposeInventoryOptionsReply(state);
+  if (inventoryReplyEarly) return inventoryReplyEarly;
 
   if (intent === V3_INTENT.GREETING) return composeAdvisorGreeting(state);
 
