@@ -63,6 +63,7 @@ async function getQueryEmbedding(query, cacheKey) {
 
 /**
  * Recuperación semántica vía RPC (nunca SQL directo).
+ * Con RAG_HYBRID_ENABLED usa match_knowledge_chunks_hybrid (FTS+vector RRF) cuando aplica.
  */
 async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = console, timeoutMs = RAG_RETRIEVAL_BUDGET_MS }) {
   if (!isRagP0Enabled()) return { chunks: [], fallback: true, latency_ms: 0 };
@@ -73,6 +74,22 @@ async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = con
 
   const queryHash = sha256(q);
   const start = Date.now();
+  const { isRagHybridEnabled } = require('../config/accP0Flags');
+  let effectiveRpc = rpcName;
+  let effectiveParams = { ...rpcParams };
+
+  if (
+    isRagHybridEnabled() &&
+    (rpcName === 'match_knowledge_chunks' || rpcName === 'match_property_chunks')
+  ) {
+    effectiveRpc = 'match_knowledge_chunks_hybrid';
+    effectiveParams = {
+      ...rpcParams,
+      query_text: q,
+      filter_source_type:
+        rpcName === 'match_property_chunks' ? 'property' : rpcParams.filter_source_type ?? null,
+    };
+  }
 
   try {
     const { embedding, cache_hit } = await withTimeout(
@@ -81,13 +98,54 @@ async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = con
       'embedding'
     );
 
-    const { data, error } = await withTimeout(
-      db.rpc(rpcName, { ...rpcParams, query_embedding: embedding }),
-      timeoutMs,
-      'rpc'
-    );
+    let data;
+    let error;
+    try {
+      const res = await withTimeout(
+        db.rpc(effectiveRpc, { ...effectiveParams, query_embedding: embedding }),
+        timeoutMs,
+        'rpc'
+      );
+      data = res.data;
+      error = res.error;
+    } catch (hybridErr) {
+      if (effectiveRpc === 'match_knowledge_chunks_hybrid') {
+        logger.warn?.('rag_hybrid_fallback_vector', { error: String(hybridErr?.message || hybridErr) });
+        const res = await withTimeout(
+          db.rpc(rpcName, { ...rpcParams, query_embedding: embedding }),
+          timeoutMs,
+          'rpc'
+        );
+        data = res.data;
+        error = res.error;
+        effectiveRpc = rpcName;
+      } else {
+        throw hybridErr;
+      }
+    }
 
     if (error) {
+      if (effectiveRpc === 'match_knowledge_chunks_hybrid') {
+        logger.warn?.('rag_hybrid_rpc_error_fallback', { message: error.message });
+        const res = await withTimeout(
+          db.rpc(rpcName, { ...rpcParams, query_embedding: embedding }),
+          timeoutMs,
+          'rpc'
+        );
+        if (res.error) {
+          logger.warn?.('rag_semantic_search_rpc_error', { rpc: rpcName, message: res.error.message });
+          return { chunks: [], fallback: true, latency_ms: Date.now() - start, query_hash: queryHash, cache_hit };
+        }
+        return {
+          chunks: Array.isArray(res.data) ? res.data : [],
+          fallback: false,
+          latency_ms: Date.now() - start,
+          query_hash: queryHash,
+          cache_hit,
+          hybrid: false,
+          hybrid_fallback: true,
+        };
+      }
       logger.warn?.('rag_semantic_search_rpc_error', { rpc: rpcName, message: error.message });
       return { chunks: [], fallback: true, latency_ms: Date.now() - start, query_hash: queryHash, cache_hit };
     }
@@ -98,6 +156,7 @@ async function semanticSearch(db, { query, rpcName, rpcParams = {}, logger = con
       latency_ms: Date.now() - start,
       query_hash: queryHash,
       cache_hit,
+      hybrid: effectiveRpc === 'match_knowledge_chunks_hybrid',
     };
   } catch (err) {
     logger.warn?.('rag_semantic_search_failed', { rpc: rpcName, error: String(err?.message || err) });

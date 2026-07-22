@@ -18,15 +18,19 @@ const {
 const { normalizeLocationFromUserText } = require('../conversation/v3/interpreter/locationNormalizer');
 const { parseMoneyAmount } = require('../conversation/v3/interpreter/moneyParser');
 const inventoryOptionsService = require('./inventoryOptionsService');
+const {
+  readDemandSlots,
+  mergeDemandSlots,
+  buildInventorySearchMeta,
+} = require('../conversation/v3/rag/demandSearchSlots');
 
 function resolveDemandOperation(text, previousAiState = {}) {
   const t = normalizeText(String(text || ''));
-  const prevOp = String(previousAiState.operation_type || previousAiState.operationType || '').toLowerCase();
-  const prevGoal = String(previousAiState.conversation_goal || previousAiState.conversationGoal || '');
+  const prev = readDemandSlots(previousAiState);
   if (mentionsRentDemand(t)) return 'rent';
   if (mentionsBuyDemand(t)) return 'sale';
-  if (prevOp === 'rent' || prevGoal === 'RENT_PROPERTY') return 'rent';
-  if (prevOp === 'sale' || prevGoal === 'BUY_PROPERTY') return 'sale';
+  if (prev.operationType === 'rent' || prev.conversationGoal === 'RENT_PROPERTY') return 'rent';
+  if (prev.operationType === 'sale' || prev.conversationGoal === 'BUY_PROPERTY') return 'sale';
   if (/\brenta\b/.test(t)) return 'rent';
   if (/\bventa\b|\bcomprar\b/.test(t)) return 'sale';
   return null;
@@ -35,23 +39,20 @@ function resolveDemandOperation(text, previousAiState = {}) {
 function shouldAttemptInventorySearch({ text, previousAiState = {}, phone } = {}) {
   if (!isInventoryOptionsEffectiveForUser(phone)) return false;
   const t = String(text || '');
+  const prev = readDemandSlots(previousAiState);
   const demand =
     isDemandSearchInbound(t) ||
     mentionsRentDemand(normalizeText(t)) ||
     mentionsBuyDemand(normalizeText(t)) ||
-    previousAiState.lead_flow === 'demand' ||
-    previousAiState.leadFlow === 'demand' ||
-    ['BUY_PROPERTY', 'RENT_PROPERTY'].includes(
-      String(previousAiState.conversation_goal || previousAiState.conversationGoal || '')
-    );
+    prev.leadFlow === 'demand' ||
+    ['BUY_PROPERTY', 'RENT_PROPERTY'].includes(String(prev.conversationGoal || ''));
   if (!demand) return false;
-  // No buscar en captación/offer.
-  if (previousAiState.lead_flow === 'offer' || previousAiState.leadFlow === 'offer') return false;
+  if (prev.leadFlow === 'offer') return false;
   return true;
 }
 
 /**
- * @returns {Promise<{matchedOptions: object[], inventorySearchMeta: object}|null>}
+ * @returns {Promise<{matchedOptions: object[], inventorySearchMeta: object, demandSlots: object}|null>}
  */
 async function resolveInventoryOptionsForTurn({
   db,
@@ -67,25 +68,24 @@ async function resolveInventoryOptionsForTurn({
   const operation = resolveDemandOperation(text, previousAiState);
   if (!operation) return null;
 
-  const zone =
-    cleanSpaces(String(previousAiState.location_text || previousAiState.locationText || '')) ||
-    normalizeLocationFromUserText(text) ||
-    extractLooseLocationPhrase(text) ||
-    null;
+  const prevSlots = readDemandSlots(previousAiState);
+  const inboundZone =
+    normalizeLocationFromUserText(text) || extractLooseLocationPhrase(text) || null;
+  const inboundBudget = parseMoneyAmount(text);
 
-  let budgetMax =
-    previousAiState.budget_max != null
-      ? Number(previousAiState.budget_max)
-      : previousAiState.budget != null
-        ? Number(previousAiState.budget)
-        : null;
-  if (budgetMax == null || !Number.isFinite(budgetMax)) {
-    budgetMax = parseMoneyAmount(text);
-  }
+  const slots = mergeDemandSlots(prevSlots, {
+    operationType: operation,
+    locationText: inboundZone || undefined,
+    budgetMax: inboundBudget != null ? inboundBudget : undefined,
+    leadFlow: 'demand',
+  });
+
+  const zone = slots.locationText;
+  const budgetMax = slots.budgetMax;
+  const bedrooms = slots.bedrooms;
 
   // Mínimo: operación + (zona o presupuesto) para no disparar búsquedas vacías genéricas.
   if (!zone && budgetMax == null) {
-    // Aún así, si el usuario pide opciones explícitamente, buscar por operación sola.
     const asksOptions = /\b(?:opciones?|tienes|tienen|hay|muestrame|muéstrame|mostrar)\b/i.test(
       String(text || '')
     );
@@ -98,6 +98,7 @@ async function resolveInventoryOptionsForTurn({
       operation,
       zone,
       budgetMax,
+      bedrooms,
       queryText: text,
       limit: 3,
     },
@@ -107,15 +108,17 @@ async function resolveInventoryOptionsForTurn({
   const options = Array.isArray(res.options) ? res.options : [];
   return {
     matchedOptions: options,
-    inventorySearchMeta: {
+    demandSlots: slots,
+    inventorySearchMeta: buildInventorySearchMeta({
       attempted: true,
       source: res.source || 'none',
-      operation: res.operation,
-      zone: res.zone,
-      budgetMax: res.budgetMax,
+      operation: res.operation || operation,
+      zone: res.zone ?? zone,
+      budgetMax: res.budgetMax ?? budgetMax,
+      bedrooms,
       relaxedZone: !!res.relaxedZone,
       emptyAfterSearch: options.length === 0,
-    },
+    }),
   };
 }
 
@@ -123,4 +126,5 @@ module.exports = {
   shouldAttemptInventorySearch,
   resolveDemandOperation,
   resolveInventoryOptionsForTurn,
+  readDemandSlots,
 };

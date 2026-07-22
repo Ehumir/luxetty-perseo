@@ -1,8 +1,16 @@
 'use strict';
 
-const { getAccRagP0FlagSnapshot, isRagRulesEffectiveForUser } = require('../../../config/accP0Flags');
+const {
+  getAccRagP0FlagSnapshot,
+  isRagRulesEffectiveForUser,
+  isRagDomainRoutingEnabled,
+  isRagRc12CampaignEntityValidationEnabled,
+} = require('../../../config/accP0Flags');
 const ragRulesService = require('../../../services/ragRulesService');
-const { canAssertClaim } = require('./ragPolicy');
+const { canAssertClaim, validateCampaignEntityClaim } = require('./ragPolicy');
+const { classifyDomainIntent } = require('./domainIntentClassifier');
+const { getMinScoreForDomain } = require('./ragDomainThresholdLoader');
+const { validateCampaignEntityMatch } = require('./campaignEntityValidation');
 
 const RULES_INTENT_PATTERNS = [
   { domain: 'commercial_objections', re: /\bcomisi[oó]n\b|\bexclusiv|\bvaluaci[oó]n\b|\bcu[aá]nto\s+cobran\b/i },
@@ -21,6 +29,10 @@ const RULES_INTENT_PATTERNS = [
 function detectRulesDomain(text) {
   const t = String(text || '');
   if (!t.trim()) return null;
+  if (isRagDomainRoutingEnabled()) {
+    const intent = classifyDomainIntent(t);
+    if (intent.matched && intent.domain !== 'properties') return intent.domain;
+  }
   for (const { domain, re } of RULES_INTENT_PATTERNS) {
     if (re.test(t)) return domain;
   }
@@ -30,14 +42,39 @@ function detectRulesDomain(text) {
 /**
  * Extrae excerpt grounded seguro para enriquecer copy (sin mostrar citation al usuario).
  */
-function pickGroundedExcerpt(contextPack, { minConfidence = 0.72 } = {}) {
+function pickGroundedExcerpt(contextPack, { minConfidence = 0.72, propertyRow = null, queryText = null } = {}) {
   if (!contextPack || contextPack.fallback_used) return null;
-  if (!canAssertClaim({ confidence: contextPack.confidence, citations: contextPack.citations, minConfidence })) {
+  const domain =
+    contextPack.sources?.[0]?.registry_domain_code ||
+    contextPack.citations?.[0]?.source_type ||
+    null;
+  const effectiveMin = getMinScoreForDomain(domain) || minConfidence;
+  if (!canAssertClaim({ confidence: contextPack.confidence, citations: contextPack.citations, minConfidence: effectiveMin })) {
     return null;
   }
-  const top = contextPack.citations?.[0];
-  if (!top?.excerpt) return null;
-  return String(top.excerpt).slice(0, 180).trim();
+
+  const topCitation = contextPack.citations?.[0];
+  if (!topCitation?.excerpt) return null;
+
+  if (isRagRc12CampaignEntityValidationEnabled()) {
+    const chunkProbe = {
+      registry_domain_code: domain,
+      source_type: topCitation.source_type,
+      metadata: contextPack.sources?.[0]?.metadata || {},
+      content: topCitation.excerpt,
+      similarity: topCitation.score,
+    };
+    if (domain === 'campaigns' || domain === 'campaign') {
+      const entity = validateCampaignEntityClaim({ chunk: chunkProbe, propertyRow });
+      if (!entity.ok) return null;
+      if (queryText) {
+        const match = validateCampaignEntityMatch(queryText, [chunkProbe], { propertyRow });
+        if (!match.valid) return null;
+      }
+    }
+  }
+
+  return String(topCitation.excerpt).slice(0, 180).trim();
 }
 
 /**

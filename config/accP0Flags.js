@@ -104,6 +104,30 @@ function isRagRulesEnabled() {
   return isRagP0Enabled() && envTrue('RAG_RULES_ENABLED');
 }
 
+function isRagDomainRoutingEnabled() {
+  return isRagP0Enabled() && envTrue('RAG_DOMAIN_ROUTING_ENABLED');
+}
+
+function isRagAdaptiveThresholdEnabled() {
+  return isRagP0Enabled() && envTrue('RAG_ADAPTIVE_THRESHOLD_ENABLED');
+}
+
+function isRagHybridEnabled() {
+  return isRagP0Enabled() && envTrue('RAG_HYBRID_ENABLED');
+}
+
+function isRagRc11ZoneEntityValidationEnabled() {
+  return isRagP0Enabled() && envTrue('RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED');
+}
+
+function isRagRc11TelemetryEnabled() {
+  return isRagP0Enabled() && envTrue('RAG_RC11_TELEMETRY_ENABLED');
+}
+
+function isRagRc12CampaignEntityValidationEnabled() {
+  return isRagP0Enabled() && envTrue('RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED');
+}
+
 /**
  * Inventario demanda (SQL + RAG rerank) — OFF por defecto; canary por allowlist.
  * Independiente de RAG_P0: puede activarse solo para opciones de stock.
@@ -143,6 +167,12 @@ function getAccRagP0FlagSnapshot() {
     RAG_P0_ENABLED: envTrue('RAG_P0_ENABLED'),
     RAG_INVENTORY_ENABLED: envTrue('RAG_INVENTORY_ENABLED'),
     RAG_RULES_ENABLED: envTrue('RAG_RULES_ENABLED'),
+    RAG_DOMAIN_ROUTING_ENABLED: envTrue('RAG_DOMAIN_ROUTING_ENABLED'),
+    RAG_ADAPTIVE_THRESHOLD_ENABLED: envTrue('RAG_ADAPTIVE_THRESHOLD_ENABLED'),
+    RAG_HYBRID_ENABLED: envTrue('RAG_HYBRID_ENABLED'),
+    RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED: envTrue('RAG_RC11_ZONE_ENTITY_VALIDATION_ENABLED'),
+    RAG_RC11_TELEMETRY_ENABLED: envTrue('RAG_RC11_TELEMETRY_ENABLED'),
+    RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED: envTrue('RAG_RC12_CAMPAIGN_ENTITY_VALIDATION_ENABLED'),
     PERSEO_INVENTORY_OPTIONS_ENABLED: envTrue('PERSEO_INVENTORY_OPTIONS_ENABLED'),
     PERSEO_INVENTORY_OPTIONS_GLOBAL: envTrue('PERSEO_INVENTORY_OPTIONS_GLOBAL'),
     ACC_P0_EFFECTIVE_WHATSAPP_GATEWAY: isAccWhatsappGatewayEnabled(),
@@ -150,6 +180,9 @@ function getAccRagP0FlagSnapshot() {
     ACC_P0_EFFECTIVE_INSTAGRAM: isAccInstagramEnabled(),
     RAG_P0_EFFECTIVE_INVENTORY: isRagInventoryEnabled(),
     RAG_P0_EFFECTIVE_RULES: isRagRulesEnabled(),
+    RAG_P0_EFFECTIVE_DOMAIN_ROUTING: isRagDomainRoutingEnabled(),
+    RAG_P0_EFFECTIVE_ADAPTIVE_THRESHOLD: isRagAdaptiveThresholdEnabled(),
+    RAG_P0_EFFECTIVE_HYBRID: isRagHybridEnabled(),
     INVENTORY_OPTIONS_EFFECTIVE: isInventoryOptionsEnabled(),
     RAG_P0_ALLOWLIST_COUNT: splitAllowlist(process.env.RAG_P0_ALLOWLIST).length,
     ACC_CANARY_ALLOWLIST_COUNT: splitAllowlist(process.env.ACC_CANARY_ALLOWLIST).length,
@@ -166,6 +199,12 @@ module.exports = {
   isRagP0Enabled,
   isRagInventoryEnabled,
   isRagRulesEnabled,
+  isRagDomainRoutingEnabled,
+  isRagAdaptiveThresholdEnabled,
+  isRagHybridEnabled,
+  isRagRc11ZoneEntityValidationEnabled,
+  isRagRc11TelemetryEnabled,
+  isRagRc12CampaignEntityValidationEnabled,
   isRagCanaryEligible,
   isRagInventoryEffectiveForUser,
   isRagRulesEffectiveForUser,

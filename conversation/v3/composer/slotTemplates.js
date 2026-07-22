@@ -417,8 +417,24 @@ function tryComposeInventoryOptionsReply(state) {
   if (lines.length) {
     const nm = firstName(state) || 'perfecto';
     const opLabel = goal === CONVERSATION_GOALS.RENT_PROPERTY ? 'renta' : 'venta';
+    const meta = state.inventorySearchMeta || {};
+    const zone = meta.zone || state.locationText || null;
+    const budget =
+      meta.budgetMax != null
+        ? formatMoneyMx(meta.budgetMax)
+        : state.budget != null
+          ? formatMoneyMx(state.budget)
+          : null;
+    const ctxBits = [];
+    if (zone) ctxBits.push(zone);
+    if (budget) ctxBits.push(`hasta ${budget}`);
+    const ctx =
+      ctxBits.length > 0
+        ? `Para ${opLabel} en ${ctxBits.join(', ')}, estas son opciones reales del inventario Luxetty`
+        : `Para ${opLabel}, estas son opciones reales del inventario Luxetty`;
+    const relax = meta.relaxedZone ? ' (amplié un poco la zona para mostrarte alternativas).' : '.';
     return {
-      responseText: `Perfecto, ${nm}. Encontré estas opciones reales en ${opLabel} (sin inventar):\n${lines.join('\n')}\n\n¿Quieres que un asesor confirme disponibilidad o te interesa alguna?`,
+      responseText: `Perfecto, ${nm}. ${ctx}${relax}\n${lines.join('\n')}\n\n¿Te interesa alguna o prefieres que un asesor confirme disponibilidad?`,
       followUpQuestion: null,
       awaitingField: state.collectedFields?.fullName ? 'advisor_contact_consent' : 'full_name',
       toneFlags: { consultive: true, inventoryOptions: true },

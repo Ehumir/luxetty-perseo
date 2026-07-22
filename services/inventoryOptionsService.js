@@ -74,13 +74,16 @@ function isPublishableOption(n) {
  * Filtro estructurado determinista sobre public.properties.
  * @returns {Promise<object[]>} filas crudas
  */
-async function structuredInventorySearch(db, { operation, zone, budgetMax, limit = 12 } = {}, logger = console) {
+async function structuredInventorySearch(db, { operation, zone, budgetMax, bedrooms, limit = 12 } = {}, logger = console) {
   if (!db || typeof db.from !== 'function') return [];
   const z = sanitizeZone(zone);
   try {
     let q = db.from('properties').select(SAFE_SELECT).eq('status', 'active');
     if (operation) q = q.eq('operation_type', operation);
     if (budgetMax != null && Number.isFinite(Number(budgetMax))) q = q.lte('price', Number(budgetMax));
+    if (bedrooms != null && Number.isFinite(Number(bedrooms)) && Number(bedrooms) > 0) {
+      q = q.gte('bedrooms', Number(bedrooms));
+    }
     if (z) {
       const like = `%${z}%`;
       q = q.or(
@@ -148,12 +151,20 @@ async function searchInventoryOptions(db, criteria = {}, logger = console) {
   const propertyType = criteria.propertyType || null;
   const limit = Number.isFinite(Number(criteria.limit)) ? Number(criteria.limit) : 3;
 
-  let rows = await structuredInventorySearch(db, { operation, zone, budgetMax, limit: 12 }, logger);
+  let rows = await structuredInventorySearch(
+    db,
+    { operation, zone, budgetMax, bedrooms: criteria.bedrooms, limit: 12 },
+    logger
+  );
 
   // Relajación de zona: si nada matchea con zona, reintentar sin zona (misma operación/presupuesto).
   let relaxedZone = false;
   if (!rows.length && zone) {
-    rows = await structuredInventorySearch(db, { operation, budgetMax, limit: 12 }, logger);
+    rows = await structuredInventorySearch(
+      db,
+      { operation, budgetMax, bedrooms: criteria.bedrooms, limit: 12 },
+      logger
+    );
     relaxedZone = rows.length > 0;
   }
 
