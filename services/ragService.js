@@ -309,7 +309,16 @@ async function persistRagQueryLog(db, {
       .select('id')
       .maybeSingle();
 
-    if (logErr || !logRow?.id) return null;
+    if (logErr || !logRow?.id) {
+      // F1A: no silenciar fallos de insert (RLS/schema/credenciales).
+      if (typeof console !== 'undefined') {
+        console.warn('persistRagQueryLog_failed', {
+          error: logErr?.message || logErr || 'no_row',
+          code: logErr?.code || null,
+        });
+      }
+      return null;
+    }
 
     if (citations.length) {
       const rows = citations.map((c, idx) => ({
@@ -321,7 +330,10 @@ async function persistRagQueryLog(db, {
       await db.from('retrieval_citations').insert(rows);
     }
     return logRow.id;
-  } catch {
+  } catch (err) {
+    if (typeof console !== 'undefined') {
+      console.warn('persistRagQueryLog_exception', { error: String(err?.message || err) });
+    }
     return null;
   }
 }

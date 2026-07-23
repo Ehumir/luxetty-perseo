@@ -1347,6 +1347,8 @@ app.post('/webhook', async (req, res) => {
         }
       }
 
+      let ragTurnMeta = null;
+      let inventorySearchMetaForClass = null;
       try {
         const { enrichTurnWithRagContext } = require('./conversation/v3/rag/ragTurnOrchestrator');
         const ragTurn = await enrichTurnWithRagContext(supabase, {
@@ -1357,6 +1359,7 @@ app.post('/webhook', async (req, res) => {
           saveConversationEvent,
           logger: console,
         });
+        ragTurnMeta = ragTurn?.meta || null;
         if (ragTurn?.contextPack) {
           legacyHydration.ragContextPack = ragTurn.contextPack;
         }
@@ -1371,6 +1374,7 @@ app.post('/webhook', async (req, res) => {
           });
         }
       } catch (ragErr) {
+        ragTurnMeta = { skipped: false, fallback_reason: 'exception', allowlist_eligible: true };
         logEvent('rag_turn_context_error', {
           conversation_id: conversationId,
           error: String(ragErr?.message || ragErr),
@@ -1389,6 +1393,10 @@ app.post('/webhook', async (req, res) => {
         if (inv) {
           legacyHydration.matchedOptions = inv.matchedOptions || [];
           legacyHydration.inventorySearchMeta = inv.inventorySearchMeta || null;
+          inventorySearchMetaForClass = {
+            ...(inv.inventorySearchMeta || {}),
+            count: (inv.matchedOptions || []).length,
+          };
           logEvent('inventory_options_search', {
             conversation_id: conversationId,
             count: (inv.matchedOptions || []).length,
@@ -1402,6 +1410,37 @@ app.post('/webhook', async (req, res) => {
         logEvent('inventory_options_search_error', {
           conversation_id: conversationId,
           error: String(invErr?.message || invErr),
+        });
+      }
+
+      // F1A: clasificación de turno (no inserta rag_query_logs falsos).
+      try {
+        const {
+          classifyRetrievalTurn,
+          buildRetrievalClassificationPayload,
+        } = require('./conversation/v3/rag/retrievalTurnClassification');
+        const classification = classifyRetrievalTurn({
+          ragMeta: ragTurnMeta,
+          inventoryMeta: inventorySearchMetaForClass,
+          hasActiveProperty: !!(legacyHydration.activeProperty && legacyHydration.activeProperty.id),
+        });
+        const classPayload = buildRetrievalClassificationPayload({
+          classification,
+          ragMeta: ragTurnMeta,
+          inventoryMeta: inventorySearchMetaForClass,
+          messageId: metaMessageId,
+        });
+        logEvent('retrieval_turn_classification', {
+          conversation_id: conversationId,
+          ...classPayload,
+        });
+        if (typeof saveConversationEvent === 'function' && conversationId) {
+          await saveConversationEvent(conversationId, 'retrieval_turn_classification', classPayload);
+        }
+      } catch (classErr) {
+        logEvent('retrieval_turn_classification_error', {
+          conversation_id: conversationId,
+          error: String(classErr?.message || classErr),
         });
       }
 

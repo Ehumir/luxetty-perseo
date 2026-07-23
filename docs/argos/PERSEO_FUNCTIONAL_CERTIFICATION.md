@@ -1,32 +1,34 @@
 # ARGOS · PERSEO Functional Certification
 
-> Última corrida canary: **2026-07-22** · **Veredicto global: FAIL** (captación CRM_READY + PROPERTY_QA precio + parseo "mil").
->
-> **Update 2026-07-22 (RAG Primer Mundo / scope B):** cert funcional **PASS** global. `PRODUCTION_RAG_GO = YES`. Railway: `PERSEO_INVENTORY_OPTIONS_GLOBAL=true`, `RAG_P0_GLOBAL_MODE=true`. CDC cron `knowledge_cdc_worker_every_5_min` activo. Comparables + zone KG + fotos/tools flags OFF→canary.
+> **VIGENTE (F0A 2026-07-22):** veredicto máquina **PASS** · `PRODUCTION_RAG_GO = YES`.  
+> SoT JSON: `docs/argos/evidence/perseo-functional-certification/PERSEO_FUNCTIONAL_CERTIFICATION.json` @ `2026-07-22T08:03:02.519Z`  
+> Índice documental: `docs/argos/PERSEO_RAG_DOCUMENTATION_SOURCE_OF_TRUTH.md`  
+> Runtime prod certificado: `fix/rag-rq47-quality-hardening@ca4cccb` · Railway deploy `d8655e81`
 
-> **Update 2026-07-22 (RAG Premium Consultivo canary):** inventario demanda activo en ARGOS+V3 con flags/allowlist. Suites renta/venta mejoraron de forma material (R1/R3/V1 PASS; LONG PASS). `PRODUCTION_RAG_GO = CANARY_ACTIVE`; **GLOBAL no autorizado** hasta cert PASS completo.
+---
 
-## Veredicto por suite (canary flags ON)
+## HISTÓRICO / SUPERSEDED — no usar como estado actual
 
-| Suite | Resultado | Detalle |
+> Las tablas FAIL/CANARY/PARTIAL debajo describen corridas **anteriores** (canary inventario / 7-jul).  
+> **SUPERSEDED** por el JSON PASS del 22-jul-2026. Conservadas solo como evidencia de evolución.
+
+### Veredicto por suite (canary histórico — SUPERSEDED)
+
+| Suite | Resultado histórico | Nota |
 |---|---|---|
-| Renta | **PARTIAL** (2/3) | R1/R3 PASS (opciones con link); R2 FAIL budget "50 mil" |
-| Venta / Compra | **PARTIAL** (1/3) | V1 PASS; V2/V3 FAIL |
-| Propiedad específica | **FAIL** (2/4) | P3/P4 PASS; P1/P2 FAIL precio/zona |
-| Captación | **FAIL** | Clasificación PASS; CRM_READY FAIL (fuera de alcance RAG premium) |
-| Conversación larga (20) | **PASS** | — |
-| **Global** | **FAIL** | Bloqueado por captación + PROPERTY_QA |
+| Renta | PARTIAL (2/3) | SUPERSEDED → PASS 3/3 en JSON 22-jul |
+| Venta / Compra | PARTIAL (1/3) | SUPERSEDED → PASS 3/3 |
+| Propiedad específica | FAIL (2/4) | SUPERSEDED → PASS 4/4 |
+| Captación | FAIL CRM_READY | SUPERSEDED → PASS |
+| Conversación larga | PASS | Confirmado en JSON |
+| **Global histórico** | **FAIL** | **SUPERSEDED → PASS** |
 
-## Go / No-Go canary inventario
+### Updates del 22-jul (contexto)
 
-| KPI | Estado |
-|-----|--------|
-| Opciones reales con link (R1/V1) | GO |
-| Network fallback post-search | Código listo |
-| Anti invent listing | GO en suites inventario |
-| Cert funcional completo PASS | NO-GO → no GLOBAL |
-| Anti-PII | Mantener audit gate |
+- **RAG Primer Mundo / scope B:** cert funcional PASS global. Railway contrato: inventory GLOBAL + RAG_P0_GLOBAL. CDC cron activo. Comparables/zone/fotos/tools OFF→canary.
+- Snapshot ATENA `backendKnowledge100Snapshot.json` con `CANARY_ACTIVE` es **HISTÓRICO** tras F0A (no contradice YES).
 
 ## Evidencia
 
-`docs/argos/evidence/perseo-functional-certification/`
+`docs/argos/evidence/perseo-functional-certification/` (gitignored)  
+Contrato: `docs/architecture/BACKEND_KNOWLEDGE_UTILIZATION_100.md`

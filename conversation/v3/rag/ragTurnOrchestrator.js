@@ -50,7 +50,8 @@ function buildTimingExtras(routing = {}, contextPack = null) {
 }
 
 async function emitSkippedRagTelemetry({ saveConversationEvent, conversationId, messageId, flags, extras }) {
-  if (!isRagRc11TelemetryEnabled() || !saveConversationEvent || !conversationId) return;
+  if (!saveConversationEvent || !conversationId) return;
+  // F1A: always emit skip classification (RC11 flag only adds extended fields).
   const kpiPayload = buildRagRetrievalKpi(null, {
     message_id: messageId || null,
     conversation_id: conversationId,
@@ -60,7 +61,8 @@ async function emitSkippedRagTelemetry({ saveConversationEvent, conversationId, 
     flags,
     allowlist_eligible: true,
     pipeline: extras.pipeline || 'rq3_domain_routing',
-    telemetry_rc11: true,
+    telemetry_rc11: isRagRc11TelemetryEnabled(),
+    classification: extras.classification || extras.skipped_reason || 'retrieval_skipped',
     ...extras,
   });
   await saveConversationEvent(conversationId, 'rag_retrieval', kpiPayload);
@@ -298,15 +300,27 @@ async function enrichTurnWithRagContext(
   const allowlistEligible = isRagRulesEffectiveForUser(phone);
 
   if (!allowlistEligible) {
-    return {
-      contextPack: null,
-      meta: {
-        skipped: true,
-        reason: 'not_eligible',
-        flags,
-        allowlist_eligible: false,
-      },
+    const meta = {
+      skipped: true,
+      reason: 'not_eligible',
+      flags,
+      allowlist_eligible: false,
+      classification: 'retrieval_skipped_by_policy',
     };
+    // F1A: no fingir rag_query_logs; sí auditar skip por política.
+    await emitSkippedRagTelemetry({
+      saveConversationEvent,
+      conversationId,
+      messageId,
+      flags,
+      extras: {
+        skipped_reason: 'not_eligible',
+        classification: 'retrieval_skipped_by_policy',
+        allowlist_eligible: false,
+        pipeline: 'eligibility_gate',
+      },
+    });
+    return { contextPack: null, meta };
   }
 
   const ctx = { text, phone, conversationId, messageId, saveConversationEvent, flags, logger };
