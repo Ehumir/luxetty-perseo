@@ -33,6 +33,7 @@ const {
   isExplicitFlowSwitchToRentOut,
   isExplicitFlowSwitchToSellFromRent,
   isExplicitPropertyInquiryPhrase,
+  isIntentCorrectionPhrase,
 } = require('./campaignIntake');
 const {
   matchesLandingCaptureInbound,
@@ -97,6 +98,9 @@ function applyBuyDemandPatch(patch, raw, decision) {
   patch.conversationGoal = CONVERSATION_GOALS.BUY_PROPERTY;
   patch.leadFlow = 'demand';
   patch.operationType = 'sale';
+  patch.landingCaptureFlow = false;
+  patch.landingCaptureStage = null;
+  patch.expectedPrice = null;
   const zoneBuy = normalizeLocationFromUserText(raw) || extractLooseLocationPhrase(raw);
   if (zoneBuy && !/^(busco|quiero|necesito)\b/i.test(normalizeText(zoneBuy))) {
     patch.locationText = zoneBuy;
@@ -115,6 +119,9 @@ function applyRentDemandPatch(patch, raw, decision) {
   patch.conversationGoal = CONVERSATION_GOALS.RENT_PROPERTY;
   patch.leadFlow = 'demand';
   patch.operationType = 'rent';
+  patch.landingCaptureFlow = false;
+  patch.landingCaptureStage = null;
+  patch.expectedPrice = null;
   const zoneRent = normalizeLocationFromUserText(raw) || extractLooseLocationPhrase(raw);
   if (zoneRent && !/^(busco|quiero|necesito|rentar)\b/i.test(normalizeText(zoneRent))) {
     patch.locationText = zoneRent;
@@ -144,12 +151,13 @@ function parseBedrooms(text) {
 
 function isExplicitFlowSwitchToBuy(text) {
   const t = normalizeText(text);
+  if (mentionsRentDemand(t) && !isRentOutIntent(text)) return false;
   return (
     t.includes('ahora busco comprar') ||
     t.includes('en realidad busco') ||
     t.includes('mejor quiero comprar') ||
     (/\bno\s+quiero\s+vender\b/.test(t) && /\b(?:comprar|busco)\b/.test(t)) ||
-    (/\bbusco\b/.test(t) && (t.includes('comprar') || t.includes('casa'))) ||
+    (/\bbusco\b/.test(t) && (t.includes('comprar') || (t.includes('casa') && !/\brenta\b/.test(t)))) ||
     t.includes('quiero comprar')
   );
 }
@@ -351,10 +359,36 @@ function interpretUserMessage(state, text, options = {}) {
   if (
     state.conversationGoalLocked &&
     isOfferFlow(state) &&
+    isExplicitFlowSwitchToRentDemand(text)
+  ) {
+    decision.detectedIntent = V3_INTENT.RENT_PROPERTY;
+    decision.confidence = 0.9;
+    decision.explicitFlowSwitch = true;
+    applyRentDemandPatch(patch, raw, decision);
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    return { patch, decision };
+  }
+
+  if (
+    state.conversationGoalLocked &&
+    isOfferFlow(state) &&
     isExplicitFlowSwitchToBuy(text)
   ) {
     decision.detectedIntent = V3_INTENT.BUY_PROPERTY;
     decision.confidence = 0.88;
+    decision.explicitFlowSwitch = true;
+    applyBuyDemandPatch(patch, raw, decision);
+    decision.shouldAskName = !state.collectedFields?.fullName;
+    return { patch, decision };
+  }
+
+  if (
+    state.conversationGoalLocked &&
+    state.conversationGoal === CONVERSATION_GOALS.RENT_PROPERTY &&
+    isExplicitFlowSwitchToBuy(text)
+  ) {
+    decision.detectedIntent = V3_INTENT.BUY_PROPERTY;
+    decision.confidence = 0.9;
     decision.explicitFlowSwitch = true;
     applyBuyDemandPatch(patch, raw, decision);
     decision.shouldAskName = !state.collectedFields?.fullName;
@@ -536,6 +570,26 @@ function interpretUserMessage(state, text, options = {}) {
 
   const fr = detectFrustration(text);
   if (fr.isFrustrated) {
+    // Corrección de operación ("ya te dije que renta") no es frustración pura.
+    if (isIntentCorrectionPhrase(text) && /\brenta\b/.test(t) && !isRentOutIntent(text)) {
+      decision.detectedIntent = V3_INTENT.RENT_PROPERTY;
+      decision.confidence = 0.86;
+      decision.explicitFlowSwitch = true;
+      applyRentDemandPatch(patch, raw, decision);
+      decision.shouldAskName = !state.collectedFields?.fullName;
+      return { patch, decision };
+    }
+    if (
+      isIntentCorrectionPhrase(text) &&
+      (/\b(?:compra|comprar)\b/.test(t) || mentionsBuyDemand(t))
+    ) {
+      decision.detectedIntent = V3_INTENT.BUY_PROPERTY;
+      decision.confidence = 0.86;
+      decision.explicitFlowSwitch = true;
+      applyBuyDemandPatch(patch, raw, decision);
+      decision.shouldAskName = !state.collectedFields?.fullName;
+      return { patch, decision };
+    }
     const sellCtxFr =
       state.conversationGoal === CONVERSATION_GOALS.SELL_PROPERTY || state.leadFlow === 'offer';
     const propOnFrustration = parsePropertyType(text);
@@ -580,37 +634,46 @@ function interpretUserMessage(state, text, options = {}) {
   }
 
   if (awaitingNameCapture) {
-    const affName = extractAffirmationName(raw);
-    if (affName && isLikelyFirstNameOnly(affName)) {
-      patch.collectedFields = { ...(patch.collectedFields || {}), fullName: affName };
-      decision.extractedEntities.fullName = affName;
-      decision.shouldAskName = false;
-      decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
-      decision.confidence = 0.93;
-      decision.explicitFlowSwitch = false;
-      return { patch, decision };
-    }
-    const split = splitNameAndTail(raw);
-    if (split && isLikelyFirstNameOnly(split.name)) {
-      const tailNorm = normalizeText(split.tail);
-      const ch = parseChannelPreference(tailNorm);
-      const channelOnlyTail = WHATSAPP_ONLY_REPLY.test(tailNorm.trim());
-      const consent = channelOnlyTail ? null : parseAdvisorContactConsent(split.tail);
-      patch.collectedFields = { ...(patch.collectedFields || {}), fullName: split.name };
-      decision.extractedEntities.fullName = split.name;
-      decision.shouldAskName = false;
-      if (ch) patch.channelPreference = ch;
-      if (consent === 'ACCEPTED') {
-        patch.advisorContactConsent = 'ACCEPTED';
-        patch.awaitingField = null;
-        decision.detectedIntent = V3_INTENT.ADVISOR_CONSENT_CAPTURE;
-        decision.confidence = 0.94;
-      } else {
+    // No capturar nombre cuando el turno es corrección de dinero o cambio explícito de flujo.
+    const moneyInTurn = parseMoneyAmount(raw);
+    const flowPivot =
+      isExplicitFlowSwitchToBuy(text) ||
+      isExplicitFlowSwitchToRentDemand(text) ||
+      (mentionsRentDemand(t) && !isRentOutIntent(text)) ||
+      mentionsBuyDemand(t);
+    if (moneyInTurn == null && !flowPivot) {
+      const affName = extractAffirmationName(raw);
+      if (affName && isLikelyFirstNameOnly(affName)) {
+        patch.collectedFields = { ...(patch.collectedFields || {}), fullName: affName };
+        decision.extractedEntities.fullName = affName;
+        decision.shouldAskName = false;
         decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
         decision.confidence = 0.93;
+        decision.explicitFlowSwitch = false;
+        return { patch, decision };
       }
-      decision.explicitFlowSwitch = false;
-      return { patch, decision };
+      const split = splitNameAndTail(raw);
+      if (split && isLikelyFirstNameOnly(split.name)) {
+        const tailNorm = normalizeText(split.tail);
+        const ch = parseChannelPreference(tailNorm);
+        const channelOnlyTail = WHATSAPP_ONLY_REPLY.test(tailNorm.trim());
+        const consent = channelOnlyTail ? null : parseAdvisorContactConsent(split.tail);
+        patch.collectedFields = { ...(patch.collectedFields || {}), fullName: split.name };
+        decision.extractedEntities.fullName = split.name;
+        decision.shouldAskName = false;
+        if (ch) patch.channelPreference = ch;
+        if (consent === 'ACCEPTED') {
+          patch.advisorContactConsent = 'ACCEPTED';
+          patch.awaitingField = null;
+          decision.detectedIntent = V3_INTENT.ADVISOR_CONSENT_CAPTURE;
+          decision.confidence = 0.94;
+        } else {
+          decision.detectedIntent = V3_INTENT.IDENTITY_CAPTURE;
+          decision.confidence = 0.93;
+        }
+        decision.explicitFlowSwitch = false;
+        return { patch, decision };
+      }
     }
   }
 
@@ -744,7 +807,10 @@ function interpretUserMessage(state, text, options = {}) {
   }
 
   const wantsRentPhrase =
-    t.includes('rentar') || t.includes('arrendar') || (t.includes('renta') && t.includes('busco'));
+    (mentionsRentDemand(t) && !isRentOutIntent(text)) ||
+    t.includes('rentar') ||
+    t.includes('arrendar') ||
+    (t.includes('renta') && t.includes('busco'));
   if (wantsRentPhrase && (!state.conversationGoalLocked || isExplicitFlowSwitchToRentDemand(text))) {
     decision.detectedIntent = V3_INTENT.RENT_PROPERTY;
     decision.confidence = 0.8;

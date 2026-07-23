@@ -116,6 +116,21 @@ function extractLooseLocationPhrase(text) {
 }
 
 /**
+ * Corrección de intención / repetición ("ya te dije que renta").
+ * No usar para filtrar ubicaciones — ver isNonLocationPhrase.
+ */
+function isIntentCorrectionPhrase(text) {
+  const t = normalizeText(String(text || ''));
+  if (!t) return false;
+  return (
+    /\bya\s+te\s+dije\b/.test(t) ||
+    /\bte\s+dije\s+que\b/.test(t) ||
+    (/\bno\s+(?:es\s+)?eso\b/.test(t) && /\b(?:renta|venta|compra|comprar)\b/.test(t)) ||
+    /\ben\s+realidad\s+(?:es|busco|quiero|renta)\b/.test(t)
+  );
+}
+
+/**
  * Frases de frustración/negación que NO son ubicación.
  * Nota: NO usar isIntentCorrectionPhrase — "ya te dije que en San Pedro"
  * es corrección CON ubicación válida y debe conservarse.
@@ -172,6 +187,8 @@ function isRentOutOwnerPhrase(normalizedText) {
 function mentionsRentDemand(normalizedText) {
   const t = String(normalizedText || '');
   if (isRentOutOwnerPhrase(t)) return false;
+  // Opción venta/renta en captación propietario — no es demanda de inventario.
+  if (/\b(?:venta\s+o\s+renta|renta\s+o\s+venta)\b/.test(t)) return false;
   if (
     isLuxettyAdvisorOwnerLead(t) &&
     /\b(?:pensando|considerando|quiero|necesito)\s+rentar\b/.test(t) &&
@@ -185,7 +202,13 @@ function mentionsRentDemand(normalizedText) {
   return (
     /\b(?:quiero|busco|necesito)\s+rentar\b/.test(t) ||
     /\brentar\s+(?:una|un|la|el)\b/.test(t) ||
-    (/\brenta\b/.test(t) && /\b(?:busco|quiero|interesa)\b/.test(t)) ||
+    (/\brenta\b/.test(t) && /\b(?:busco|quiero)\b/.test(t)) ||
+    // "me interesa" + renta solo si hay señal de inventario (casa/opciones), no prevaluación.
+    (/\brenta\b/.test(t) &&
+      /\binteresa\b/.test(t) &&
+      /\b(?:casa|depa|departamento|opciones?|inmueble|propiedad)\b/.test(t) &&
+      !/\bprevaluaci/.test(t) &&
+      !/\b(?:tengo|mi)\s+(?:una\s+)?(?:casa|propiedad|inmueble)\b/.test(t)) ||
     // Inventario: "¿Qué opciones de casas en renta tienes en Cumbres?"
     /\b(?:opciones?|casas?|departamentos?|depas?|inmuebles?|propiedades?)\b.*\b(?:en\s+renta|renta)\b/.test(t) ||
     /\b(?:en\s+renta|renta)\b.*\b(?:opciones?|casas?|tienes|tienen|hay|muestrame|muéstrame)\b/.test(t) ||
@@ -208,6 +231,15 @@ function mentionsBuyDemand(normalizedText) {
   if (matchesSellerAcquisitionPattern(t)) return false;
   if (/\b(?:quiero|busco|necesito)\s+comprar\b/.test(t)) return true;
   if (/\bme\s+interesa\s+comprar\b/.test(t)) return true;
+  // Interés genérico en casa/propiedad — no si ya hay código de listado (PROPERTY_INQUIRY).
+  if (
+    /\bme\s+interesa\s+(?:la\s+)?(?:casa|depa|departamento|propiedad|inmueble)\b/.test(t) &&
+    !/\blux[- ]?[a-z]?\d{3,5}\b/i.test(t)
+  ) {
+    return true;
+  }
+  if (/\b(?:vi|vio)\s+su\s+anuncio\b/.test(t)) return true;
+  if (/\bcampa[nñ]a\b/.test(t) && /\b(?:casa|depa|departamento|propiedad|interesa|cumbres)\b/.test(t)) return true;
   if (/\bcomprar\s+(?:una|un|la|el)\b/.test(t)) return true;
   if (/\b(?:qu[eé]\s+puedo\s+comprar|puedo\s+comprar|con\s+\d+\s+millones?\s+.*comprar)\b/.test(t)) return true;
   if (/\b(?:tengo|cuento\s+con|presupuesto)\b.*\b(?:millon|millones|mdp)\b.*\bcomprar\b/.test(t)) return true;
@@ -257,13 +289,19 @@ function isDemandSearchInbound(text) {
 
 function isExplicitFlowSwitchToRentDemand(text) {
   const t = normalizeText(text);
+  if (!t) return false;
+  if (isRentOutOwnerPhrase(t)) return false;
+  // Alineado con R0 explicitDemandSearchIntent / mentionsRentDemand (sticky offer → renta).
+  if (mentionsRentDemand(t)) return true;
   return (
     t.includes('mejor quiero rentar') ||
     t.includes('mejor busco rentar') ||
     t.includes('cambio a renta') ||
     t.includes('quiero rentarla') ||
     t.includes('busco rentar') ||
-    (t.includes('arrendar') && t.includes('quiero'))
+    (t.includes('arrendar') && t.includes('quiero')) ||
+    (/\bmejor\b/.test(t) && /\bbusco\b/.test(t) && /\brenta\b/.test(t)) ||
+    (/\bahora\b/.test(t) && /\bbusco\b/.test(t) && /\brenta\b/.test(t))
   );
 }
 
@@ -317,4 +355,5 @@ module.exports = {
   isExplicitFlowSwitchToRentOut,
   isExplicitFlowSwitchToSellFromRent,
   isExplicitPropertyInquiryPhrase,
+  isIntentCorrectionPhrase,
 };
