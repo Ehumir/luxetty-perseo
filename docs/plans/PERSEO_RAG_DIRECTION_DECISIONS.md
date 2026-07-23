@@ -42,6 +42,24 @@ F3_GO = NO-GO
 
 ---
 
+## Tabla de aceptación (firmar — no pre-marcar)
+
+| ID | Recomendación | Aprobado | Rechazado | Comentario |
+|----|---------------|----------|-----------|------------|
+| D1 | Máx. 1 topic OPEN | ☐ | ☐ | |
+| D2 | Lead vía CRM gate al calificar | ☐ | ☐ | |
+| D3 | Tiempos configurables (cand. 24h/72h/30d) | ☐ | ☐ | |
+| D4 | Retención media 90d cand. | ☐ | ☐ | |
+| D5 | Mantener proveedor visión/STT actual | ☐ | ☐ | |
+| D6 | Consent multimodal obligatorio | ☐ | ☐ | |
+| D7 | SLA visita 4h laboral cand. | ☐ | ☐ | |
+| D8 | Handoff WA con grant; no call sin consent | ☐ | ☐ | |
+| D9 | Network fallback externo OFF | ☐ | ☐ | |
+| D10 | Agentic N2 bloqueado hasta umbrales | ☐ | ☐ | |
+| D11 | ARGOS + Product autorizan GLOBAL | ☐ | ☐ | |
+| D12 | Reconciliación controlada (no merge auto) | ☐ | ☐ | |
+| D13 | Events antes que tabla trajectory | ☐ | ☐ | |
+
 ## Firmas (vacío hasta Dirección)
 
 | Rol | Nombre | Fecha | Notas |
