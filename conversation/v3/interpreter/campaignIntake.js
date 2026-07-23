@@ -103,6 +103,9 @@ function extractLooseLocationPhrase(text) {
   if (!loc || loc.length < 2) return null;
   if (/^(venta|renta|casa|propiedad|depa|departamento|terreno|lujo|info)$/i.test(loc)) return null;
   const locNorm = normalizeText(loc);
+  // Never treat listing references as zones ("la propiedad LUX-A0453").
+  if (/\blux[- ]?a?\d{3,5}\b/i.test(locNorm)) return null;
+  if (/^(?:la\s+)?(?:propiedad|casa|depa|departamento|inmueble)\b/.test(locNorm)) return null;
   if (/\b(?:millon|millones|mil|pesos|presupuesto)\b/.test(locNorm)) return null;
   if (/\b(?:tienes|tienen|hay|menos|opciones|muestrame|mostrar)\b/.test(locNorm)) return null;
   const titled = loc
@@ -206,6 +209,8 @@ function mentionsBuyDemand(normalizedText) {
   if (/\b(?:quiero|busco|necesito)\s+comprar\b/.test(t)) return true;
   if (/\bme\s+interesa\s+comprar\b/.test(t)) return true;
   if (/\bcomprar\s+(?:una|un|la|el)\b/.test(t)) return true;
+  if (/\b(?:qu[eé]\s+puedo\s+comprar|puedo\s+comprar|con\s+\d+\s+millones?\s+.*comprar)\b/.test(t)) return true;
+  if (/\b(?:tengo|cuento\s+con|presupuesto)\b.*\b(?:millon|millones|mdp)\b.*\bcomprar\b/.test(t)) return true;
   if (/\b(?:opciones?|casas?|departamentos?|depas?|inmuebles?|propiedades?|terrenos?)\b.*\b(?:en\s+venta|venta|comprar)\b/.test(t)) {
     return true;
   }
@@ -239,6 +244,14 @@ function isDemandSearchInbound(text) {
   }
   if (/\bquiero\s+comprar\b/.test(t) || /\bme\s+interesa\s+comprar\b/.test(t)) return true;
   if (/\bbusco\b/.test(t) && /\bcomprar\b/.test(t)) return true;
+  if (/\b(?:qu[eé]\s+puedo\s+comprar|puedo\s+comprar)\b/.test(t)) return true;
+  if (
+    /\bbusco\b/.test(t) &&
+    /\b(?:casa|depa|departamento|inmueble)\b/.test(t) &&
+    /\b(?:venta|alberca|jardin|jard[ií]n|amueblad|garage|estacionamiento)\b/.test(t)
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -281,6 +294,7 @@ function isExplicitPropertyInquiryPhrase(text) {
   return (
     /\bme interesa\s+(?:la\s+)?(?:propiedad|casa|depa|departamento|inmueble)\b/.test(t) ||
     /\b(?:informaci[oó]n|info)\s+(?:de|sobre)\s+(?:la\s+)?(?:propiedad|casa|depa|inmueble|codigo|código)\b/.test(t) ||
+    /\b(?:h[aá]blame|cu[eé]ntame|dime)\s+(?:de|sobre)\s+(?:la\s+)?(?:propiedad|casa|depa|inmueble)\b/.test(t) ||
     /\b(?:precio|disponible|sigue disponible|aun disponible|aún disponible|todav[ií]a disponible)\b/.test(t) ||
     /\b(?:quiero|me gustar[ií]a)\s+ver\s+(?:la\s+)?(?:casa|propiedad|depa)\b/.test(t)
   );
